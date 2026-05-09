@@ -12,6 +12,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 import json
+from zoneinfo import ZoneInfo # <--- AGREGA ESTA LÍNEA
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
@@ -96,20 +97,20 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
     t_sem, t_mes, t_per = st.tabs(["📅 Semanal", "🗓️ Mensual", "🎓 Periodo Lectivo"])
 
     with t_sem:
-        df_s = df[df['Fecha'] >= (datetime.now() - timedelta(days=7))].copy()
+        df_s = df[df['Fecha'] >= (datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None) - timedelta(days=7))].copy()
         if not df_s.empty:
             st.dataframe(df_s.sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
         else: st.success("Sin reportes esta semana.")
 
     with t_mes:
-        df_m = df[df['Fecha'].dt.month == datetime.now().month].copy()
+        df_m = df[df['Fecha'].dt.month == datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None).month].copy()
         if not df_m.empty:
             res = df_m.groupby(['Grupo', 'Alumno', 'Falta']).size().reset_index(name='Veces')
             st.dataframe(res.sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
         else: st.info("Sin registros este mes.")
 
     with t_per:
-        hoy = datetime.now()
+        hoy = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
         pers = [p for p in PERIODOS_LECTIVOS if datetime.strptime(p['inicio'], '%Y-%m-%d') <= hoy]
         sel_p = st.selectbox(f"Periodo ({titulo_contexto}):", [p['nombre'] for p in pers], index=len(pers)-1, key=f"per_{titulo_contexto}")
         p_inf = next(p for p in pers if p['nombre'] == sel_p)
@@ -164,8 +165,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         if st.button("Guardar Registro", type="primary"):
             if alumnos_final:
                 p, s = CATALOGO_SANCIONES[falta]["puntos"], CATALOGO_SANCIONES[falta]["semaforo"]
-                f = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
+                f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")                
                 lote = [[f, nombre_prof, materia, grupo, al, "Disciplina", falta, obs, p, s] for al in alumnos_final]
                 
                 doc = gc.open(FILE_REGISTROS)
