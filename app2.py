@@ -242,8 +242,28 @@ def renderizar_panel_directivo(gc):
 st.set_page_config(page_title="Conducta Miraflores", layout="wide")
 if 'autenticado' not in st.session_state: st.session_state['autenticado'] = False
 
-#try: gc = conectar_gsheets()
-#except: st.error("Error API."); st.stop()
+@st.cache_resource
+def conectar_gsheets():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    
+    # 1. Verificamos si la bóveda existe y tiene nuestra llave
+    if "gcp_json" in st.secrets:
+        try:
+            # 2. Intentamos traducir el texto a diccionario
+            creds_dict = json.loads(st.secrets["gcp_json"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            return gspread.authorize(creds)
+        except Exception as e:
+            st.error(f"⚠️ La bóveda existe, pero el texto JSON tiene un error de formato: {e}")
+            st.stop()
+    else:
+        # 3. Si no encuentra la llave, detenemos todo y mostramos qué hay en la bóveda
+        st.error("❌ El servidor no encuentra la variable 'gcp_json' en los secretos.")
+        try:
+            st.write("Llaves que el servidor SÍ está viendo:", list(st.secrets.keys()))
+        except:
+            st.write("La bóveda está completamente vacía o tiene un error de sintaxis TOML.")
+        st.stop()
 
 gc = conectar_gsheets()
 
