@@ -242,8 +242,10 @@ def renderizar_panel_directivo(gc):
 st.set_page_config(page_title="Conducta Miraflores", layout="wide")
 if 'autenticado' not in st.session_state: st.session_state['autenticado'] = False
 
-try: gc = conectar_gsheets()
-except: st.error("Error API."); st.stop()
+#try: gc = conectar_gsheets()
+#except: st.error("Error API."); st.stop()
+
+gc = conectar_gsheets()
 
 if not st.session_state['autenticado']:
     st.title("🔒 Acceso Colegio Miraflores")
