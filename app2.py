@@ -11,6 +11,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
+import json
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
