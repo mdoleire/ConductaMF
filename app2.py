@@ -159,14 +159,32 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         else:
             alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
 
-        falta = st.selectbox("Falta:", list(CATALOGO_SANCIONES.keys()), key=f"falta_{st.session_state.form_reset}")
+        # --- LÓGICA DE ETIQUETAS DINÁMICAS (Nuevo) ---
+        # Creamos una lista de opciones que se vea así: "Mascar chicle (-1 pt)"
+        opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in CATALOGO_SANCIONES.items()]
+        
+        falta_seleccionada_visual = st.selectbox(
+            "Incidencia:", 
+            opciones_visuales, 
+            key=f"falta_{st.session_state.form_reset}"
+        )
+        
+        # Traducción inversa para recuperar la llave original del diccionario
+        falta_original = falta_seleccionada_visual.split(" (")[0]
+        
         obs = st.text_area("Observaciones:", key=f"obs_{st.session_state.form_reset}")
 
         if st.button("Guardar Registro", type="primary"):
             if alumnos_final:
-                p, s = CATALOGO_SANCIONES[falta]["puntos"], CATALOGO_SANCIONES[falta]["semaforo"]
-                f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")                
-                lote = [[f, nombre_prof, materia, grupo, al, "Disciplina", falta, obs, p, s] for al in alumnos_final]
+                # Usamos la falta_original para buscar en el catálogo
+                p = CATALOGO_SANCIONES[falta_original]["puntos"]
+                s = CATALOGO_SANCIONES[falta_original]["semaforo"]
+                
+                # Forzamos la zona horaria correcta (Ciudad de México)
+                f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Armamos el lote de envío
+                lote = [[f, nombre_prof, materia, grupo, al, "Disciplina", falta_original, obs, p, s] for al in alumnos_final]
                 
                 doc = gc.open(FILE_REGISTROS)
                 clase_id = f"{materia} - {grupo}"
