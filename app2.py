@@ -12,11 +12,17 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 import json
-from zoneinfo import ZoneInfo # <--- AGREGA ESTA LÍNEA
+from zoneinfo import ZoneInfo
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
 # ==========================================
+
+# ---> ESTAS 4 LÍNEAS SON LAS QUE FALTAN <---
+FILE_ALUMNOS = "1_Alumnos_por_Grupo"
+FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
+FILE_SEGURIDAD = "3_Usuarios_Seguridad"
+FILE_REGISTROS = "4_Base_Conducta_Registros"
 
 CATALOGO_SANCIONES = {
     "Asistencia": {
@@ -56,6 +62,7 @@ CATALOGO_SANCIONES = {
         "Violencia de género": {"puntos": -10, "semaforo": "🟣 Crítica"}
     }
 }
+
 PERIODOS_LECTIVOS = [
     {"nombre": "Periodo 1", "inicio": "2025-08-18", "fin": "2025-09-30"},
     {"nombre": "Periodo 2", "inicio": "2025-10-01", "fin": "2025-11-15"},
