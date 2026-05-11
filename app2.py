@@ -17,24 +17,45 @@ from zoneinfo import ZoneInfo # <--- AGREGA ESTA LÍNEA
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
 # ==========================================
-FILE_ALUMNOS = "1_Alumnos_por_Grupo"
-FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
-FILE_SEGURIDAD = "3_Usuarios_Seguridad"
-FILE_REGISTROS = "4_Base_Conducta_Registros"
 
 CATALOGO_SANCIONES = {
-    "Mascar chicle": {"puntos": -1, "semaforo": "🟡 Leve"},
-    "Comer en clase": {"puntos": -1, "semaforo": "🟡 Leve"},
-    "Distracción en clase": {"puntos": -1, "semaforo": "🟡 Leve"},
-    "Material incompleto": {"puntos": -1, "semaforo": "🟡 Leve"},
-    "No trabaja en clase": {"puntos": -3, "semaforo": "🟡 Medio"},
-    "Salir sin permiso / no entrar": {"puntos": -10, "semaforo": "🔴 Grave"},
-    "Agresión verbal al profesor": {"puntos": -10, "semaforo": "🔴 Grave"},
-    "Agresión física (compañero/profesor)": {"puntos": -10, "semaforo": "🔴 Grave"},
-    "Señas/Acercamientos inapropiados": {"puntos": -10, "semaforo": "🔴 Grave"},
-    "Violencia de género": {"puntos": -10, "semaforo": "🟣 Crítica"}
+    "Asistencia": {
+        "Llegar tarde (Retardo)": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Salida sin autorización": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "Inasistencia injustificada": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "Salir sin permiso / no entrar": {"puntos": -10, "semaforo": "🔴 Grave"}
+    },
+    "Presentación": {
+        "Apariencia inadecuada": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Uniforme incorrecto/incompleto": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Prendas no autorizadas": {"puntos": -1, "semaforo": "🟡 Leve"}
+    },
+    "Tecnología": {
+        "Chromebook descargada/olvidada": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Uso de celular/audífonos": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "App no autorizada": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "Maltrato de equipo": {"puntos": -10, "semaforo": "🔴 Grave"}
+    },
+    "Integridad": {
+        "Plagio o copia": {"puntos": -10, "semaforo": "🔴 Grave"},
+        "Uso de IA no autorizado": {"puntos": -10, "semaforo": "🔴 Grave"}
+    },
+    "Comportamiento": {
+        "Consumo de alimentos": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Mascar chicle": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Distracción en clase": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Interrupción": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Material incompleto": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "No trabaja en clase": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "Groserías": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "Falta al respeto": {"puntos": -3, "semaforo": "🟡 Medio"},
+        "Daños a instalaciones": {"puntos": -10, "semaforo": "🔴 Grave"},
+        "Agresión verbal al profesor": {"puntos": -10, "semaforo": "🔴 Grave"},
+        "Agresión física (compañero/profesor)": {"puntos": -10, "semaforo": "🔴 Grave"},
+        "Señas/Acercamientos inapropiados": {"puntos": -10, "semaforo": "🔴 Grave"},
+        "Violencia de género": {"puntos": -10, "semaforo": "🟣 Crítica"}
+    }
 }
-
 PERIODOS_LECTIVOS = [
     {"nombre": "Periodo 1", "inicio": "2025-08-18", "fin": "2025-09-30"},
     {"nombre": "Periodo 2", "inicio": "2025-10-01", "fin": "2025-11-15"},
@@ -133,7 +154,6 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
 def renderizar_panel_docente(gc, usuario, nombre_prof):
     st.header(f"🛡️ Panel Docente: {nombre_prof}")
     
-    # 1. Inicializamos el contador de reseteo si no existe en la sesión
     if "form_reset" not in st.session_state:
         st.session_state["form_reset"] = 0
         
@@ -145,11 +165,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             return
         
         c1, c2 = st.columns(2)
-        # Materia y Grupo NO llevan key dinámico para que conserven la selección del profesor
         materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
         grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique())
         
-        # A los demás controles les concatenamos el contador actual
         captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
         opc = leer_datos(gc, FILE_ALUMNOS, grupo)['Nombre'].tolist()
         
@@ -159,32 +177,45 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         else:
             alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
 
-        # --- LÓGICA DE ETIQUETAS DINÁMICAS (Nuevo) ---
-        # Creamos una lista de opciones que se vea así: "Mascar chicle (-1 pt)"
-        opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in CATALOGO_SANCIONES.items()]
+        st.markdown("---")
         
-        falta_seleccionada_visual = st.selectbox(
-            "Incidencia:", 
-            opciones_visuales, 
-            key=f"falta_{st.session_state.form_reset}"
-        )
+        # --- NUEVA LÓGICA DE MENÚS EN CASCADA ---
+        c_cat, c_fal = st.columns(2)
         
-        # Traducción inversa para recuperar la llave original del diccionario
+        with c_cat:
+            categoria = st.selectbox(
+                "Categoría:", 
+                list(CATALOGO_SANCIONES.keys()), 
+                key=f"cat_{st.session_state.form_reset}"
+            )
+            
+        with c_fal:
+            # Obtenemos solo el sub-diccionario de la categoría seleccionada
+            dict_faltas = CATALOGO_SANCIONES[categoria]
+            # Creamos las etiquetas dinámicas con los puntos incluidos
+            opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
+            
+            falta_seleccionada_visual = st.selectbox(
+                "Falta cometida:", 
+                opciones_visuales, 
+                key=f"falta_{st.session_state.form_reset}"
+            )
+            
+        # Extraemos el nombre original cortando antes del paréntesis
         falta_original = falta_seleccionada_visual.split(" (")[0]
         
-        obs = st.text_area("Observaciones:", key=f"obs_{st.session_state.form_reset}")
+        obs = st.text_area("Observaciones adicionales:", key=f"obs_{st.session_state.form_reset}")
 
         if st.button("Guardar Registro", type="primary"):
             if alumnos_final:
-                # Usamos la falta_original para buscar en el catálogo
-                p = CATALOGO_SANCIONES[falta_original]["puntos"]
-                s = CATALOGO_SANCIONES[falta_original]["semaforo"]
+                # Extraemos datos del sub-diccionario
+                p = dict_faltas[falta_original]["puntos"]
+                s = dict_faltas[falta_original]["semaforo"]
                 
-                # Forzamos la zona horaria correcta (Ciudad de México)
                 f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Armamos el lote de envío
-                lote = [[f, nombre_prof, materia, grupo, al, "Disciplina", falta_original, obs, p, s] for al in alumnos_final]
+                # Inyectamos la variable "categoria" real en lugar del texto fijo "Disciplina"
+                lote = [[f, nombre_prof, materia, grupo, al, categoria, falta_original, obs, p, s] for al in alumnos_final]
                 
                 doc = gc.open(FILE_REGISTROS)
                 clase_id = f"{materia} - {grupo}"
@@ -197,9 +228,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 ws.append_rows(lote)
                 leer_todos_los_registros.clear()
                 
-                # --- MAGIA DE LIMPIEZA ---
-                # Sumamos 1 al contador. En el st.rerun(), los inputs tendrán
-                # nuevos "keys" y se dibujarán en blanco automáticamente.
                 st.session_state.form_reset += 1
                 
                 st.success("✅ Registro institucional completado. Menú listo para nueva captura.")
