@@ -14,6 +14,7 @@ from streamlit_google_auth import Authenticate
 from datetime import datetime, timedelta
 import json
 from zoneinfo import ZoneInfo
+import os  # <--- Agrega esta línea para poder crear archivos temporales
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
@@ -74,8 +75,11 @@ PERIODOS_LECTIVOS = [
 # ==========================================
 # MOTOR DE AUTENTICACIÓN GOOGLE (NUEVO)
 # ==========================================
-auth = Authenticate(
-    secret_credentials={
+
+# 1. Creamos el archivo de credenciales temporalmente en el servidor
+oauth_file = "oauth_credentials.json"
+if not os.path.exists(oauth_file):
+    oauth_data = {
         "web": {
             "client_id": st.secrets["google_oauth"]["client_id"],
             "client_secret": st.secrets["google_oauth"]["client_secret"],
@@ -83,10 +87,17 @@ auth = Authenticate(
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token"
         }
-    },
+    }
+    with open(oauth_file, "w") as f:
+        json.dump(oauth_data, f)
+
+# 2. Inicializamos el autenticador pasándole el archivo y los parámetros correctos
+auth = Authenticate(
+    secret_credentials_path=oauth_file,
     cookie_name="miraflores_auth_cookie",
     cookie_key=st.secrets["google_oauth"]["cookie_secret"],
-    cookie_expiry_days=1,
+    redirect_uri=st.secrets["google_oauth"]["redirect_uri"],
+    cookie_expiry_days=1
 )
 
 # ==========================================
