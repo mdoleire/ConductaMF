@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from streamlit_google_auth import Authenticate
 from datetime import datetime, timedelta
 import json
 from zoneinfo import ZoneInfo
@@ -69,6 +70,24 @@ PERIODOS_LECTIVOS = [
     {"nombre": "Periodo 3", "inicio": "2025-11-16", "fin": "2026-02-28"},
     {"nombre": "Periodo 4", "inicio": "2026-03-01", "fin": "2026-06-30"}
 ]
+
+# ==========================================
+# MOTOR DE AUTENTICACIÓN GOOGLE (NUEVO)
+# ==========================================
+auth = Authenticate(
+    secret_credentials={
+        "web": {
+            "client_id": st.secrets["google_oauth"]["client_id"],
+            "client_secret": st.secrets["google_oauth"]["client_secret"],
+            "redirect_uris": [st.secrets["google_oauth"]["redirect_uri"]],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
+    },
+    cookie_name="miraflores_auth_cookie",
+    cookie_key=st.secrets["google_oauth"]["cookie_secret"],
+    cookie_expiry_days=1,
+)
 
 # ==========================================
 # 2. MOTOR DE DATOS (CACHÉ Y OPTIMIZACIÓN)
@@ -291,54 +310,66 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO
+# 5. LANZAMIENTO Y AUTENTICACIÓN
 # ==========================================
-st.set_page_config(page_title="Conducta Miraflores", layout="wide")
-if 'autenticado' not in st.session_state: st.session_state['autenticado'] = False
 
-@st.cache_resource
-def conectar_gsheets():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    
-    # 1. Verificamos si la bóveda existe y tiene nuestra llave
-    if "gcp_json" in st.secrets:
-        try:
-            # 2. Intentamos traducir el texto a diccionario
-            creds_dict = json.loads(st.secrets["gcp_json"])
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-            return gspread.authorize(creds)
-        except Exception as e:
-            st.error(f"⚠️ La bóveda existe, pero el texto JSON tiene un error de formato: {e}")
-            st.stop()
-    else:
-        # 3. Si no encuentra la llave, detenemos todo y mostramos qué hay en la bóveda
-        st.error("❌ El servidor no encuentra la variable 'gcp_json' en los secretos.")
-        try:
-            st.write("Llaves que el servidor SÍ está viendo:", list(st.secrets.keys()))
-        except:
-            st.write("La bóveda está completamente vacía o tiene un error de sintaxis TOML.")
-        st.stop()
-
+# Iniciamos la conexión a Google Sheets
 gc = conectar_gsheets()
 
-if not st.session_state['autenticado']:
-    st.title("🔒 Acceso Colegio Miraflores")
-    with st.form("login"):
-        u, p = st.text_input("Usuario"), st.text_input("Contraseña", type="password")
-        if st.form_submit_button("Entrar"):
-            df_s = leer_datos(gc, FILE_SEGURIDAD)
-            val = df_s[(df_s['Usuario'] == u) & (df_s['Password'] == str(p))]
-            if not val.empty:
-                st.session_state.update({'autenticado': True, 'usuario_actual': u, 'nombre_profesor': val['Nombre_Profesor'].iloc[0], 'rol': val['Rol'].iloc[0]})
-                st.rerun()
-            else: st.error("Error de acceso.")
-else:
-    with st.sidebar:
-        st.write(f"👤 **{st.session_state['nombre_profesor']}**")
-        st.caption(f"Rol: {st.session_state['rol']}")
-        if st.button("Salir"): st.session_state['autenticado'] = False; st.rerun()
+if 'autenticado' not in st.session_state:
+    st.session_state['autenticado'] = False
 
-    if st.session_state['rol'] in ["Director", "Coordinador"]:
-        renderizar_panel_directivo(gc)
-    else:
+if not st.session_state['autenticado']:
+    st.title("🔒 Acceso Seguro - Colegio Miraflores")
+    st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
+    
+    # Esto dibuja automáticamente el botón de "Sign in with Google"
+    auth.check_authenticity()
+    
+    # Si el usuario inicia sesión en Google exitosamente:
+    if st.session_state.get("connected", False):
+        user_info = st.session_state.get("user_info", {})
+        correo_google = user_info.get("email", "")
+        nombre_google = user_info.get("name", "")
+        
+        # --- EL CANDADO DE DOMINIO ---
+        if not correo_google.endswith("@miraflores.edu.mx"):
+            st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
+            auth.logout()
+            st.stop()
+        else:
+            df_s = leer_datos(gc, FILE_SEGURIDAD)
+            usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+            
+            if not usuario_registrado.empty:
+                rol_asignado = usuario_registrado['Rol'].iloc[0]
+                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+            else:
+                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+                ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
+                rol_asignado = "Docente"
+                nombre_mostrar = nombre_google
+                
+            st.session_state.update({
+                'autenticado': True, 
+                'usuario_actual': correo_google, 
+                'nombre_profesor': nombre_mostrar, 
+                'rol': rol_asignado
+            })
+            st.rerun()
+else:
+    # Si ya está autenticado, mostramos los paneles correspondientes
+    col1, col2 = st.columns([8, 2])
+    col1.title("Panel de Conducta Institucional")
+    if col2.button("Cerrar Sesión"):
+        auth.logout()
+        st.session_state.clear()
+        st.rerun()
+
+    rol = st.session_state['rol']
+    if rol == 'Director':
+        renderizar_panel_director(gc)
+    elif rol == 'Docente':
         renderizar_panel_docente(gc, st.session_state['usuario_actual'], st.session_state['nombre_profesor'])
+    else:
+        st.error("Rol no reconocido. Contacte al administrador.")
