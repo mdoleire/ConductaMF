@@ -251,7 +251,31 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
     df_full = leer_todos_los_registros(gc)
     df_doc = df_full[df_full['Profesor'] == nombre_prof] if not df_full.empty else df_full
     mostrar_tablero_analitico(df_doc, "Mis Reportes", modo_descarga=False)
+def renderizar_panel_coordinador(gc, area_coordinador):
+    st.subheader(f"Panel de Coordinación: Área de {area_coordinador}")
     
+    # 1. Leer todas las materias
+    df_materias = leer_datos(gc, FILE_MATERIAS)
+    
+    # 2. FILTRO CLAVE: Solo mostrar lo que pertenece al área del coordinador
+    if 'Area' in df_materias.columns:
+        df_filtrado = df_materias[df_materias['Area'] == area_coordinador]
+    else:
+        st.error("No se encontró la columna 'Area' en el archivo de materias.")
+        return
+
+    if df_filtrado.empty:
+        st.warning(f"No hay materias registradas para el área: {area_coordinador}")
+    else:
+        # Aquí pones la lógica de lo que el coordinador puede hacer
+        # Por ejemplo, ver el listado de su área:
+        st.write(f"Viendo {len(df_filtrado)} registros de {area_coordinador}")
+        st.dataframe(df_filtrado)
+        
+        # Si quieres que pueda capturar conducta como el director:
+        # Puedes copiar la lógica del selectbox de grupos y alumnos
+        # pero usando 'df_filtrado' en lugar de todas las materias.
+
 def renderizar_panel_directivo(gc):
     st.header("📊 Inteligencia Institucional (Directivo)")
     df_full = leer_todos_los_registros(gc)
