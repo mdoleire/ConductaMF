@@ -318,137 +318,75 @@ def renderizar_panel_directivo(gc):
 
     mostrar_tablero_analitico(df_f, "Institucional")
 
-# ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (PASARELA MANUAL CORREGIDA)
-# ==========================================
-import urllib.parse
-import requests
-
-# 1. Configuración de credenciales desde los Secrets
-CLIENT_ID = st.secrets["auth"]["google_client_id"]
-CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
-REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
-
-# Inicializamos estados de sesión si no existen
-if "auth_email" not in st.session_state:
-    st.session_state["auth_email"] = None
-if "auth_name" not in st.session_state:
-    st.session_state["auth_name"] = None
-
-# 2. CAPTURA DEL RETORNO DE GOOGLE (LECTURA EN TIEMPO REAL)
-# Convertimos los query_params a un diccionario estándar de Python
-parametros_url = st.query_params.to_dict()
-
-if "code" in parametros_url and not st.session_state["auth_email"]:
-    codigo_autorizacion = parametros_url["code"]
-    
-    # Intercambiamos el código por un token de acceso
-    token_url = "https://oauth2.googleapis.com/token"
-    token_data = {
-        "code": codigo_autorizacion,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code"
-    }
-    
-    try:
-        response = requests.post(token_url, data=token_data).json()
-        access_token = response.get("access_token")
-        
-        if access_token:
-            # Consultamos los datos del usuario usando el token obtenido
-            userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
-            headers = {"Authorization": f"Bearer {access_token}"}
-            user_info = requests.get(userinfo_url, headers=headers).json()
-            
-            # Guardamos la información en el estado de Streamlit
-            st.session_state["auth_email"] = user_info.get("email", "")
-            st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
-            
-            # Limpiamos los parámetros de la URL para dejar la dirección limpia y evitar bucles
-            st.query_params.clear()
-            st.status("🔑 Autenticación exitosa. Redireccionando...")
-            st.rerun()
-    except Exception as e:
-        st.error(f"Error en la conexión de seguridad: {e}")
-
-# ==========================================
-# FLUJO DE RENDERIZADO DE PANTALLA
-# ==========================================
-
-# ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón de acceso manual
-if not st.session_state["auth_email"]:
-    st.title("🔒 Acceso Seguro - Colegio Miraflores")
-    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
-    
-    # Construimos la URL de Google a mano con los alcances correctos
-    params = {
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "online"
-    }
-    url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
-    
-    # --- EL CAMBIO DEFINITIVO: BOTÓN DE ENLACE OFICIAL DE STREAMLIT ---
-    # Usamos el parámetro_top para que rompa el iframe de la nube de forma nativa
-    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary", use_container_width=False)
-    
-    st.stop()
-
 # ESCENARIO B: El usuario ya está autenticado de forma manual
 else:
     correo_google = st.session_state["auth_email"]
     nombre_google = st.session_state["auth_name"]
-    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS! === 🚨
-    # Forzamos que cualquier cuenta personal actúe como Coordinador para ver el error
+    
+    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
+    # Comenta las siguientes 4 líneas cuando quieras volver al modo estricto del Colegio
     rol_asignado = "Coordinador"
-    area_usuario = "Ciencias"  # O el área que quieras probar
+    area_usuario = "Ciencias"  
     nombre_mostrar = "Marco Pruebas"
-    # ─────────────────────────────────────────
+    usuario_registrado_mock = True # Evita que truene el validador de abajo
+    # ───────────────────────────────────────────────────
     
     # --- EL CANDADO DE DOMINIO ---
+    # Lo dejamos pasar con "pass" temporalmente para tus pruebas con Gmail personal
     if not correo_google.endswith("@miraflores.edu.mx"):
-        # Comentamos temporalmente el bloqueo para que te deje pasar
-        pass
-    # --- EL CANDADO DE DOMINIO ---
-    #st.sidebar.button("Limpiar Sesión Activa", on_click=lambda: st.session_state.clear())
-    #if not correo_google.endswith("@miraflores.edu.mx" or correo_google == "marcodoleire@gmail.com"):
-    #    st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-    #    if st.button("Regresar / Salir"):
-    #        st.session_state.clear()
-    #        st.query_params.clear()
-    #        st.rerun()
-    #    st.stop()
+        pass 
         
-    else:
+    try:
+        # Conectamos a la base de datos de Google Sheets
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
+        
+        # Generamos la variable CORRECTAMENTE para que Python la conozca
         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
         
-    if not usuario_registrado.empty:
-        rol_asignado = usuario_registrado['Rol'].iloc[0]
-        nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
-        # --- NUEVA LÍNEA: Capturamos el área ---
-        area_usuario = usuario_registrado['Area'].iloc[0] 
-    else:
-        # Registro automático para nuevos (puedes dejar el área vacía o "Ninguna")
-        ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
-        rol_asignado = "Docente"
-        nombre_mostrar = nombre_google
-        area_usuario = "Ninguna"
+        # SI NO ESTAMOS EN MODO BYPASS, leemos los datos reales del Sheets
+        if 'usuario_registrado_mock' not in locals():
+            if not usuario_registrado.empty:
+                rol_asignado = usuario_registrado['Rol'].iloc[0]
+                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+                # Capturamos el área desde el Excel (si no existe, por defecto es Ninguna)
+                area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
+            else:
+                # Auto-registro en la base de datos si es personal nuevo válido
+                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+                ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
+                rol_asignado = "Docente"
+                nombre_mostrar = nombre_google
+                area_usuario = "Ninguna"
 
-        # ... (código del medio igual) ...
+        # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
+        col1, col2 = st.columns([8, 2])
+        col1.title("Panel de Conducta Institucional")
+        
+        if col2.button("Cerrar Sesión", type="secondary"):
+            st.session_state.clear()
+            st.query_params.clear()
+            st.rerun()
 
-        # --- ACTUALIZAR EL RENDERIZADO SEGÚN EL ROL ---
-    if rol_asignado == 'Director':
-        renderizar_panel_director(gc)
-    elif rol_asignado == 'Coordinador':
-        # Llamamos a la nueva función de coordinador pasándole su área
-        renderizar_panel_coordinador(gc, area_usuario)
-    elif rol_asignado == 'Docente':
-        renderizar_panel_docente(gc, correo_google, nombre_mostrar)
-    else:
-        st.error("Rol no reconocido. Contacte al administrador.")
+        # --- SELECTOR DE VISTA DINÁMICA (Para los de doble rol) ---
+        vista_actual = rol_asignado
+        
+        if rol_asignado in ['Director', 'Coordinador']:
+            st.sidebar.title("⚙️ Configuración de Vista")
+            opciones_vista = [f"Ver como {rol_asignado}", "Ver como Docente de Asignatura"]
+            seleccion = st.sidebar.radio("Selecciona tu rol para esta sesión:", opciones_vista)
+            
+            if seleccion == "Ver como Docente de Asignatura":
+                vista_actual = 'Docente'
+
+        # --- RENDERIZADO SEGÚN LA VISTA SELECCIONADA ---
+        if vista_actual == 'Director':
+            renderizar_panel_director(gc)
+        elif vista_actual == 'Coordinador':
+            renderizar_panel_coordinador(gc, area_usuario)
+        elif vista_actual == 'Docente':
+            renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+
+    except Exception as e:
+        st.error("🚨 Ocurrió un error al procesar el panel de control.")
+        st.write(f"Detalle técnico: {e}")
