@@ -352,6 +352,7 @@ if "code" in query_params and not st.session_state["auth_email"]:
 # ==========================================
 
 # ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón de acceso manual
+# ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón de acceso manual
 if not st.session_state["auth_email"]:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
@@ -366,9 +367,9 @@ if not st.session_state["auth_email"]:
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Renderizamos un enlace elegante en forma de botón principal
+    # CAMBIAMOS target="_self" por target="_top" PARA ROMPER EL IFRAME DE STREAMLIT
     st.markdown(
-        f'<a href="{url_google_auth}" target="_self" style="text-decoration:none;">'
+        f'<a href="{url_google_auth}" target="_top" style="text-decoration:none;">'
         f'<div style="background-color:#FF4B4B;color:white;padding:10px 20px;text-align:center;'
         f'border-radius:5px;font-weight:bold;display:inline-block;cursor:pointer;">'
         f'🔑 Iniciar Sesión con Google'
