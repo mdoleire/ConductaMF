@@ -441,15 +441,50 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # --- EL HACK MAESTRO DE REDIRECCIÓN ---
-    # Inyectamos una regla global invisible para que cualquier botón abra en la misma pestaña
-    st.markdown('<base target="_top">', unsafe_allow_html=True)
-    
-    # Usamos el botón nativo de Streamlit (el que sí tiene permisos de salida)
-    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
+    # --- CLÓN ESTILIZADO DE STREAMLIT CON TARGET="_TOP" ---
+    # Este bloque recrea el botón primario de Streamlit de forma idéntica,
+    # pero forzando al navegador a abrirlo en la misma ventana.
+    st.markdown(
+        f"""
+        <style>
+            .btn-google-mismo-tab {{
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background-color: rgb(255, 75, 75);
+                color: white !important;
+                padding: 0.5rem 1rem;
+                font-size: 1rem;
+                font-family: "Source Sans Pro", sans-serif;
+                font-weight: 400;
+                line-height: 1.6;
+                border-radius: 0.5rem;
+                text-decoration: none;
+                border: 1px solid transparent;
+                box-shadow: rgba(0, 0, 0, 0.05) 0px 1px 0px 0px;
+                transition: background-color 0.2s ease 0s, color 0.2s ease 0s, border-color 0.2s ease 0s;
+                cursor: pointer;
+            }}
+            .btn-google-mismo-tab:hover {{
+                background-color: rgb(255, 51, 51);
+                border-color: rgb(255, 75, 75);
+            }}
+            .btn-google-mismo-tab:active {{
+                background-color: rgb(204, 51, 51);
+            }}
+        </style>
+        
+        <div style="margin-top: 10px;">
+            <a href="{url_google_auth}" target="_top" class="btn-google-mismo-tab">
+                🔑 Iniciar Sesión con Google
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
     st.stop()
-
-# ESCENARIO B: El usuario está plenamente autenticado
+    
+ # ESCENARIO B: El usuario está plenamente autenticado
 else:
     correo_google = st.session_state["auth_email"]
     nombre_google = st.session_state["auth_name"]
