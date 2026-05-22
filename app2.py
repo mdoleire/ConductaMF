@@ -295,59 +295,90 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (NATIVO FINAL)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (DIAGNÓSTICO)
 # ==========================================
 
-# 1. Comprobamos de forma segura si hay un usuario firmado
-if not st.user.get("is_logged_in", False):
-    st.title("🔒 Acceso Seguro - Colegio Miraflores")
-    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
+try:
+    # 1. Inspección segura del objeto st.user
+    # Queremos ver si es un diccionario, un objeto, o si viene vacío
+    usuario_detectado = False
     
-    if st.button("Iniciar Sesión con Google", type="primary"):
-        st.login(provider="google")
-else:
-    # Conectamos a Google Sheets únicamente cuando ya estamos seguros de que hay sesión
-    gc = conectar_gsheets()
-    
-    # 2. Extraemos los datos del diccionario st.user de forma segura
-    correo_google = st.user.get("email", "")
-    nombre_google = st.user.get("name", "Profesor Miraflores")
-    
-    # --- EL CANDADO DE DOMINIO ---
-    if not correo_google.endswith("@miraflores.edu.mx"):
-        st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-        if st.button("Regresar/Salir"):
-            st.logout()
-            st.rerun()
-        st.stop()
+    if hasattr(st, "user") and st.user:
+        # Intentamos evaluar si hay sesión usando tanto la sintaxis de diccionario como de atributo
+        if isinstance(st.user, dict):
+            usuario_detectado = st.user.get("is_logged_in", False)
+        else:
+            usuario_detectado = getattr(st.user, "is_logged_in", False)
+
+    if not usuario_detectado:
+        st.title("🔒 Acceso Seguro - Colegio Miraflores")
+        st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
         
+        if st.button("Iniciar Sesión con Google", type="primary"):
+            st.login(provider="google")
+            
     else:
-        # 3. Validación de Roles contra Google Sheets
-        df_s = leer_datos(gc, FILE_SEGURIDAD)
-        usuario_registrado = df_s[df_s['Usuario'] == correo_google]
-        
-        if not usuario_registrado.empty:
-            rol_asignado = usuario_registrado['Rol'].iloc[0]
-            nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+        # 2. Si llegamos aquí, Google ya respondió. Vamos a extraer los datos de forma ultra-flexible
+        if isinstance(st.user, dict):
+            correo_google = st.user.get("email", "")
+            nombre_google = st.user.get("name", "Profesor")
         else:
-            # Auto-registro en la base de datos si es del colegio pero entra por primera vez
-            ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-            ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
-            rol_asignado = "Docente"
-            nombre_mostrar = nombre_google
-
-        # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
-        col1, col2 = st.columns([8, 2])
-        col1.title("Panel de Conducta Institucional")
+            correo_google = getattr(st.user, "email", "")
+            nombre_google = getattr(st.user, "name", "Profesor")
+            
+        st.info(f"🔄 Procesando acceso para: {correo_google}")
         
-        if col2.button("Cerrar Sesión", type="secondary"):
-            st.logout()
-            st.rerun()
-
-        # Renderizado de acuerdo al rol obtenido
-        if rol_asignado == 'Director':
-            renderizar_panel_director(gc)
-        elif rol_asignado == 'Docente':
-            renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+        # Conectamos a Google Sheets de forma segura
+        gc = conectar_gsheets()
+        
+        # --- EL CANDADO DE DOMINIO ---
+        if not correo_google.endswith("@miraflores.edu.mx"):
+            st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
+            if st.button("Regresar/Salir"):
+                st.logout()
+                st.rerun()
+            st.stop()
+            
         else:
-            st.error("Rol no reconocido. Contacte al administrador.")
+            # 3. Validación de Roles contra Google Sheets
+            df_s = leer_datos(gc, FILE_SEGURIDAD)
+            usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+            
+            if not usuario_registrado.empty:
+                rol_asignado = usuario_registrado['Rol'].iloc[0]
+                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+            else:
+                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+                ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
+                rol_asignado = "Docente"
+                nombre_mostrar = nombre_google
+
+            # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
+            col1, col2 = st.columns([8, 2])
+            col1.title("Panel de Conducta Institucional")
+            
+            if col2.button("Cerrar Sesión", type="secondary"):
+                st.logout()
+                st.rerun()
+
+            if rol_asignado == 'Director':
+                renderizar_panel_director(gc)
+            elif rol_asignado == 'Docente':
+                renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+            else:
+                st.error("Rol no reconocido. Contacte al administrador.")
+
+except Exception as e:
+    # Si algo falla en cualquier parte del proceso, lo exponemos aquí con lujo de detalle
+    st.error("🚨 SE DETECTÓ UN ERROR EN LA LÓGICA INTERNA")
+    st.subheader(f"Tipo de error: {type(e).__name__}")
+    st.write(f"Mensaje del error: {str(e)}")
+    
+    # Inspección de la estructura real de st.user para ver qué nos está mandando el servidor
+    st.write("---")
+    st.write("🔍 Datos de diagnóstico del contenedor st.user:")
+    try:
+        st.code(f"Tipo de objeto: {type(st.user)}")
+        st.write("Contenido detectable:", st.user)
+    except:
+        st.write("No se pudo inspeccionar el objeto st.user")
