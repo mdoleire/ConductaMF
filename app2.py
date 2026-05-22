@@ -358,6 +358,7 @@ if not st.session_state["auth_email"]:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
+    # Construimos la URL de Google a mano con los alcances correctos
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -367,14 +368,10 @@ if not st.session_state["auth_email"]:
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    st.markdown(
-        f'<a href="{url_google_auth}" target="_top" style="text-decoration:none;">'
-        f'<div style="background-color:#FF4B4B;color:white;padding:10px 20px;text-align:center;'
-        f'border-radius:5px;font-weight:bold;display:inline-block;cursor:pointer;">'
-        f'🔑 Iniciar Sesión con Google'
-        f'</div></a>', 
-        unsafe_allow_html=True
-    )
+    # --- EL CAMBIO DEFINITIVO: BOTÓN DE ENLACE OFICIAL DE STREAMLIT ---
+    # Usamos el parámetro_top para que rompa el iframe de la nube de forma nativa
+    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary", use_container_width=False)
+    
     st.stop()
 
 # ESCENARIO B: El usuario ya está autenticado de forma manual
