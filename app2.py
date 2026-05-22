@@ -451,10 +451,10 @@ else:
     nombre_google = st.session_state["auth_name"]
     
     # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
-    rol_asignado_mock = "Coordinador"
-    area_usuario_mock = "Humanidades"  
-    nombre_mostrar_mock = "Marco Pruebas"
-    usuario_registrado_mock = True 
+    #rol_asignado_mock = "Coordinador"
+    #area_usuario_mock = "Humanidades"  
+    #nombre_mostrar_mock = "Marco Pruebas"
+    #usuario_registrado_mock = True 
     # ───────────────────────────────────────────────────
     
     if not correo_google.endswith("@miraflores.edu.mx"):
