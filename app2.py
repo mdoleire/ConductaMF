@@ -216,10 +216,21 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         if st.button("Guardar Registro", type="primary"):
             if alumnos_final:
-                p = dict_faltas[falta_original]["puntos"]
-                s = dict_faltas[falta_original]["semaforo"]
+                # --- EXTRACCIÓN BLINDADA CONTRA ERRORES DE LLAVE ---
+                # Usamos .get() con un respaldo seguro por si hay discrepancias de texto
+                info_falta = dict_faltas.get(falta_original)
+                
+                if info_falta:
+                    p = info_falta["puntos"]
+                    s = info_falta["semaforo"]
+                else:
+                    # Plan de contingencia si no coincide el texto exacto con el diccionario
+                    st.error(f"⚠️ La falta '{falta_original}' no coincide exactamente con el catálogo de {categoria}. Verifica la ortografía en tu diccionario.")
+                    st.stop()
                 
                 f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Generamos el bloque de filas para inyectar a Sheets
                 lote = [[f, nombre_prof, materia, grupo, al, categoria, falta_original, obs, p, s] for al in alumnos_final]
                 
                 doc = gc.open(FILE_REGISTROS)
@@ -234,7 +245,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 leer_todos_los_registros.clear()
                 
                 st.session_state.form_reset += 1
-                st.success("✅ Registro institucional completado. Menú listo para nueva captura.")
+                st.success("✅ Registro de incidencia completado con éxito.")
                 st.rerun()
             else:
                 st.error("⚠️ Por favor, seleccione al menos un alumno.")
