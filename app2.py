@@ -441,22 +441,12 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # --- BOTÓN INYECTADO DIRECTO AL NAVEGADOR (SINSALTO DE STREAMLIT) ---
-    # Usamos onclick="window.top.location.href=..." para forzar al navegador a actuar antes de que Streamlit respire.
-    html_boton_definitivo = f"""
-    <div style="text-align: left; margin-top: 10px;">
-        <button onclick="window.top.location.href='{url_google_auth}'" 
-                style="background-color: #FF4B4B; color: white; padding: 12px 24px; 
-                       border: none; border-radius: 8px; font-weight: bold; 
-                       font-size: 16px; cursor: pointer; font-family: sans-serif;
-                       box-shadow: 0px 4px 6px rgba(0,0,0,0.1); transition: 0.3s;">
-            🔑 Iniciar Sesión con Google
-        </button>
-    </div>
-    """
+    # --- EL HACK MAESTRO DE REDIRECCIÓN ---
+    # Inyectamos una regla global invisible para que cualquier botón abra en la misma pestaña
+    st.markdown('<base target="_top">', unsafe_allow_html=True)
     
-    # Lo renderizamos usando el componente de HTML estático
-    st.components.v1.html(html_boton_definitivo, height=60)
+    # Usamos el botón nativo de Streamlit (el que sí tiene permisos de salida)
+    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
 
 # ESCENARIO B: El usuario está plenamente autenticado
