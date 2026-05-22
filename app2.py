@@ -258,30 +258,54 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
 
 def renderizar_panel_coordinador(gc, area_coordinador):
-    st.subheader(f"Panel de Coordinación: Área de {area_coordinador}")
+    st.subheader(f"📋 Monitoreo de Coordinación: Área de {area_coordinador}")
     
-    # 1. CORRECCIÓN CLAVE: Usamos FILE_ASIGNACIONES en lugar de FILE_MATERIAS
-    df_materias = leer_datos(gc, FILE_ASIGNACIONES)
+    # 1. Traer la base de datos de TODOS los registros/incidencias de conducta
+    df_incidencias = leer_todos_los_registros(gc)
     
-    # 2. FILTRO DE DEPARTAMENTO: Buscamos las materias que corresponden al área
-    if 'Area' in df_materias.columns:
-        df_filtrado = df_materias[df_materias['Area'] == area_coordinador]
-    else:
-        st.error("No se encontró la columna 'Area' en el archivo de asignaciones.")
+    # 2. Traer el mapeo de asignaciones para saber qué materias pertenecen a este departamento
+    df_asig = leer_datos(gc, FILE_ASIGNACIONES)
+    
+    if df_asig.empty:
+        st.error("No se pudo cargar el archivo de asignaciones para validar las materias del área.")
         return
 
-    if df_filtrado.empty:
-        st.warning(f"No hay materias registradas para el área: {area_coordinador}")
+    # 3. FILTRADO INTELIGENTE: Identificamos qué materias pertenecen al área del coordinador
+    if 'Area' in df_asig.columns and 'Materia' in df_asig.columns:
+        materias_del_area = df_asig[df_asig['Area'] == area_coordinador]['Materia'].unique().tolist()
     else:
-        st.write(f"Viendo {len(df_filtrado)} registros asignados a tu departamento:")
-        
-        # Mostramos una tabla limpia con las columnas principales para el coordinador
-        columnas_visibles = [col for col in ['Materia', 'Grupo', 'Nombre_Profesor', 'Usuario_Profesor'] if col in df_filtrado.columns]
-        if columnas_visibles:
-            st.dataframe(df_filtrado[columnas_visibles], use_container_width=True)
-        else:
-            st.dataframe(df_filtrado, use_container_width=True)
+        st.error("Estructura incorrecta en el archivo de asignaciones (faltan columnas 'Area' o 'Materia').")
+        return
 
+    # 4. Evaluamos y mostramos las incidencias correspondientes
+    if df_incidencias.empty:
+        st.info(f"No se han registrado incidencias en el sistema de manera global aún.")
+    else:
+        # Filtramos los reportes de conducta donde la materia pertenezca a la lista del área
+        df_coordinacion = df_incidencias[df_incidencias['Materia'].isin(materias_del_area)]
+        
+        if df_coordinacion.empty:
+            st.warning(f"No se han reportado incidencias hasta el momento para las materias de {area_coordinador}.")
+        else:
+            st.write(f"Se han encontrado **{len(df_coordinacion)}** incidencias registradas en tu departamento:")
+            
+            # Formateamos la tabla para que sea altamente legible para supervisión
+            columnas_coordinador = [
+                col for col in ['Fecha', 'Profesor', 'Materia', 'Grupo', 'Alumno', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados'] 
+                if col in df_coordinacion.columns
+            ]
+            
+            # Desplegamos los reportes reales ordenados del más reciente al más antiguo
+            if 'Fecha' in df_coordinacion.columns:
+                df_coordinacion = df_coordinacion.sort_values(by='Fecha', ascending=False)
+                
+            st.dataframe(df_coordinacion[columnas_coordinador], use_container_width=True)
+            
+            # Opcional: Si quieres habilitar las gráficas analíticas exclusivas de su área:
+            st.markdown("---")
+            st.subheader("📊 Analítica del Departamento")
+            mostrar_tablero_analitico(df_coordinacion, f"Coordinación {area_coordinador}", modo_descarga=True)
+            
 def renderizar_panel_directivo(gc):
     st.header("📊 Inteligencia Institucional (Directivo)")
     df_full = leer_todos_los_registros(gc)
