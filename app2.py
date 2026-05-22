@@ -427,10 +427,10 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 # FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso
+# ESCENARIO A: No hay sesión en ningún lado -> Redirección Nativa Automática
 if not st.session_state.get("auth_email"):
-    st.title("🔒 Acceso Seguro - Colegio Miraflores")
-    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
+    st.title("🔒 Redirigiendo al Acceso Seguro...")
+    st.write("Por favor espera un momento mientras te conectamos con el inicio de sesión institucional de Google.")
     
     params = {
         "client_id": CLIENT_ID,
@@ -441,47 +441,15 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # --- CLÓN ESTILIZADO DE STREAMLIT CON TARGET="_TOP" ---
-    # Este bloque recrea el botón primario de Streamlit de forma idéntica,
-    # pero forzando al navegador a abrirlo en la misma ventana.
-    st.markdown(
-        f"""
-        <style>
-            .btn-google-mismo-tab {{
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                background-color: rgb(255, 75, 75);
-                color: white !important;
-                padding: 0.5rem 1rem;
-                font-size: 1rem;
-                font-family: "Source Sans Pro", sans-serif;
-                font-weight: 400;
-                line-height: 1.6;
-                border-radius: 0.5rem;
-                text-decoration: none;
-                border: 1px solid transparent;
-                box-shadow: rgba(0, 0, 0, 0.05) 0px 1px 0px 0px;
-                transition: background-color 0.2s ease 0s, color 0.2s ease 0s, border-color 0.2s ease 0s;
-                cursor: pointer;
-            }}
-            .btn-google-mismo-tab:hover {{
-                background-color: rgb(255, 51, 51);
-                border-color: rgb(255, 75, 75);
-            }}
-            .btn-google-mismo-tab:active {{
-                background-color: rgb(204, 51, 51);
-            }}
-        </style>
-        
-        <div style="margin-top: 10px;">
-            <a href="{url_google_auth}" target="_top" class="btn-google-mismo-tab">
-                🔑 Iniciar Sesión con Google
-            </a>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    # --- SALTO MAESTRO DE URL NATIVO ---
+    # En lugar de un botón HTML que el iframe bloquee, usamos las query_params de Streamlit
+    # para inyectar la URL externa en la barra de navegación de la misma pestaña.
+    st.query_params.clear()
+    st.markdown(f'<meta http-serif="refresh" content="0; url={url_google_auth}">', unsafe_allow_html=True)
+    
+    # Respaldo por si el navegador bloquea los meta-refresh automáticos
+    st.write("Si no eres redirigido automáticamente en 3 segundos, utiliza el acceso de contingencia:")
+    st.link_button("🔑 Forzar Entrada en Pestaña Nueva", url_google_auth, type="secondary")
     st.stop()
     
  # ESCENARIO B: El usuario está plenamente autenticado
