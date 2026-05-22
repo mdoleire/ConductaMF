@@ -402,16 +402,26 @@ if not st.session_state["auth_email"]:
 else:
     correo_google = st.session_state["auth_email"]
     nombre_google = st.session_state["auth_name"]
+    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS! === 🚨
+    # Forzamos que cualquier cuenta personal actúe como Coordinador para ver el error
+    rol_asignado = "Coordinador"
+    area_usuario = "Ciencias"  # O el área que quieras probar
+    nombre_mostrar = "Marco Pruebas"
+    # ─────────────────────────────────────────
     
     # --- EL CANDADO DE DOMINIO ---
-    st.sidebar.button("Limpiar Sesión Activa", on_click=lambda: st.session_state.clear())
-    if not correo_google.endswith("@miraflores.edu.mx" or correo_google == "marcodoleire@gmail.com"):
-        st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-        if st.button("Regresar / Salir"):
-            st.session_state.clear()
-            st.query_params.clear()
-            st.rerun()
-        st.stop()
+    if not correo_google.endswith("@miraflores.edu.mx"):
+        # Comentamos temporalmente el bloqueo para que te deje pasar
+        pass
+    # --- EL CANDADO DE DOMINIO ---
+    #st.sidebar.button("Limpiar Sesión Activa", on_click=lambda: st.session_state.clear())
+    #if not correo_google.endswith("@miraflores.edu.mx" or correo_google == "marcodoleire@gmail.com"):
+    #    st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
+    #    if st.button("Regresar / Salir"):
+    #        st.session_state.clear()
+    #        st.query_params.clear()
+    #        st.rerun()
+    #    st.stop()
         
     else:
         gc = conectar_gsheets()
