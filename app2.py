@@ -312,7 +312,7 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
     
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (BLOQUE COMPLETO BLINDADO)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (PERSISTENCIA TOTAL)
 # ==========================================
 import urllib.parse
 import requests
@@ -322,19 +322,19 @@ CLIENT_ID = st.secrets["auth"]["google_client_id"]
 CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
-# Inicializamos estados de sesión si no existen
-if "auth_email" not in st.session_state:
-    st.session_state["auth_email"] = None
-if "auth_name" not in st.session_state:
-    st.session_state["auth_name"] = None
+# 2. INTENTO DE RECUPERACIÓN POR COOKIE (F5 / REFRESH)
+# Si el session_state se borró pero Streamlit conserva la cookie de Google activa
+if "auth_email" not in st.session_state or not st.session_state["auth_email"]:
+    if hasattr(st, "user") and st.user and st.user.get("is_logged_in", False):
+        st.session_state["auth_email"] = st.user.get("email", "")
+        st.session_state["auth_name"] = st.user.get("name", "Profesor Miraflores")
 
-# 2. CAPTURA DEL RETORNO DE GOOGLE (LECTURA EN TIEMPO REAL)
+# 3. CAPTURA DEL RETORNO DE GOOGLE (PRIMER INGRESO)
 parametros_url = st.query_params.to_dict()
 
-if "code" in parametros_url and not st.session_state["auth_email"]:
+if "code" in parametros_url and not st.session_state.get("auth_email"):
     codigo_autorizacion = parametros_url["code"]
     
-    # Intercambiamos el código por un token de acceso
     token_url = "https://oauth2.googleapis.com/token"
     token_data = {
         "code": codigo_autorizacion,
@@ -349,16 +349,21 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
         access_token = response.get("access_token")
         
         if access_token:
-            # Consultamos los datos del usuario usando el token obtenido
             userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers).json()
             
-            # Guardamos la información en el estado de Streamlit
+            # Guardamos la información en el estado de la sesión
             st.session_state["auth_email"] = user_info.get("email", "")
             st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
             
-            # Limpiamos los parámetros de la URL para dejar la dirección limpia
+            # Forzamos a Streamlit a registrar al usuario en su cookie interna de auth
+            if hasattr(st, "login"):
+                try:
+                    st.login(provider="google")
+                except:
+                    pass
+            
             st.query_params.clear()
             st.rerun()
     except Exception as e:
@@ -368,8 +373,8 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 # FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón oficial de Google
-if not st.session_state["auth_email"]:
+# ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso
+if not st.session_state.get("auth_email"):
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
@@ -382,21 +387,20 @@ if not st.session_state["auth_email"]:
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Botón nativo que redirige rompiendo el iframe de Streamlit Cloud
     st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
 
-# ESCENARIO B: El usuario ya está autenticado de forma manual
+# ESCENARIO B: Sesión activa y detectada correctamente
 else:
     correo_google = st.session_state["auth_email"]
     nombre_google = st.session_state["auth_name"]
     
-    # 🚨 === ¡SIMULADOR APAGADO! === 🚨
-    # Hemos comentado las líneas de prueba para que lea tu Sheets Real de Humanidades
-    # rol_asignado_mock = "Coordinador"
-    # area_usuario_mock = "Ciencias"  
-    # nombre_mostrar_mock = "Marco Pruebas"
-    # usuario_registrado_mock = True 
+    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
+    # Comenta las siguientes 5 líneas cuando quieras volver al modo estricto del Colegio
+    rol_asignado_mock = "Coordinador"
+    area_usuario_mock = "Humanidades"  
+    nombre_mostrar_mock = "Marco Pruebas"
+    usuario_registrado_mock = True 
     # ───────────────────────────────────────────────────
     
     # --- EL CANDADO DE DOMINIO ---
@@ -409,9 +413,9 @@ else:
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         
         # Inicializamos la variable de búsqueda
-        usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+        usuario_registrado = df_s[df_s['Usuario'] == correo_google] if not df_s.empty else df_s
         
-        # Evaluación de Roles desde el Sheets Real
+        # Evaluación de Roles (Bypass vs Sheets Real)
         if 'usuario_registrado_mock' in locals():
             rol_asignado = rol_asignado_mock
             area_usuario = area_usuario_mock
@@ -422,7 +426,6 @@ else:
                 nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
                 area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
             else:
-                # Auto-registro en la base de datos si es personal nuevo válido
                 ws_seg = gc.open(FILE_SEGURIDAD).sheet1
                 ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
                 rol_asignado = "Docente"
@@ -433,12 +436,15 @@ else:
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
         
+        # El único botón oficial de cerrar sesión (Línea 442 aproximada)
         if col2.button("Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
+            if hasattr(st, "logout"):
+                st.logout()
             st.rerun()
 
-        # --- SELECTOR DE VISTA DINÁMICA (Para los de doble rol) ---
+        # --- SELECTOR DE VISTA DINÁMICA ---
         vista_actual = rol_asignado
         
         if rol_asignado in ['Director', 'Coordinador', 'Directivo']:
@@ -455,7 +461,6 @@ else:
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
         elif vista_actual == 'Docente':
-            # Pasamos tu correo real para que busque tu materia de Historia del archivo 2
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
 
     except Exception as e:
