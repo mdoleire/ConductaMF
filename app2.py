@@ -319,16 +319,16 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ESCENARIO B: El usuario ya está autenticado de forma manual
-else:
-    correo_google = st.session_state["auth_email"]
-    nombre_google = st.session_state["auth_name"]
+    else:
+        correo_google = st.session_state["auth_email"]
+        nombre_google = st.session_state["auth_name"]
     
-    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
-    # Comenta las siguientes 4 líneas cuando quieras volver al modo estricto del Colegio
-    rol_asignado = "Coordinador"
-    area_usuario = "Ciencias"  
-    nombre_mostrar = "Marco Pruebas"
-    usuario_registrado_mock = True # Evita que truene el validador de abajo
+        # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
+        # Comenta las siguientes 4 líneas cuando quieras volver al modo estricto del Colegio
+        rol_asignado = "Coordinador"
+        area_usuario = "Ciencias"  
+        nombre_mostrar = "Marco Pruebas"
+        usuario_registrado_mock = True # Evita que truene el validador de abajo
     # ───────────────────────────────────────────────────
     
     # --- EL CANDADO DE DOMINIO ---
@@ -336,13 +336,13 @@ else:
     if not correo_google.endswith("@miraflores.edu.mx"):
         pass 
         
-    try:
+     try:
         # Conectamos a la base de datos de Google Sheets
-        gc = conectar_gsheets()
+           gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         
         # Generamos la variable CORRECTAMENTE para que Python la conozca
-        usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
         
         # SI NO ESTAMOS EN MODO BYPASS, leemos los datos reales del Sheets
         if 'usuario_registrado_mock' not in locals():
@@ -351,13 +351,13 @@ else:
                 nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
                 # Capturamos el área desde el Excel (si no existe, por defecto es Ninguna)
                 area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
-            else:
+        else:
                 # Auto-registro en la base de datos si es personal nuevo válido
-                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-                ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
-                rol_asignado = "Docente"
-                nombre_mostrar = nombre_google
-                area_usuario = "Ninguna"
+            ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+            ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
+            rol_asignado = "Docente"
+            nombre_mostrar = nombre_google
+            area_usuario = "Ninguna"
 
         # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
