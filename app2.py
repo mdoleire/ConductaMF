@@ -295,40 +295,104 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (ESTRUCTURA INMUTABLE)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (PASARELA MANUAL COLEGIO MIRAFLORES)
+# ==========================================
+import urllib.parse
+import requests
+
+# 1. Configuración de credenciales desde los Secrets
+CLIENT_ID = st.secrets["auth"]["google_client_id"]
+CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
+REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
+
+# Inicializamos estados de sesión si no existen
+if "auth_email" not in st.session_state:
+    st.session_state["auth_email"] = None
+if "auth_name" not in st.session_state:
+    st.session_state["auth_name"] = None
+
+# 2. CAPTURA DEL RETORNO DE GOOGLE: Verificar si Google nos está regresando un código en la URL
+query_params = st.query_params
+
+if "code" in query_params and not st.session_state["auth_email"]:
+    codigo_autorizacion = query_params["code"]
+    
+    # Intercambiamos el código por un token de acceso de forma manual
+    token_url = "https://oauth2.googleapis.com/token"
+    token_data = {
+        "code": codigo_autorizacion,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
+    }
+    
+    try:
+        response = requests.post(token_url, data=token_data).json()
+        access_token = response.get("access_token")
+        
+        if access_token:
+            # Consultamos los datos del usuario usando el token obtenido
+            userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            user_info = requests.get(userinfo_url, headers=headers).json()
+            
+            # Guardamos la información en el estado de Streamlit
+            st.session_state["auth_email"] = user_info.get("email", "")
+            st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
+            
+            # Limpiamos el código de la URL para dejar la dirección limpia
+            st.query_params.clear()
+            st.rerun()
+    except Exception as e:
+        st.error(f"Error en la conexión de seguridad: {e}")
+
+# ==========================================
+# FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# 1. PASO CRÍTICO: Verificación aislada del usuario en el arranque del script
-usuario_autenticado = False
-
-if hasattr(st, "user") and st.user and st.user.get("is_logged_in", False):
-    usuario_autenticado = True
-
-# ESCENARIO A: No hay sesión activa. Mostramos UNICAMENTE la pantalla de acceso.
-if not usuario_autenticado:
+# ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón de acceso manual
+if not st.session_state["auth_email"]:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
-    if st.button("Iniciar Sesión con Google", type="primary"):
-        st.login(provider="google")
-    st.stop()  # Detiene por completo la ejecución aquí para que no intente renderizar nada más
+    # Construimos la URL de Google a mano con los alcances correctos
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online"
+    }
+    url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+    
+    # Renderizamos un enlace elegante en forma de botón principal
+    st.markdown(
+        f'<a href="{url_google_auth}" target="_self" style="text-decoration:none;">'
+        f'<div style="background-color:#FF4B4B;color:white;padding:10px 20px;text-align:center;'
+        f'border-radius:5px;font-weight:bold;display:inline-block;cursor:pointer;">'
+        f'🔑 Iniciar Sesión con Google'
+        f'</div></a>', 
+        unsafe_allow_html=True
+    )
+    st.stop()
 
-# ESCENARIO B: Google ya devolvió al usuario con éxito. Procesamos la lógica interna.
+# ESCENARIO B: El usuario ya está autenticado de forma manual
 else:
-    try:
-        # Extraemos los datos del diccionario de forma segura
-        correo_google = st.user.get("email", "")
-        nombre_google = st.user.get("name", "Profesor Miraflores")
+    correo_google = st.session_state["auth_email"]
+    nombre_google = st.session_state["auth_name"]
+    
+    # --- EL CANDADO DE DOMINIO ---
+    if not correo_google.endswith("@miraflores.edu.mx"):
+        st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
+        if st.button("Regresar / Salir"):
+            st.session_state.clear()
+            st.query_params.clear()
+            st.rerun()
+        st.stop()
         
-        # --- EL CANDADO DE DOMINIO ---
-        if not correo_google.endswith("@miraflores.edu.mx"):
-            st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-            if st.button("Regresar / Salir"):
-                st.logout()
-                st.rerun()
-            st.stop()
-            
-        # --- CONEXIÓN Y LOGICA DE BASE DE DATOS ---
+    else:
+        # Conectamos a la base de datos de Google Sheets
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
@@ -337,28 +401,25 @@ else:
             rol_asignado = usuario_registrado['Rol'].iloc[0]
             nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         else:
-            # Registro automático en Google Sheets si es del colegio
+            # Auto-registro en la base de datos si es personal del colegio válido
             ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-            ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
+            ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente"])
             rol_asignado = "Docente"
             nombre_mostrar = nombre_google
 
-        # --- RENDERIZADO DEL PANEL PRINCIPAL ---
+        # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
         
         if col2.button("Cerrar Sesión", type="secondary"):
-            st.logout()
+            st.session_state.clear()
+            st.query_params.clear()
             st.rerun()
 
-        # Despliegue según el rol obtenido
+        # Despliegue de paneles según el rol asignado
         if rol_asignado == 'Director':
             renderizar_panel_director(gc)
         elif rol_asignado == 'Docente':
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
         else:
             st.error("Rol no reconocido. Contacte al administrador.")
-
-    except Exception as e:
-        st.error("🚨 Error al procesar los datos de sesión de Google.")
-        st.write(f"Detalle técnico: {e}")
