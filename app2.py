@@ -27,7 +27,7 @@ FILE_REGISTROS = "4_Base_Conducta_Registros"
 
 CATALOGO_SANCIONES = {
     "Asistencia": {
-        "Llegar tarde (Retardo)": {"puntos": -1, "semaforo": "🟡 Leve"},
+        "Llegar tarde": {"puntos": -1, "semaforo": "🟡 Leve"},
         "Salida sin autorización": {"puntos": -3, "semaforo": "🟡 Medio"},
         "Inasistencia injustificada": {"puntos": -3, "semaforo": "🟡 Medio"},
         "Salir sin permiso / no entrar": {"puntos": -10, "semaforo": "🔴 Grave"}
