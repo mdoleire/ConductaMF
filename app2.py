@@ -104,20 +104,23 @@ auth = Authenticate(
 # 2. MOTOR DE DATOS (CACHÉ Y OPTIMIZACIÓN)
 # ==========================================
 @st.cache_resource
-@st.cache_resource
 def conectar_gsheets():
-    """Conexión a Google Cloud usando Streamlit Secrets (Bóveda Segura)"""
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     
-    # Intenta leer desde la bóveda de Streamlit Cloud primero
-    if "gcp_service_account" in st.secrets:
-        creds_dict = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    else:
-        # Si no encuentra la bóveda (porque estás haciendo pruebas en tu PC local), usa el archivo
-        creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+    # 1. Si no encuentra la llave en la bóveda, detenemos todo y mostramos el diagnóstico
+    if "gcp_json" not in st.secrets:
+        st.error("🚨 ERROR CRÍTICO: La llave 'gcp_json' no existe en los secretos de Streamlit.")
+        st.write("Lo que Streamlit SÍ está viendo actualmente en tu bóveda es:", list(st.secrets.keys()))
+        st.stop()
         
-    return gspread.authorize(creds)
+    # 2. Si la encuentra, intentamos leerla
+    try:
+        creds_dict = json.loads(st.secrets["gcp_json"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"🚨 La llave 'gcp_json' existe, pero el texto JSON está mal formado o incompleto: {e}")
+        st.stop()
 
 @st.cache_data(ttl=300)
 def leer_datos(_client, nombre_archivo, nombre_pestaña=None):
