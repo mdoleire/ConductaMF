@@ -10,7 +10,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from streamlit_google_auth import Authenticate
 from datetime import datetime, timedelta
 import json
 from zoneinfo import ZoneInfo
@@ -71,34 +70,6 @@ PERIODOS_LECTIVOS = [
     {"nombre": "Periodo 3", "inicio": "2025-11-16", "fin": "2026-02-28"},
     {"nombre": "Periodo 4", "inicio": "2026-03-01", "fin": "2026-06-30"}
 ]
-
-# ==========================================
-# MOTOR DE AUTENTICACIÓN GOOGLE (NUEVO)
-# ==========================================
-
-# 1. Creamos el archivo de credenciales temporalmente en el servidor
-oauth_file = "oauth_credentials.json"
-if not os.path.exists(oauth_file):
-    oauth_data = {
-        "web": {
-            "client_id": st.secrets["google_oauth"]["client_id"],
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": [st.secrets["google_oauth"]["redirect_uri"]],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token"
-        }
-    }
-    with open(oauth_file, "w") as f:
-        json.dump(oauth_data, f)
-
-# 2. Inicializamos el autenticador pasándole el archivo y los parámetros correctos
-auth = Authenticate(
-    secret_credentials_path=oauth_file,
-    cookie_name="miraflores_auth_cookie",
-    cookie_key=st.secrets["google_oauth"]["cookie_secret"],
-    redirect_uri=st.secrets["google_oauth"]["redirect_uri"],
-    cookie_expiry_days=1
-)
 
 # ==========================================
 # 2. MOTOR DE DATOS (CACHÉ Y OPTIMIZACIÓN)
@@ -324,65 +295,59 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN
+# 5. LANZAMIENTO Y AUTENTICACIÓN (NATIVO)
 # ==========================================
 
 gc = conectar_gsheets()
 
-# Inicializamos el estado si no existe
-if 'autenticado' not in st.session_state:
-    st.session_state['autenticado'] = False
-
-if not st.session_state['autenticado']:
-    # Renderizamos el login de la librería (ella sola pone su interfaz)
-    auth.login()
+# 1. Comprobamos si el usuario ya inició sesión nativamente en Streamlit
+if not st.experimental_user.is_logged_in:
+    st.title("🔒 Acceso Seguro - Colegio Miraflores")
+    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
-    # Verificamos si la librería logró conectar la cuenta
-    if st.session_state.get("connected", False):
-        user_info = st.session_state.get("user_info", {})
-        correo_google = user_info.get("email", "")
-        nombre_google = user_info.get("name", "")
-        
-        # --- EL CANDADO DE DOMINIO ---
-        if not correo_google.endswith("@miraflores.edu.mx"):
-            st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-            auth.logout()
-            st.stop()
-        else:
-            df_s = leer_datos(gc, FILE_SEGURIDAD)
-            usuario_registrado = df_s[df_s['Usuario'] == correo_google]
-            
-            if not usuario_registrado.empty:
-                rol_asignado = usuario_registrado['Rol'].iloc[0]
-                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
-            else:
-                # Auto-registro inicial para personal del colegio
-                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-                ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
-                rol_asignado = "Docente"
-                nombre_mostrar = nombre_google
-                
-            st.session_state.update({
-                'autenticado': True, 
-                'usuario_actual': correo_google, 
-                'nombre_profesor': nombre_mostrar, 
-                'rol': rol_asignado
-            })
-            st.rerun()
+    # Este botón nativo redirige de inmediato a Google de forma segura
+    if st.button("Iniciar Sesión con Google", type="primary"):
+        st.login(provider="google")
 else:
-    # --- PANEL PRINCIPAL UNA VEZ LOGUEADO ---
-    col1, col2 = st.columns([8, 2])
-    col1.title("Panel de Conducta Institucional")
+    # Si ya inició sesión, extraemos sus datos directamente del contenedor de Streamlit
+    correo_google = st.experimental_user.email
+    nombre_google = st.experimental_user.name
     
-    if col2.button("Cerrar Sesión", type="secondary"):
-        auth.logout()
-        st.session_state.clear()
-        st.rerun()
-
-    rol = st.session_state['rol']
-    if rol == 'Director':
-        renderizar_panel_director(gc)
-    elif rol == 'Docente':
-        renderizar_panel_docente(gc, st.session_state['usuario_actual'], st.session_state['nombre_profesor'])
+    # --- EL CANDADO DE DOMINIO ---
+    if not correo_google.endswith("@miraflores.edu.mx"):
+        st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
+        if st.button("Regresar"):
+            st.logout()
+            st.rerun()
+        st.stop()
+        
     else:
-        st.error("Rol no reconocido. Contacte al administrador.")
+        # Verificamos los roles en la base de datos de seguridad
+        df_s = leer_datos(gc, FILE_SEGURIDAD)
+        usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+        
+        if not usuario_registrado.empty:
+            rol_asignado = usuario_registrado['Rol'].iloc[0]
+            nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+        else:
+            # Auto-registro en la base de datos si es del colegio
+            ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+            ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
+            rol_asignado = "Docente"
+            nombre_mostrar = nombre_google
+
+        # --- PANEL PRINCIPAL ---
+        col1, col2 = st.columns([8, 2])
+        col1.title("Panel de Conducta Institucional")
+        
+        if col2.button("Cerrar Sesión", type="secondary"):
+            st.logout()
+            st.rerun()
+
+        # Renderizado según el rol
+        if rol_asignado == 'Director':
+            renderizar_panel_director(gc)
+        elif rol_asignado == 'Docente':
+            renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+        else:
+            st.error("Rol no reconocido. Contacte al administrador.")
