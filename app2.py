@@ -427,10 +427,10 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 # FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# ESCENARIO A: No hay sesión en ningún lado -> Redirección Nativa Automática
+# ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso Oficial
 if not st.session_state.get("auth_email"):
-    st.title("🔒 Redirigiendo al Acceso Seguro...")
-    st.write("Por favor espera un momento mientras te conectamos con el inicio de sesión institucional de Google.")
+    st.title("🔒 Acceso Seguro - Colegio Miraflores")
+    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
     params = {
         "client_id": CLIENT_ID,
@@ -441,15 +441,8 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # --- SALTO MAESTRO DE URL NATIVO ---
-    # En lugar de un botón HTML que el iframe bloquee, usamos las query_params de Streamlit
-    # para inyectar la URL externa en la barra de navegación de la misma pestaña.
-    st.query_params.clear()
-    st.markdown(f'<meta http-serif="refresh" content="0; url={url_google_auth}">', unsafe_allow_html=True)
-    
-    # Respaldo por si el navegador bloquea los meta-refresh automáticos
-    st.write("Si no eres redirigido automáticamente en 3 segundos, utiliza el acceso de contingencia:")
-    st.link_button("🔑 Forzar Entrada en Pestaña Nueva", url_google_auth, type="secondary")
+    # Regresamos al único método autorizado por la arquitectura de Streamlit Cloud
+    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
     
  # ESCENARIO B: El usuario está plenamente autenticado
