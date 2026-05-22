@@ -119,7 +119,7 @@ def format_calif(val):
     return f"🔴 {val:.1f}"
 
 # ==========================================
-# 3. COMPONENTE ANALÍTICO MULTI-FILTRO
+#3. COMPONENTE ANALÍTICO MULTI-FILTRO
 # ==========================================
 def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
     if df.empty:
@@ -162,6 +162,7 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
 # ==========================================
 # 4. PANELES POR ROL
 # ==========================================
+
 def renderizar_panel_docente(gc, usuario, nombre_prof):
     st.header(f"🛡️ Panel Docente: {nombre_prof}")
     
@@ -201,9 +202,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             )
             
         with c_fal:
-            # Obtenemos solo el sub-diccionario de la categoría seleccionada
             dict_faltas = CATALOGO_SANCIONES[categoria]
-            # Creamos las etiquetas dinámicas con los puntos incluidos
             opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
             
             falta_seleccionada_visual = st.selectbox(
@@ -212,20 +211,15 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 key=f"falta_{st.session_state.form_reset}"
             )
             
-        # Extraemos el nombre original cortando antes del paréntesis
         falta_original = falta_seleccionada_visual.split(" (")[0]
-        
         obs = st.text_area("Observaciones adicionales:", key=f"obs_{st.session_state.form_reset}")
 
         if st.button("Guardar Registro", type="primary"):
             if alumnos_final:
-                # Extraemos datos del sub-diccionario
                 p = dict_faltas[falta_original]["puntos"]
                 s = dict_faltas[falta_original]["semaforo"]
                 
                 f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
-                
-                # Inyectamos la variable "categoria" real en lugar del texto fijo "Disciplina"
                 lote = [[f, nombre_prof, materia, grupo, al, categoria, falta_original, obs, p, s] for al in alumnos_final]
                 
                 doc = gc.open(FILE_REGISTROS)
@@ -240,7 +234,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 leer_todos_los_registros.clear()
                 
                 st.session_state.form_reset += 1
-                
                 st.success("✅ Registro institucional completado. Menú listo para nueva captura.")
                 st.rerun()
             else:
@@ -251,6 +244,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
     df_full = leer_todos_los_registros(gc)
     df_doc = df_full[df_full['Profesor'] == nombre_prof] if not df_full.empty else df_full
     mostrar_tablero_analitico(df_doc, "Mis Reportes", modo_descarga=False)
+
+
 def renderizar_panel_coordinador(gc, area_coordinador):
     st.subheader(f"Panel de Coordinación: Área de {area_coordinador}")
     
@@ -267,27 +262,21 @@ def renderizar_panel_coordinador(gc, area_coordinador):
     if df_filtrado.empty:
         st.warning(f"No hay materias registradas para el área: {area_coordinador}")
     else:
-        # Aquí pones la lógica de lo que el coordinador puede hacer
-        # Por ejemplo, ver el listado de su área:
         st.write(f"Viendo {len(df_filtrado)} registros de {area_coordinador}")
         st.dataframe(df_filtrado)
-        
-        # Si quieres que pueda capturar conducta como el director:
-        # Puedes copiar la lógica del selectbox de grupos y alumnos
-        # pero usando 'df_filtrado' en lugar de todas las materias.
+
 
 def renderizar_panel_directivo(gc):
     st.header("📊 Inteligencia Institucional (Directivo)")
     df_full = leer_todos_los_registros(gc)
     
     if df_full.empty:
-        st.info("Base de datos vacía."); return
+        st.info("Base de datos vacía.")
+        return
 
     # --- FILTROS DINÁMICOS EN CASCADA ---
     with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
         f1, f2, f3, f4 = st.columns(4)
-        
-        # Inicializamos el DataFrame que se irá recortando paso a paso
         df_f = df_full.copy()
         
         # 1. Filtro Grado
@@ -308,56 +297,132 @@ def renderizar_panel_directivo(gc):
         if sel_prof != "Todos":
             df_f = df_f[df_f['Profesor'].astype(str) == sel_prof]
             
-        # 4. Filtro Materia (Depende de Profesor y Grupo - Autoselección si es única)
+        # 4. Filtro Materia (Depende de Profesor y Grupo)
         mats = ["Todos"] + sorted(df_f['Materia'].astype(str).unique().tolist())
-        # Lógica de autoselección: si hay solo 1 materia (ej. ["Todos", "Física"]), selecciona el índice 1 ("Física")
         idx_mat = 1 if (len(mats) == 2 and sel_prof != "Todos") else 0
         sel_mat = f4.selectbox("Filtrar Materia:", mats, index=idx_mat)
         if sel_mat != "Todos":
             df_f = df_f[df_f['Materia'].astype(str) == sel_mat]
 
     mostrar_tablero_analitico(df_f, "Institucional")
+    
+# ==========================================
+# 5. LANZAMIENTO Y AUTENTICACIÓN (BLOQUE COMPLETO BLINDADO)
+# ==========================================
+import urllib.parse
+import requests
+
+# 1. Configuración de credenciales desde los Secrets
+CLIENT_ID = st.secrets["auth"]["google_client_id"]
+CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
+REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
+
+# Inicializamos estados de sesión si no existen
+if "auth_email" not in st.session_state:
+    st.session_state["auth_email"] = None
+if "auth_name" not in st.session_state:
+    st.session_state["auth_name"] = None
+
+# 2. CAPTURA DEL RETORNO DE GOOGLE (LECTURA EN TIEMPO REAL)
+parametros_url = st.query_params.to_dict()
+
+if "code" in parametros_url and not st.session_state["auth_email"]:
+    codigo_autorizacion = parametros_url["code"]
+    
+    # Intercambiamos el código por un token de acceso
+    token_url = "https://oauth2.googleapis.com/token"
+    token_data = {
+        "code": codigo_autorizacion,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
+    }
+    
+    try:
+        response = requests.post(token_url, data=token_data).json()
+        access_token = response.get("access_token")
+        
+        if access_token:
+            # Consultamos los datos del usuario usando el token obtenido
+            userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            user_info = requests.get(userinfo_url, headers=headers).json()
+            
+            # Guardamos la información en el estado de Streamlit
+            st.session_state["auth_email"] = user_info.get("email", "")
+            st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
+            
+            # Limpiamos los parámetros de la URL para dejar la dirección limpia
+            st.query_params.clear()
+            st.rerun()
+    except Exception as e:
+        st.error(f"Error en la conexión de seguridad: {e}")
+
+# ==========================================
+# FLUJO DE RENDERIZADO DE PANTALLA
+# ==========================================
+
+# ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón oficial de Google
+if not st.session_state["auth_email"]:
+    st.title("🔒 Acceso Seguro - Colegio Miraflores")
+    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
+    
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online"
+    }
+    url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+    
+    # Botón nativo que redirige rompiendo el iframe de Streamlit Cloud
+    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
+    st.stop()
 
 # ESCENARIO B: El usuario ya está autenticado de forma manual
-    else:
-        correo_google = st.session_state["auth_email"]
-        nombre_google = st.session_state["auth_name"]
+else:
+    correo_google = st.session_state["auth_email"]
+    nombre_google = st.session_state["auth_name"]
     
-        # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
-        # Comenta las siguientes 4 líneas cuando quieras volver al modo estricto del Colegio
-        rol_asignado = "Coordinador"
-        area_usuario = "Ciencias"  
-        nombre_mostrar = "Marco Pruebas"
-        usuario_registrado_mock = True # Evita que truene el validador de abajo
+    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
+    # Comenta las siguientes 5 líneas cuando quieras volver al modo estricto del Colegio
+    rol_asignado_mock = "Coordinador"
+    area_usuario_mock = "Ciencias"  
+    nombre_mostrar_mock = "Marco Pruebas"
+    usuario_registrado_mock = True 
     # ───────────────────────────────────────────────────
     
     # --- EL CANDADO DE DOMINIO ---
-    # Lo dejamos pasar con "pass" temporalmente para tus pruebas con Gmail personal
     if not correo_google.endswith("@miraflores.edu.mx"):
         pass 
         
-     try:
+    try:
         # Conectamos a la base de datos de Google Sheets
-           gc = conectar_gsheets()
+        gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         
-        # Generamos la variable CORRECTAMENTE para que Python la conozca
-         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+        # Inicializamos la variable de búsqueda
+        usuario_registrado = df_s[df_s['Usuario'] == correo_google]
         
-        # SI NO ESTAMOS EN MODO BYPASS, leemos los datos reales del Sheets
-        if 'usuario_registrado_mock' not in locals():
+        # Evaluation de Roles (Bypass vs Sheets Real)
+        if 'usuario_registrado_mock' in locals():
+            rol_asignado = rol_asignado_mock
+            area_usuario = area_usuario_mock
+            nombre_mostrar = nombre_mostrar_mock
+        else:
             if not usuario_registrado.empty:
                 rol_asignado = usuario_registrado['Rol'].iloc[0]
                 nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
-                # Capturamos el área desde el Excel (si no existe, por defecto es Ninguna)
                 area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
-        else:
+            else:
                 # Auto-registro en la base de datos si es personal nuevo válido
-            ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-            ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
-            rol_asignado = "Docente"
-            nombre_mostrar = nombre_google
-            area_usuario = "Ninguna"
+                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+                ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
+                rol_asignado = "Docente"
+                nombre_mostrar = nombre_google
+                area_usuario = "Ninguna"
 
         # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
@@ -371,7 +436,7 @@ def renderizar_panel_directivo(gc):
         # --- SELECTOR DE VISTA DINÁMICA (Para los de doble rol) ---
         vista_actual = rol_asignado
         
-        if rol_asignado in ['Director', 'Coordinador']:
+        if rol_asignado in ['Director', 'Coordinador', 'Directivo']:
             st.sidebar.title("⚙️ Configuración de Vista")
             opciones_vista = [f"Ver como {rol_asignado}", "Ver como Docente de Asignatura"]
             seleccion = st.sidebar.radio("Selecciona tu rol para esta sesión:", opciones_vista)
@@ -380,8 +445,8 @@ def renderizar_panel_directivo(gc):
                 vista_actual = 'Docente'
 
         # --- RENDERIZADO SEGÚN LA VISTA SELECCIONADA ---
-        if vista_actual == 'Director':
-            renderizar_panel_director(gc)
+        if vista_actual == 'Director' or vista_actual == 'Directivo':
+            renderizar_panel_directivo(gc)
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
         elif vista_actual == 'Docente':
