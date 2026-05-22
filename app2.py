@@ -338,8 +338,8 @@ if not st.session_state['autenticado']:
     st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
     
     if not st.session_state['autenticado']:
-    st.title("🔒 Acceso Seguro - Colegio Miraflores")
-    st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
+        st.title("🔒 Acceso Seguro - Colegio Miraflores")
+        st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
     
     # 1. Llamamos al método correcto para pintar el botón de login
     auth.login()
