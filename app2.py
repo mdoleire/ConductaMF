@@ -327,24 +327,17 @@ def renderizar_panel_directivo(gc):
 # 5. LANZAMIENTO Y AUTENTICACIÓN
 # ==========================================
 
-# Iniciamos la conexión a Google Sheets
 gc = conectar_gsheets()
 
+# Inicializamos el estado si no existe
 if 'autenticado' not in st.session_state:
     st.session_state['autenticado'] = False
 
 if not st.session_state['autenticado']:
-    # Quitamos el st.title y st.write manuales porque auth.login() ya los maneja internamente
+    # Renderizamos el login de la librería (ella sola pone su interfaz)
     auth.login()
     
-    if st.session_state.get("connected", False):
-        user_info = st.session_state.get("user_info", {})
-        # ... (todo el resto de tu código de validación de correo sigue exactamente igual)
-    
-    # 1. Llamamos al método correcto para pintar el botón de login
-    auth.login()
-    
-    # 2. Si el usuario se conecta con éxito, la librería activa st.session_state['connected']
+    # Verificamos si la librería logró conectar la cuenta
     if st.session_state.get("connected", False):
         user_info = st.session_state.get("user_info", {})
         correo_google = user_info.get("email", "")
@@ -363,34 +356,7 @@ if not st.session_state['autenticado']:
                 rol_asignado = usuario_registrado['Rol'].iloc[0]
                 nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
             else:
-                # Registro automático si es del Miraflores pero no estaba en la lista
-                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-                ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
-                rol_asignado = "Docente"
-                nombre_mostrar = nombre_google
-                
-            st.session_state.update({
-                'autenticado': True, 
-                'usuario_actual': correo_google, 
-                'nombre_profesor': nombre_mostrar, 
-                'rol': rol_asignado
-            })
-            st.success(f"¡Bienvenido, {nombre_mostrar}!")
-            st.rerun()
-        
-        # --- EL CANDADO DE DOMINIO ---
-        if not correo_google.endswith("@miraflores.edu.mx"):
-            st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-            auth.logout()
-            st.stop()
-        else:
-            df_s = leer_datos(gc, FILE_SEGURIDAD)
-            usuario_registrado = df_s[df_s['Usuario'] == correo_google]
-            
-            if not usuario_registrado.empty:
-                rol_asignado = usuario_registrado['Rol'].iloc[0]
-                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
-            else:
+                # Auto-registro inicial para personal del colegio
                 ws_seg = gc.open(FILE_SEGURIDAD).sheet1
                 ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
                 rol_asignado = "Docente"
@@ -404,10 +370,11 @@ if not st.session_state['autenticado']:
             })
             st.rerun()
 else:
-    # Si ya está autenticado, mostramos los paneles correspondientes
+    # --- PANEL PRINCIPAL UNA VEZ LOGUEADO ---
     col1, col2 = st.columns([8, 2])
     col1.title("Panel de Conducta Institucional")
-    if col2.button("Cerrar Sesión"):
+    
+    if col2.button("Cerrar Sesión", type="secondary"):
         auth.logout()
         st.session_state.clear()
         st.rerun()
