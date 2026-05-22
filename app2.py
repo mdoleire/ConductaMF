@@ -393,27 +393,27 @@ else:
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
         
-       if not usuario_registrado.empty:
-            rol_asignado = usuario_registrado['Rol'].iloc[0]
-            nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
-            # --- NUEVA LÍNEA: Capturamos el área ---
-            area_usuario = usuario_registrado['Area'].iloc[0] 
-        else:
-            # Registro automático para nuevos (puedes dejar el área vacía o "Ninguna")
-            ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
-            rol_asignado = "Docente"
-            nombre_mostrar = nombre_google
-            area_usuario = "Ninguna"
+    if not usuario_registrado.empty:
+        rol_asignado = usuario_registrado['Rol'].iloc[0]
+        nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+        # --- NUEVA LÍNEA: Capturamos el área ---
+        area_usuario = usuario_registrado['Area'].iloc[0] 
+    else:
+        # Registro automático para nuevos (puedes dejar el área vacía o "Ninguna")
+        ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
+        rol_asignado = "Docente"
+        nombre_mostrar = nombre_google
+        area_usuario = "Ninguna"
 
         # ... (código del medio igual) ...
 
         # --- ACTUALIZAR EL RENDERIZADO SEGÚN EL ROL ---
-        if rol_asignado == 'Director':
-            renderizar_panel_director(gc)
-        elif rol_asignado == 'Coordinador':
-            # Llamamos a la nueva función de coordinador pasándole su área
-            renderizar_panel_coordinador(gc, area_usuario)
-        elif rol_asignado == 'Docente':
-            renderizar_panel_docente(gc, correo_google, nombre_mostrar)
-        else:
-            st.error("Rol no reconocido. Contacte al administrador.")
+    if rol_asignado == 'Director':
+        renderizar_panel_director(gc)
+    elif rol_asignado == 'Coordinador':
+        # Llamamos a la nueva función de coordinador pasándole su área
+        renderizar_panel_coordinador(gc, area_usuario)
+    elif rol_asignado == 'Docente':
+        renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+    else:
+        st.error("Rol no reconocido. Contacte al administrador.")
