@@ -295,22 +295,22 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (NATIVO CORREGIDO)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (UNIVERSAL)
 # ==========================================
 
 gc = conectar_gsheets()
 
-# 1. Comprobamos si el usuario ya inició sesión de forma nativa (Usando st.user)
-if not st.user.is_logged_in:
+# 1. Verificación universal: Si no hay un correo en st.user, no hay sesión activa
+if not st.user or not getattr(st.user, "email", None):
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
     if st.button("Iniciar Sesión con Google", type="primary"):
         st.login(provider="google")
 else:
-    # 2. Extraemos los datos directamente del contenedor oficial st.user
+    # 2. Extraemos los datos de forma segura
     correo_google = st.user.email
-    nombre_google = st.user.name
+    nombre_google = getattr(st.user, "name", "Profesor Miraflores")
     
     # --- EL CANDADO DE DOMINIO ---
     if not correo_google.endswith("@miraflores.edu.mx"):
