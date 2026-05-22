@@ -334,12 +334,12 @@ if 'autenticado' not in st.session_state:
     st.session_state['autenticado'] = False
 
 if not st.session_state['autenticado']:
-    st.title("🔒 Acceso Seguro - Colegio Miraflores")
-    st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
+    # Quitamos el st.title y st.write manuales porque auth.login() ya los maneja internamente
+    auth.login()
     
-    if not st.session_state['autenticado']:
-        st.title("🔒 Acceso Seguro - Colegio Miraflores")
-        st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
+    if st.session_state.get("connected", False):
+        user_info = st.session_state.get("user_info", {})
+        # ... (todo el resto de tu código de validación de correo sigue exactamente igual)
     
     # 1. Llamamos al método correcto para pintar el botón de login
     auth.login()
