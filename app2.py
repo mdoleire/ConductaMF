@@ -428,6 +428,7 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 # ==========================================
 
 # ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso
+# ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso
 if not st.session_state.get("auth_email"):
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
@@ -441,17 +442,17 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # --- CAMBIO OFICIAL: BOTÓN HTML CON ROMPE-IFRAME (_top) ---
-    # Esto obliga al navegador a abrir Google en la misma pestaña exacta
-    st.markdown(
-        f'<a href="{url_google_auth}" target="_top" style="text-decoration:none;">'
-        f'<div style="background-color:#FF4B4B; color:white; padding:10px 24px; text-align:center; '
-        f'border-radius:8px; font-weight:bold; display:inline-block; cursor:pointer; '
-        f'box-shadow: 0px 2px 4px rgba(0,0,0,0.1); font-family: sans-serif;">'
-        f'🔑 Iniciar Sesión con Google'
-        f'</div></a>', 
-        unsafe_allow_html=True
-    )
+    # --- LA SOLUCIÓN MAESTRA: INYECCIÓN DE REDIRECCIÓN POR JAVASCRIPT ---
+    # Creamos un botón normal de Streamlit, y si el usuario le da clic, ejecutamos el salto de pestaña
+    if st.button("🔑 Iniciar Sesión con Google", type="primary"):
+        js_redireccion = f"""
+        <script>
+            window.top.location.href = "{url_google_auth}";
+        </script>
+        """
+        st.components.v1.html(js_redireccion, height=0, width=0)
+        st.stop()
+        
     st.stop()
 
 # ESCENARIO B: El usuario está plenamente autenticado
