@@ -295,33 +295,34 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (UNIVERSAL)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (NATIVO FINAL)
 # ==========================================
 
-gc = conectar_gsheets()
-
-# 1. Verificación universal: Si no hay un correo en st.user, no hay sesión activa
-if not st.user or not getattr(st.user, "email", None):
+# 1. Comprobamos de forma segura si hay un usuario firmado
+if not st.user.get("is_logged_in", False):
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
     if st.button("Iniciar Sesión con Google", type="primary"):
         st.login(provider="google")
 else:
-    # 2. Extraemos los datos de forma segura
-    correo_google = st.user.email
-    nombre_google = getattr(st.user, "name", "Profesor Miraflores")
+    # Conectamos a Google Sheets únicamente cuando ya estamos seguros de que hay sesión
+    gc = conectar_gsheets()
+    
+    # 2. Extraemos los datos del diccionario st.user de forma segura
+    correo_google = st.user.get("email", "")
+    nombre_google = st.user.get("name", "Profesor Miraflores")
     
     # --- EL CANDADO DE DOMINIO ---
     if not correo_google.endswith("@miraflores.edu.mx"):
         st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
-        if st.button("Regresar"):
+        if st.button("Regresar/Salir"):
             st.logout()
             st.rerun()
         st.stop()
         
     else:
-        # Verificamos los roles en la base de datos de seguridad
+        # 3. Validación de Roles contra Google Sheets
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
         
@@ -329,13 +330,13 @@ else:
             rol_asignado = usuario_registrado['Rol'].iloc[0]
             nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         else:
-            # Auto-registro en la base de datos si es del colegio
+            # Auto-registro en la base de datos si es del colegio pero entra por primera vez
             ws_seg = gc.open(FILE_SEGURIDAD).sheet1
             ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
             rol_asignado = "Docente"
             nombre_mostrar = nombre_google
 
-        # --- PANEL PRINCIPAL ---
+        # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
         
@@ -343,7 +344,7 @@ else:
             st.logout()
             st.rerun()
 
-        # Renderizado según el rol
+        # Renderizado de acuerdo al rol obtenido
         if rol_asignado == 'Director':
             renderizar_panel_director(gc)
         elif rol_asignado == 'Docente':
