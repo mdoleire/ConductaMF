@@ -404,7 +404,7 @@ else:
     nombre_google = st.session_state["auth_name"]
     
     # --- EL CANDADO DE DOMINIO ---
-    if not correo_google.endswith("@miraflores.edu.mx"):
+    if not correo_google.endswith("@miraflores.edu.mx" or correo_google == "marcodoleire@gmail.com"):
         st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
         if st.button("Regresar / Salir"):
             st.session_state.clear()
