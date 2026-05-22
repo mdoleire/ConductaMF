@@ -295,23 +295,22 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (NATIVO)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (NATIVO CORREGIDO)
 # ==========================================
 
 gc = conectar_gsheets()
 
-# 1. Comprobamos si el usuario ya inició sesión nativamente en Streamlit
-if not st.experimental_user.is_logged_in:
+# 1. Comprobamos si el usuario ya inició sesión de forma nativa (Usando st.user)
+if not st.user.is_logged_in:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
-    # Este botón nativo redirige de inmediato a Google de forma segura
     if st.button("Iniciar Sesión con Google", type="primary"):
         st.login(provider="google")
 else:
-    # Si ya inició sesión, extraemos sus datos directamente del contenedor de Streamlit
-    correo_google = st.experimental_user.email
-    nombre_google = st.experimental_user.name
+    # 2. Extraemos los datos directamente del contenedor oficial st.user
+    correo_google = st.user.email
+    nombre_google = st.user.name
     
     # --- EL CANDADO DE DOMINIO ---
     if not correo_google.endswith("@miraflores.edu.mx"):
