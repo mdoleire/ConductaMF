@@ -323,7 +323,7 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
     
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (PERSISTENCIA TOTAL)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (DOBLE CANDADO DE PERSISTENCIA)
 # ==========================================
 import urllib.parse
 import requests
@@ -333,17 +333,29 @@ CLIENT_ID = st.secrets["auth"]["google_client_id"]
 CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
-# 2. INTENTO DE RECUPERACIÓN POR COOKIE (F5 / REFRESH)
-# Si el session_state se borró pero Streamlit conserva la cookie de Google activa
-if "auth_email" not in st.session_state or not st.session_state["auth_email"]:
+# Inicializamos estados de sesión si no existen
+if "auth_email" not in st.session_state:
+    st.session_state["auth_email"] = None
+if "auth_name" not in st.session_state:
+    st.session_state["auth_name"] = None
+
+# 2. CAPTURA DE PARÁMETROS EN LA URL
+parametros_url = st.query_params.to_dict()
+
+# --- RESPALDO DE EMERGENCIA F5 ---
+# Si perdimos el session_state pero el parámetro persistente sigue en la URL, lo recuperamos
+if not st.session_state["auth_email"] and "_p_email" in parametros_url:
+    st.session_state["auth_email"] = parametros_url["_p_email"]
+    st.session_state["auth_name"] = parametros_url.get("_p_name", "Profesor Miraflores")
+
+# --- INTENTO DE RECUPERACIÓN POR COOKIE NATIVA ---
+if not st.session_state["auth_email"]:
     if hasattr(st, "user") and st.user and st.user.get("is_logged_in", False):
         st.session_state["auth_email"] = st.user.get("email", "")
         st.session_state["auth_name"] = st.user.get("name", "Profesor Miraflores")
 
-# 3. CAPTURA DEL RETORNO DE GOOGLE (PRIMER INGRESO)
-parametros_url = st.query_params.to_dict()
-
-if "code" in parametros_url and not st.session_state.get("auth_email"):
+# 3. PROCESAMIENTO DEL RETORNO DE GOOGLE (PRIMER INGRESO)
+if "code" in parametros_url and not st.session_state["auth_email"]:
     codigo_autorizacion = parametros_url["code"]
     
     token_url = "https://oauth2.googleapis.com/token"
@@ -364,19 +376,26 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers).json()
             
-            # Guardamos la información en el estado de la sesión
-            st.session_state["auth_email"] = user_info.get("email", "")
-            st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
+            # Guardamos los datos reales del usuario
+            email_capturado = user_info.get("email", "")
+            name_capturado = user_info.get("name", "Profesor Miraflores")
             
-            # Forzamos a Streamlit a registrar al usuario en su cookie interna de auth
+            st.session_state["auth_email"] = email_capturado
+            st.session_state["auth_name"] = name_capturado
+            
+            # Intentamos escribir la cookie nativa de Streamlit si la llave existe
             if hasattr(st, "login"):
                 try:
                     st.login(provider="google")
                 except:
                     pass
             
+            # Dejamos un parámetro de persistencia sutil en la URL para salvar el F5
             st.query_params.clear()
+            st.query_params["_p_email"] = email_capturado
+            st.query_params["_p_name"] = name_capturado
             st.rerun()
+            
     except Exception as e:
         st.error(f"Error en la conexión de seguridad: {e}")
 
@@ -384,8 +403,8 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
 # FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso
-if not st.session_state.get("auth_email"):
+# ESCENARIO A: No hay sesión válida detectada
+if not st.session_state["auth_email"]:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
@@ -401,32 +420,26 @@ if not st.session_state.get("auth_email"):
     st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
 
-# ESCENARIO B: Sesión activa y detectada correctamente
+# ESCENARIO B: El usuario está plenamente autenticado
 else:
     correo_google = st.session_state["auth_email"]
     nombre_google = st.session_state["auth_name"]
     
     # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
-    # Comenta las siguientes 5 líneas cuando quieras volver al modo estricto del Colegio
     rol_asignado_mock = "Coordinador"
     area_usuario_mock = "Humanidades"  
     nombre_mostrar_mock = "Marco Pruebas"
     usuario_registrado_mock = True 
     # ───────────────────────────────────────────────────
     
-    # --- EL CANDADO DE DOMINIO ---
     if not correo_google.endswith("@miraflores.edu.mx"):
         pass 
         
     try:
-        # Conectamos a la base de datos de Google Sheets
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
-        
-        # Inicializamos la variable de búsqueda
         usuario_registrado = df_s[df_s['Usuario'] == correo_google] if not df_s.empty else df_s
         
-        # Evaluación de Roles (Bypass vs Sheets Real)
         if 'usuario_registrado_mock' in locals():
             rol_asignado = rol_asignado_mock
             area_usuario = area_usuario_mock
@@ -447,7 +460,7 @@ else:
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
         
-        # El único botón oficial de cerrar sesión (Línea 442 aproximada)
+        # Botón de Cerrar Sesión: Limpia URL, memoria y cookies por completo
         if col2.button("Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
