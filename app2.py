@@ -337,14 +337,46 @@ if not st.session_state['autenticado']:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
     
-    # Esto dibuja automáticamente el botón de "Sign in with Google"
-    auth.check_authenticity()
+    if not st.session_state['autenticado']:
+    st.title("🔒 Acceso Seguro - Colegio Miraflores")
+    st.write("Para ingresar al panel de conducta, por favor autentícate con tu cuenta institucional de Google.")
     
-    # Si el usuario inicia sesión en Google exitosamente:
+    # 1. Llamamos al método correcto para pintar el botón de login
+    auth.login()
+    
+    # 2. Si el usuario se conecta con éxito, la librería activa st.session_state['connected']
     if st.session_state.get("connected", False):
         user_info = st.session_state.get("user_info", {})
         correo_google = user_info.get("email", "")
         nombre_google = user_info.get("name", "")
+        
+        # --- EL CANDADO DE DOMINIO ---
+        if not correo_google.endswith("@miraflores.edu.mx"):
+            st.error("❌ Acceso denegado. Solo se permiten cuentas del dominio @miraflores.edu.mx")
+            auth.logout()
+            st.stop()
+        else:
+            df_s = leer_datos(gc, FILE_SEGURIDAD)
+            usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+            
+            if not usuario_registrado.empty:
+                rol_asignado = usuario_registrado['Rol'].iloc[0]
+                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+            else:
+                # Registro automático si es del Miraflores pero no estaba en la lista
+                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+                ws_seg.append_row([correo_google, "OAuth_Google", nombre_google, "Docente"])
+                rol_asignado = "Docente"
+                nombre_mostrar = nombre_google
+                
+            st.session_state.update({
+                'autenticado': True, 
+                'usuario_actual': correo_google, 
+                'nombre_profesor': nombre_mostrar, 
+                'rol': rol_asignado
+            })
+            st.success(f"¡Bienvenido, {nombre_mostrar}!")
+            st.rerun()
         
         # --- EL CANDADO DE DOMINIO ---
         if not correo_google.endswith("@miraflores.edu.mx"):
