@@ -249,22 +249,27 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 def renderizar_panel_coordinador(gc, area_coordinador):
     st.subheader(f"Panel de Coordinación: Área de {area_coordinador}")
     
-    # 1. Leer todas las materias
-    df_materias = leer_datos(gc, FILE_MATERIAS)
+    # 1. CORRECCIÓN CLAVE: Usamos FILE_ASIGNACIONES en lugar de FILE_MATERIAS
+    df_materias = leer_datos(gc, FILE_ASIGNACIONES)
     
-    # 2. FILTRO CLAVE: Solo mostrar lo que pertenece al área del coordinador
+    # 2. FILTRO DE DEPARTAMENTO: Buscamos las materias que corresponden al área
     if 'Area' in df_materias.columns:
         df_filtrado = df_materias[df_materias['Area'] == area_coordinador]
     else:
-        st.error("No se encontró la columna 'Area' en el archivo de materias.")
+        st.error("No se encontró la columna 'Area' en el archivo de asignaciones.")
         return
 
     if df_filtrado.empty:
         st.warning(f"No hay materias registradas para el área: {area_coordinador}")
     else:
-        st.write(f"Viendo {len(df_filtrado)} registros de {area_coordinador}")
-        st.dataframe(df_filtrado)
-
+        st.write(f"Viendo {len(df_filtrado)} registros asignados a tu departamento:")
+        
+        # Mostramos una tabla limpia con las columnas principales para el coordinador
+        columnas_visibles = [col for col in ['Materia', 'Grupo', 'Nombre_Profesor', 'Usuario_Profesor'] if col in df_filtrado.columns]
+        if columnas_visibles:
+            st.dataframe(df_filtrado[columnas_visibles], use_container_width=True)
+        else:
+            st.dataframe(df_filtrado, use_container_width=True)
 
 def renderizar_panel_directivo(gc):
     st.header("📊 Inteligencia Institucional (Directivo)")
