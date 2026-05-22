@@ -295,7 +295,7 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
 
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (PASARELA MANUAL COLEGIO MIRAFLORES)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (PASARELA MANUAL CORREGIDA)
 # ==========================================
 import urllib.parse
 import requests
@@ -311,13 +311,14 @@ if "auth_email" not in st.session_state:
 if "auth_name" not in st.session_state:
     st.session_state["auth_name"] = None
 
-# 2. CAPTURA DEL RETORNO DE GOOGLE: Verificar si Google nos está regresando un código en la URL
-query_params = st.query_params
+# 2. CAPTURA DEL RETORNO DE GOOGLE (LECTURA EN TIEMPO REAL)
+# Convertimos los query_params a un diccionario estándar de Python
+parametros_url = st.query_params.to_dict()
 
-if "code" in query_params and not st.session_state["auth_email"]:
-    codigo_autorizacion = query_params["code"]
+if "code" in parametros_url and not st.session_state["auth_email"]:
+    codigo_autorizacion = parametros_url["code"]
     
-    # Intercambiamos el código por un token de acceso de forma manual
+    # Intercambiamos el código por un token de acceso
     token_url = "https://oauth2.googleapis.com/token"
     token_data = {
         "code": codigo_autorizacion,
@@ -341,8 +342,9 @@ if "code" in query_params and not st.session_state["auth_email"]:
             st.session_state["auth_email"] = user_info.get("email", "")
             st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
             
-            # Limpiamos el código de la URL para dejar la dirección limpia
+            # Limpiamos los parámetros de la URL para dejar la dirección limpia y evitar bucles
             st.query_params.clear()
+            st.status("🔑 Autenticación exitosa. Redireccionando...")
             st.rerun()
     except Exception as e:
         st.error(f"Error en la conexión de seguridad: {e}")
@@ -352,12 +354,10 @@ if "code" in query_params and not st.session_state["auth_email"]:
 # ==========================================
 
 # ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón de acceso manual
-# ESCENARIO A: El usuario no ha iniciado sesión -> Mostramos botón de acceso manual
 if not st.session_state["auth_email"]:
     st.title("🔒 Acceso Seguro - Colegio Miraflores")
     st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
     
-    # Construimos la URL de Google a mano con los alcances correctos
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -367,7 +367,6 @@ if not st.session_state["auth_email"]:
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # CAMBIAMOS target="_self" por target="_top" PARA ROMPER EL IFRAME DE STREAMLIT
     st.markdown(
         f'<a href="{url_google_auth}" target="_top" style="text-decoration:none;">'
         f'<div style="background-color:#FF4B4B;color:white;padding:10px 20px;text-align:center;'
@@ -393,7 +392,6 @@ else:
         st.stop()
         
     else:
-        # Conectamos a la base de datos de Google Sheets
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
@@ -402,13 +400,11 @@ else:
             rol_asignado = usuario_registrado['Rol'].iloc[0]
             nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         else:
-            # Auto-registro en la base de datos si es personal del colegio válido
             ws_seg = gc.open(FILE_SEGURIDAD).sheet1
             ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente"])
             rol_asignado = "Docente"
             nombre_mostrar = nombre_google
 
-        # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
         
@@ -417,7 +413,6 @@ else:
             st.query_params.clear()
             st.rerun()
 
-        # Despliegue de paneles según el rol asignado
         if rol_asignado == 'Director':
             renderizar_panel_director(gc)
         elif rol_asignado == 'Docente':
