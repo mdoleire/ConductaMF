@@ -391,12 +391,12 @@ else:
     correo_google = st.session_state["auth_email"]
     nombre_google = st.session_state["auth_name"]
     
-    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
-    # Comenta las siguientes 5 líneas cuando quieras volver al modo estricto del Colegio
-    rol_asignado_mock = "Coordinador"
-    area_usuario_mock = "Ciencias"  
-    nombre_mostrar_mock = "Marco Pruebas"
-    usuario_registrado_mock = True 
+    # 🚨 === ¡SIMULADOR APAGADO! === 🚨
+    # Hemos comentado las líneas de prueba para que lea tu Sheets Real de Humanidades
+    # rol_asignado_mock = "Coordinador"
+    # area_usuario_mock = "Ciencias"  
+    # nombre_mostrar_mock = "Marco Pruebas"
+    # usuario_registrado_mock = True 
     # ───────────────────────────────────────────────────
     
     # --- EL CANDADO DE DOMINIO ---
@@ -411,7 +411,7 @@ else:
         # Inicializamos la variable de búsqueda
         usuario_registrado = df_s[df_s['Usuario'] == correo_google]
         
-        # Evaluation de Roles (Bypass vs Sheets Real)
+        # Evaluación de Roles desde el Sheets Real
         if 'usuario_registrado_mock' in locals():
             rol_asignado = rol_asignado_mock
             area_usuario = area_usuario_mock
@@ -455,6 +455,7 @@ else:
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
         elif vista_actual == 'Docente':
+            # Pasamos tu correo real para que busque tu materia de Historia del archivo 2
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
 
     except Exception as e:
