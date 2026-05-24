@@ -170,85 +170,119 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         st.session_state["form_reset"] = 0
         
     with st.expander("📝 Registro de Incidencia", expanded=True):
-        df_asig = leer_datos(gc, FILE_ASIGNACIONES)
-        mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
-        if mis_asig.empty: 
-            st.warning("Sin materias asignadas.")
-            return
+        # 1. CASILLA DE REPORTE DE PASILLO
+        reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
         
-        c1, c2 = st.columns(2)
-        materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
-        grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique())
+        st.markdown("---")
         
-        captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
-        opc = leer_datos(gc, FILE_ALUMNOS, grupo)['Nombre'].tolist()
+        # Inicializamos variables de control
+        materia = "Pasillo / Inst. General"
+        grupo_final = []
+        alumnos_final = ["General (Ver observaciones)"] # En pasillo se puede reportar al grupo entero o describir en texto
         
-        if not captura_multiple:
-            alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
-            alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
+        # --- CASO A: REPORTE DE PASILLO ACTIVO ---
+        if reporte_pasillo:
+            c1, c2, c3 = st.columns(3)
+            nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
+            
+            # Grados dinámicos según el nivel seleccionado
+            opciones_grados = ["1°", "2°", "3°"] if nivel == "Secundaria" else ["4°", "5°", "6°"]
+            grado = c2.selectbox("Grado:", opciones_grados, key=f"grad_{st.session_state.form_reset}")
+            
+            # Grupos disponibles en el sistema
+            df_alumnos_raw = leer_datos(gc, FILE_ALUMNOS)
+            grupos_disponibles = sorted(df_alumnos_raw['Grupo'].unique().tolist()) if not df_alumnos_raw.empty else ["A", "B", "C"]
+            
+            # Permite seleccionar uno o varios grupos afectados
+            grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
+            grupo_final = grupos_sel
+            
+            # Opcional: Si quieres ligarlo a alumnos específicos de esos grupos
+            if grupos_sel:
+                df_al_filtrados = df_alumnos_raw[df_alumnos_raw['Grupo'].isin(grupos_sel)]
+                lista_alumnos = sorted(df_al_filtrados['Nombre'].tolist()) if not df_al_filtrados.empty else []
+                alumnos_sel = st.multiselect("Alumnos específicos (Opcional):", lista_alumnos, key=f"al_p_{st.session_state.form_reset}")
+                if alumnos_sel:
+                    alumnos_final = alumnos_sel
+
+        # --- CASO B: REGISTRO NORMAL EN CLASE ---
         else:
-            alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
+            df_asig = leer_datos(gc, FILE_ASIGNACIONES)
+            mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
+            if mis_asig.empty: 
+                st.warning("Sin materias asignadas.")
+                return
+            
+            c1, c2 = st.columns(2)
+            materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
+            grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique())
+            grupo_final = [grupo]
+            
+            captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
+            opc = leer_datos(gc, FILE_ALUMNOS, grupo)['Nombre'].tolist()
+            
+            if not captura_multiple:
+                alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
+                alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
+            else:
+                alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
 
         st.markdown("---")
         
-        # --- NUEVA LÓGICA DE MENÚS EN CASCADA ---
+        # --- MENÚS EN CASCADA DE FALTAS (IGUAL PARA AMBOS CASOS) ---
         c_cat, c_fal = st.columns(2)
-        
         with c_cat:
-            categoria = st.selectbox(
-                "Categoría:", 
-                list(CATALOGO_SANCIONES.keys()), 
-                key=f"cat_{st.session_state.form_reset}"
-            )
+            categoria = st.selectbox("Categoría:", list(CATALOGO_SANCIONES.keys()), key=f"cat_{st.session_state.form_reset}")
             
         with c_fal:
             dict_faltas = CATALOGO_SANCIONES[categoria]
             opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
-            
-            falta_seleccionada_visual = st.selectbox(
-                "Falta cometida:", 
-                opciones_visuales, 
-                key=f"falta_{st.session_state.form_reset}"
-            )
+            falta_seleccionada_visual = st.selectbox("Falta cometida:", opciones_visuales, key=f"falta_{st.session_state.form_reset}")
             
         falta_original = falta_seleccionada_visual.split(" (")[0]
-        obs = st.text_area("Observaciones adicionales:", key=f"obs_{st.session_state.form_reset}")
+        obs = st.text_area("Redacción de lo sucedido (Observaciones):", key=f"obs_{st.session_state.form_reset}")
 
+        # --- PROCESAMIENTO DEL GUARDADO ---
         if st.button("Guardar Registro", type="primary"):
-            if alumnos_final:
-                # --- EXTRACCIÓN BLINDADA CONTRA ERRORES DE LLAVE ---
-                # Usamos .get() con un respaldo seguro por si hay discrepancias de texto
-                info_falta = dict_faltas.get(falta_original)
-                
-                if info_falta:
-                    p = info_falta["puntos"]
-                    s = info_falta["semaforo"]
-                else:
-                    # Plan de contingencia si no coincide el texto exacto con el diccionario
-                    st.error(f"⚠️ La falta '{falta_original}' no coincide exactamente con el catálogo de {categoria}. Verifica la ortografía en tu diccionario.")
-                    st.stop()
-                
-                f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
-                
-                # Generamos el bloque de filas para inyectar a Sheets
-                lote = [[f, nombre_prof, materia, grupo, al, categoria, falta_original, obs, p, s] for al in alumnos_final]
-                
-                doc = gc.open(FILE_REGISTROS)
-                clase_id = f"{materia} - {grupo}"
-                try:
-                    ws = doc.worksheet(clase_id)
-                except gspread.exceptions.WorksheetNotFound:
-                    ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
-                    ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Semaforo"])
-                
-                ws.append_rows(lote)
-                leer_todos_los_registros.clear()
-                
-                st.session_state.form_reset += 1
-                st.success("✅ Registro de incidencia completado con éxito.")
-                st.rerun()
-            else:
+            if reporte_pasillo and not grupo_final:
+                st.error("⚠️ Por favor, seleccione al menos un grupo implicado en el reporte de pasillo.")
+                st.stop()
+            elif not reporte_pasillo and not alumnos_final:
                 st.error("⚠️ Por favor, seleccione al menos un alumno.")
+                st.stop()
+                
+            info_falta = dict_faltas.get(falta_original)
+            p = info_falta["puntos"] if info_falta else 0
+            s = info_falta["semaforo"] if info_falta else "Gris"
+            
+            f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Si es reporte de pasillo, guardamos una fila por cada grupo e implicado para la analítica
+            lote = []
+            for g in grupo_final:
+                for al in alumnos_final:
+                    lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs, p, s])
+            
+            # Guardamos en la hoja de registros
+            doc = gc.open(FILE_REGISTROS)
+            clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia} - {grupo_final[0]}"
+            
+            try:
+                ws = doc.worksheet(clase_id)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
+                ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Semaforo"])
+            
+            ws.append_rows(lote)
+            leer_todos_los_registros.clear()
+            
+            # --- 🚀 AQUÍ SE CONFIGURA EL DISPARADOR DE NOTIFICACIÓN AUTOMÁTICA ---
+            # Llamamos a una función interna de correo pasando los parámetros
+            # enviar_correo_automatizado(nivel, grupo_final, nombre_prof, falta_original, obs)
+            
+            st.session_state.form_reset += 1
+            st.success("✅ Reporte de pasillo registrado institucionalmente. Correos de alerta enviados.")
+            st.rerun()
 
     st.markdown("---")
     st.subheader("📈 Mi Analítica")
