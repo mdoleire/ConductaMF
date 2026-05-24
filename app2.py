@@ -369,7 +369,35 @@ def renderizar_panel_directivo(gc):
         st.info("Base de datos vacía.")
         return
 
-    # --- FILTROS DINÁMICOS EN CASCADA ---
+    # --- 🚨 SISTEMA DE NOTIFICACIONES DE PASILLO (POP-UPS Y ALERTAS) 🚨 ---
+    # Filtramos los reportes que tengan la etiqueta de pasillo
+    df_pasillo = df_full[df_full['Materia'] == "Pasillo / Inst. General"]
+    
+    if not df_pasillo.empty:
+        # Convertimos la columna Fecha a datetime para saber si son recientes
+        df_pasillo['Fecha_DT'] = pd.to_datetime(df_pasillo['Fecha'], errors='coerce')
+        # Filtramos solo los de las últimas 24 horas (o del día de hoy)
+        hoy = datetime.now(ZoneInfo("America/Mexico_City"))
+        limite_tiempo = hoy - timedelta(days=1) # Últimas 24 horas
+        
+        alertas_recientes = df_pasillo[df_pasillo['Fecha_DT'] >= limite_tiempo.replace(tzinfo=None)]
+        
+        if not alertas_recientes.empty:
+            # 1. EL POP-UP (Toast flotante en la esquina)
+            st.toast(f"🚨 Tienes {len(alertas_recientes)} reporte(s) de pasillo reciente(s).", icon="🚨")
+            
+            # 2. LA BANDEJA DE ALERTA VISUAL
+            st.warning(f"🔔 **ALERTAS PRIORITARIAS:** Se han registrado {len(alertas_recientes)} incidencias fuera de clase en las últimas 24 horas.")
+            with st.expander("👀 Ver Detalles de Reportes de Pasillo", expanded=True):
+                # Mostramos la tabla limpia solo con lo que le importa al director
+                cols_alerta = ["Fecha", "Profesor", "Grupo", "Alumno", "Falta", "Observaciones"]
+                # Solo tomamos las columnas que sí existan para no romper nada
+                cols_validas = [c for c in cols_alerta if c in alertas_recientes.columns]
+                
+                st.dataframe(alertas_recientes[cols_validas].sort_values(by="Fecha", ascending=False), use_container_width=True)
+    # -----------------------------------------------------------------------
+
+    # --- FILTROS DINÁMICOS EN CASCADA (Lo que ya tenías) ---
     with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
         f1, f2, f3, f4 = st.columns(4)
         df_f = df_full.copy()
@@ -380,19 +408,19 @@ def renderizar_panel_directivo(gc):
         if sel_grado != "Todos":
             df_f = df_f[df_f['Grado'].astype(str) == sel_grado]
             
-        # 2. Filtro Grupo (Depende de Grado)
+        # 2. Filtro Grupo
         grupos = ["Todos"] + sorted(df_f['Grupo'].astype(str).unique().tolist())
         sel_grupo = f2.selectbox("Filtrar Grupo:", grupos)
         if sel_grupo != "Todos":
             df_f = df_f[df_f['Grupo'].astype(str) == sel_grupo]
             
-        # 3. Filtro Profesor (Depende de Grupo)
+        # 3. Filtro Profesor
         profs = ["Todos"] + sorted(df_f['Profesor'].astype(str).unique().tolist())
         sel_prof = f3.selectbox("Filtrar Profesor:", profs)
         if sel_prof != "Todos":
             df_f = df_f[df_f['Profesor'].astype(str) == sel_prof]
             
-        # 4. Filtro Materia (Depende de Profesor y Grupo)
+        # 4. Filtro Materia
         mats = ["Todos"] + sorted(df_f['Materia'].astype(str).unique().tolist())
         idx_mat = 1 if (len(mats) == 2 and sel_prof != "Todos") else 0
         sel_mat = f4.selectbox("Filtrar Materia:", mats, index=idx_mat)
