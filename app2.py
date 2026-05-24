@@ -178,7 +178,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         # Inicializamos variables de control
         materia = "Pasillo / Inst. General"
         grupo_final = []
-        alumnos_final = ["General (Ver observaciones)"] # En pasillo se puede reportar al grupo entero o describir en texto
+        alumnos_final = ["General (Ver observaciones)"] 
         
         # --- CASO A: REPORTE DE PASILLO ACTIVO ---
         if reporte_pasillo:
@@ -189,21 +189,38 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             opciones_grados = ["1°", "2°", "3°"] if nivel == "Secundaria" else ["4°", "5°", "6°"]
             grado = c2.selectbox("Grado:", opciones_grados, key=f"grad_{st.session_state.form_reset}")
             
-            # Grupos disponibles en el sistema
-            df_alumnos_raw = leer_datos(gc, FILE_ALUMNOS)
-            grupos_disponibles = sorted(df_alumnos_raw['Grupo'].unique().tolist()) if not df_alumnos_raw.empty else ["A", "B", "C"]
+            # Extraemos los grupos reales desde el archivo de Asignaciones (donde SÍ existe la columna Grupo)
+            df_asig_global = leer_datos(gc, FILE_ASIGNACIONES)
+            if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
+                todos_los_grupos = df_asig_global['Grupo'].dropna().astype(str).unique().tolist()
+                # Extraemos solo el número del grado (ej. "4" de "4°")
+                numero_grado = grado.replace("°", "") 
+                # Filtramos los grupos que correspondan a ese número (ej. "4°A", "4°B")
+                grupos_disponibles = sorted([g for g in todos_los_grupos if g.startswith(f"{numero_grado}°")])
+            else:
+                grupos_disponibles = [f"{grado}A", f"{grado}B"] # Respaldo de emergencia
             
             # Permite seleccionar uno o varios grupos afectados
             grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
             grupo_final = grupos_sel
             
-            # Opcional: Si quieres ligarlo a alumnos específicos de esos grupos
+            # Filtro inteligente de alumnos: Lee las pestañas exactas en 1_Alumnos_por_Grupo
             if grupos_sel:
-                df_al_filtrados = df_alumnos_raw[df_alumnos_raw['Grupo'].isin(grupos_sel)]
-                lista_alumnos = sorted(df_al_filtrados['Nombre'].tolist()) if not df_al_filtrados.empty else []
-                alumnos_sel = st.multiselect("Alumnos específicos (Opcional):", lista_alumnos, key=f"al_p_{st.session_state.form_reset}")
-                if alumnos_sel:
-                    alumnos_final = alumnos_sel
+                lista_alumnos = []
+                for g_sel in grupos_sel:
+                    try:
+                        # Va a buscar la pestaña específica del grupo (ej. pestaña "4°A")
+                        df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
+                        if not df_al.empty and 'Nombre' in df_al.columns:
+                            lista_alumnos.extend(df_al['Nombre'].tolist())
+                    except Exception:
+                        pass # Si no encuentra la pestaña de algún grupo, no rompe la app
+                
+                if lista_alumnos:
+                    lista_alumnos = sorted(list(set(lista_alumnos))) # Orden alfabético y sin duplicados
+                    alumnos_sel = st.multiselect("Alumnos específicos (Opcional):", lista_alumnos, key=f"al_p_{st.session_state.form_reset}")
+                    if alumnos_sel:
+                        alumnos_final = alumnos_sel
 
         # --- CASO B: REGISTRO NORMAL EN CLASE ---
         else:
@@ -219,7 +236,13 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             grupo_final = [grupo]
             
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
-            opc = leer_datos(gc, FILE_ALUMNOS, grupo)['Nombre'].tolist()
+            
+            # Leemos a los alumnos yendo directamente a la pestaña de ese grupo
+            try:
+                opc = leer_datos(gc, FILE_ALUMNOS, grupo)['Nombre'].tolist()
+            except Exception:
+                opc = []
+                st.error(f"Falta la pestaña '{grupo}' en el archivo 1_Alumnos_por_Grupo")
             
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
@@ -229,7 +252,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         st.markdown("---")
         
-        # --- MENÚS EN CASCADA DE FALTAS (IGUAL PARA AMBOS CASOS) ---
+        # --- MENÚS EN CASCADA DE FALTAS ---
         c_cat, c_fal = st.columns(2)
         with c_cat:
             categoria = st.selectbox("Categoría:", list(CATALOGO_SANCIONES.keys()), key=f"cat_{st.session_state.form_reset}")
@@ -253,17 +276,18 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 
             info_falta = dict_faltas.get(falta_original)
             p = info_falta["puntos"] if info_falta else 0
+            
+            # Aseguramos que guarde el color para la columna 'Es_Grave' de tu Excel
             s = info_falta["semaforo"] if info_falta else "Gris"
             
             f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
             
-            # Si es reporte de pasillo, guardamos una fila por cada grupo e implicado para la analítica
             lote = []
             for g in grupo_final:
                 for al in alumnos_final:
+                    # Orden adaptado estrictamente a tus columnas: Fecha, Profesor, Materia, Grupo, Alumno, Categoría, Falta, Observaciones, Puntos_Descontados, Es_Grave
                     lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs, p, s])
             
-            # Guardamos en la hoja de registros
             doc = gc.open(FILE_REGISTROS)
             clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia} - {grupo_final[0]}"
             
@@ -271,17 +295,14 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 ws = doc.worksheet(clase_id)
             except gspread.exceptions.WorksheetNotFound:
                 ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
-                ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Semaforo"])
+                # Cabeceras ajustadas a tus capturas (Es_Grave en vez de Semaforo)
+                ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Es_Grave"])
             
             ws.append_rows(lote)
             leer_todos_los_registros.clear()
             
-            # --- 🚀 AQUÍ SE CONFIGURA EL DISPARADOR DE NOTIFICACIÓN AUTOMÁTICA ---
-            # Llamamos a una función interna de correo pasando los parámetros
-            # enviar_correo_automatizado(nivel, grupo_final, nombre_prof, falta_original, obs)
-            
             st.session_state.form_reset += 1
-            st.success("✅ Reporte de pasillo registrado institucionalmente. Correos de alerta enviados.")
+            st.success("✅ Incidencia registrada. Correo automático en proceso de envío...")
             st.rerun()
 
     st.markdown("---")
