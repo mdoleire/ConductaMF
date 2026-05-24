@@ -369,35 +369,37 @@ def renderizar_panel_directivo(gc):
         st.info("Base de datos vacía.")
         return
 
-    # --- 🚨 SISTEMA DE NOTIFICACIONES DE PASILLO (POP-UPS Y ALERTAS) 🚨 ---
-    # Filtramos los reportes que tengan la etiqueta de pasillo
+  # --- 🚨 SISTEMA DE NOTIFICACIONES DE PASILLO (POP-UPS Y ALERTAS) 🚨 ---
     df_pasillo = df_full[df_full['Materia'] == "Pasillo / Inst. General"]
     
     if not df_pasillo.empty:
-        # Convertimos la columna Fecha a datetime para saber si son recientes
         df_pasillo['Fecha_DT'] = pd.to_datetime(df_pasillo['Fecha'], errors='coerce')
-        # Filtramos solo los de las últimas 24 horas (o del día de hoy)
         hoy = datetime.now(ZoneInfo("America/Mexico_City"))
-        limite_tiempo = hoy - timedelta(days=1) # Últimas 24 horas
+        limite_tiempo = hoy - timedelta(days=1)
         
         alertas_recientes = df_pasillo[df_pasillo['Fecha_DT'] >= limite_tiempo.replace(tzinfo=None)]
         
         if not alertas_recientes.empty:
-            # 1. EL POP-UP (Toast flotante en la esquina)
-            st.toast(f"🚨 Tienes {len(alertas_recientes)} reporte(s) de pasillo reciente(s).", icon="🚨")
+            num_alertas = len(alertas_recientes)
             
-            # 2. LA BANDEJA DE ALERTA VISUAL
-            st.warning(f"🔔 **ALERTAS PRIORITARIAS:** Se han registrado {len(alertas_recientes)} incidencias fuera de clase en las últimas 24 horas.")
+            # 1. EL POP-UP CON MEMORIA (Solo salta si hay un número distinto de alertas)
+            if st.session_state.get("memoria_alertas_pasillo") != num_alertas:
+                st.toast(f"🚨 Tienes {num_alertas} reporte(s) de pasillo reciente(s).", icon="🚨")
+                # Guardamos el número actual en la memoria para no repetirlo
+                st.session_state["memoria_alertas_pasillo"] = num_alertas
+            
+            # 2. LA BANDEJA DE ALERTA VISUAL (Esta sí se queda fija en pantalla)
+            st.warning(f"🔔 **ALERTAS PRIORITARIAS:** Se han registrado {num_alertas} incidencias fuera de clase en las últimas 24 horas.")
             with st.expander("👀 Ver Detalles de Reportes de Pasillo", expanded=True):
-                # Mostramos la tabla limpia solo con lo que le importa al director
                 cols_alerta = ["Fecha", "Profesor", "Grupo", "Alumno", "Falta", "Observaciones"]
-                # Solo tomamos las columnas que sí existan para no romper nada
                 cols_validas = [c for c in cols_alerta if c in alertas_recientes.columns]
-                
                 st.dataframe(alertas_recientes[cols_validas].sort_values(by="Fecha", ascending=False), use_container_width=True)
+        else:
+            # Si ya pasaron 24 hrs y no hay alertas, limpiamos la memoria
+            st.session_state["memoria_alertas_pasillo"] = 0
     # -----------------------------------------------------------------------
 
-    # --- FILTROS DINÁMICOS EN CASCADA (Lo que ya tenías) ---
+    # --- FILTROS DINÁMICOS EN CASCADA 
     with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
         f1, f2, f3, f4 = st.columns(4)
         df_f = df_full.copy()
