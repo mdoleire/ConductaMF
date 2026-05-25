@@ -578,12 +578,39 @@ else:
     
     if not correo_google.endswith("@miraflores.edu.mx"):
         pass 
-        
+
     try:
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         usuario_registrado = df_s[df_s['Usuario'] == correo_google] if not df_s.empty else df_s
-        
+
+        if usuario_registrado.empty:
+            st.title("👋 ¡Bienvenido al Sistema de Conducta!")
+            st.info(f"Hola **{nombre_google}**, detectamos que es tu primera vez iniciando sesión. Para continuar, necesitamos configurar tu perfil.")
+            
+            with st.form("form_registro_nuevo"):
+                st.write("Por favor, selecciona el departamento o área al que perteneces:")
+                area_seleccionada = st.selectbox("Área / Departamento:", 
+                                                 ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"])
+                
+                if st.form_submit_button("Completar Registro y Entrar", type="primary"):
+                    ws_seg = gc.open(FILE_SEGURIDAD).sheet1
+                    
+                    # 🛡️ ESCUDO ANTI-DUPLICADOS EN TIEMPO REAL
+                    todos_los_usuarios = ws_seg.col_values(1) 
+                    
+                    if correo_google not in todos_los_usuarios:
+                        ws_seg.append_row([correo_google, nombre_google, "Docente", area_seleccionada])
+                        st.success("✅ Perfil creado con éxito. Entrando al sistema...")
+                    else:
+                        st.warning("Tu perfil ya había sido registrado. Redirigiendo...")
+                    
+                    leer_datos.clear()
+                    time.sleep(1)
+                    st.rerun()
+                    
+            st.stop() # El st.stop() aquí es el freno de mano definitivo
+            
         if 'usuario_registrado_mock' in locals():
             rol_asignado = rol_asignado_mock
             area_usuario = area_usuario_mock
@@ -599,7 +626,7 @@ else:
                 rol_asignado = "Docente"
                 nombre_mostrar = nombre_google
                 area_usuario = "Ninguna"
-
+        
         # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
