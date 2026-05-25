@@ -216,23 +216,41 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
             grupo_final = grupos_sel
             
-            # Filtro inteligente de alumnos multígrado: Lee de forma secuencial las pestañas correspondientes
+           # --- INTERFAZ DINÁMICA DE ALUMNOS (SISTEMA DE PESTAÑAS) ---
             if grupos_sel:
-                lista_alumnos = []
-                for g_sel in grupos_sel:
-                    try:
-                        # Abre la pestaña del grupo específico (funciona igual si abres "4°A" y luego "5°B")
-                        df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
-                        if not df_al.empty and 'Nombre' in df_al.columns:
-                            lista_alumnos.extend(df_al['Nombre'].tolist())
-                    except Exception:
-                        pass # Si una pestaña no existe, no rompe el flujo de las demás
+                st.markdown("**Selecciona a los alumnos involucrados por salón:**")
                 
-                if lista_alumnos:
-                    lista_alumnos = sorted(list(set(lista_alumnos))) # Limpia duplicados y ordena alfabéticamente
-                    alumnos_sel = st.multiselect("Alumnos específicos (Opcional):", lista_alumnos, key=f"al_p_{st.session_state.form_reset}")
-                    if alumnos_sel:
-                        alumnos_final = alumnos_sel
+                # Creamos una pestaña por cada grupo que haya seleccionado el profesor
+                pestañas = st.tabs(grupos_sel) 
+                alumnos_final_crudo = []
+                
+                # Iteramos sobre cada grupo y su pestaña correspondiente
+                for idx, g_sel in enumerate(grupos_sel):
+                    with pestañas[idx]:
+                        try:
+                            # Leemos solo la lista de este salón
+                            df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
+                            if not df_al.empty and 'Nombre' in df_al.columns:
+                                lista_grupo = sorted(df_al['Nombre'].dropna().unique().tolist())
+                                
+                                # Multiselect exclusivo para esta pestaña
+                                sel_alumnos = st.multiselect(
+                                    f"Implicados de {g_sel}:", 
+                                    lista_grupo, 
+                                    key=f"al_{g_sel}_{st.session_state.form_reset}"
+                                )
+                                
+                                # Si selecciona a alguien, le agregamos el prefijo internamente 
+                                # para que en el Excel quede clarísimo de qué salón era cada alumno
+                                if sel_alumnos:
+                                    alumnos_final_crudo.extend([f"[{g_sel}] {nombre}" for nombre in sel_alumnos])
+                                    
+                        except Exception:
+                            st.warning(f"⚠️ No se encontró la base de datos para {g_sel}")
+                
+                # Si el profesor seleccionó alumnos en cualquiera de las pestañas, actualizamos la variable final
+                if alumnos_final_crudo:
+                    alumnos_final = alumnos_final_crudo
 
         # --- CASO B: REGISTRO NORMAL EN CLASE ---
         else:
