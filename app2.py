@@ -180,44 +180,56 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         grupo_final = []
         alumnos_final = ["General (Ver observaciones)"] 
         
-        # --- CASO A: REPORTE DE PASILLO ACTIVO ---
+       # --- CASO A: REPORTE DE PASILLO ACTIVO ---
         if reporte_pasillo:
             c1, c2, c3 = st.columns(3)
             nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
             
             # Grados dinámicos según el nivel seleccionado
             opciones_grados = ["1°", "2°", "3°"] if nivel == "Secundaria" else ["4°", "5°", "6°"]
-            grado = c2.selectbox("Grado:", opciones_grados, key=f"grad_{st.session_state.form_reset}")
             
-            # Extraemos los grupos reales desde el archivo de Asignaciones (donde SÍ existe la columna Grupo)
+            # 🔄 EVOLUCIÓN: Convertimos a multiselect para permitir seleccionar varios grados a la vez
+            grados_sel = c2.multiselect("Grado(s):", opciones_grados, key=f"grad_{st.session_state.form_reset}")
+            
+            # Extraemos los grupos reales cruzando todos los grados seleccionados
+            grupos_disponibles = []
             df_asig_global = leer_datos(gc, FILE_ASIGNACIONES)
+            
             if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
                 todos_los_grupos = df_asig_global['Grupo'].dropna().astype(str).unique().tolist()
-                # Extraemos solo el número del grado (ej. "4" de "4°")
-                numero_grado = grado.replace("°", "") 
-                # Filtramos los grupos que correspondan a ese número (ej. "4°A", "4°B")
-                grupos_disponibles = sorted([g for g in todos_los_grupos if g.startswith(f"{numero_grado}°")])
+                
+                # Si hay grados seleccionados, extraemos los grupos de cada uno de ellos
+                if grados_sel:
+                    for grad_individual in grados_sel:
+                        numero_grado = grad_individual.replace("°", "") 
+                        grupos_del_grado = [g for g in todos_los_grupos if g.startswith(f"{numero_grado}°")]
+                        grupos_disponibles.extend(grupos_del_grado)
+                    grupos_disponibles = sorted(list(set(grupos_disponibles)))
             else:
-                grupos_disponibles = [f"{grado}A", f"{grado}B"] # Respaldo de emergencia
+                # Fallback de emergencia por si no lee el archivo
+                if grados_sel:
+                    for grad_individual in grados_sel:
+                        grupos_disponibles.extend([f"{grad_individual}A", f"{grad_individual}B"])
+                    grupos_disponibles = sorted(grupos_disponibles)
             
-            # Permite seleccionar uno o varios grupos afectados
+            # Permite seleccionar uno o varios grupos de cualquiera de los grados seleccionados
             grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
             grupo_final = grupos_sel
             
-            # Filtro inteligente de alumnos: Lee las pestañas exactas en 1_Alumnos_por_Grupo
+            # Filtro inteligente de alumnos multígrado: Lee de forma secuencial las pestañas correspondientes
             if grupos_sel:
                 lista_alumnos = []
                 for g_sel in grupos_sel:
                     try:
-                        # Va a buscar la pestaña específica del grupo (ej. pestaña "4°A")
+                        # Abre la pestaña del grupo específico (funciona igual si abres "4°A" y luego "5°B")
                         df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
                         if not df_al.empty and 'Nombre' in df_al.columns:
                             lista_alumnos.extend(df_al['Nombre'].tolist())
                     except Exception:
-                        pass # Si no encuentra la pestaña de algún grupo, no rompe la app
+                        pass # Si una pestaña no existe, no rompe el flujo de las demás
                 
                 if lista_alumnos:
-                    lista_alumnos = sorted(list(set(lista_alumnos))) # Orden alfabético y sin duplicados
+                    lista_alumnos = sorted(list(set(lista_alumnos))) # Limpia duplicados y ordena alfabéticamente
                     alumnos_sel = st.multiselect("Alumnos específicos (Opcional):", lista_alumnos, key=f"al_p_{st.session_state.form_reset}")
                     if alumnos_sel:
                         alumnos_final = alumnos_sel
