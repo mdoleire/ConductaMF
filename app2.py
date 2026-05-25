@@ -216,41 +216,37 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
             grupo_final = grupos_sel
             
-           # --- INTERFAZ DINÁMICA DE ALUMNOS (SISTEMA DE PESTAÑAS) ---
+          # --- INTERFAZ DINÁMICA DE ALUMNOS (SISTEMA DE PESTAÑAS) ---
+            alumnos_por_grupo_seleccionados = [] # Guardaremos parejas (Grupo, Alumno)
+            
             if grupos_sel:
                 st.markdown("**Selecciona a los alumnos involucrados por salón:**")
-                
-                # Creamos una pestaña por cada grupo que haya seleccionado el profesor
                 pestañas = st.tabs(grupos_sel) 
-                alumnos_final_crudo = []
                 
-                # Iteramos sobre cada grupo y su pestaña correspondiente
                 for idx, g_sel in enumerate(grupos_sel):
                     with pestañas[idx]:
                         try:
-                            # Leemos solo la lista de este salón
                             df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
                             if not df_al.empty and 'Nombre' in df_al.columns:
                                 lista_grupo = sorted(df_al['Nombre'].dropna().unique().tolist())
                                 
-                                # Multiselect exclusivo para esta pestaña
                                 sel_alumnos = st.multiselect(
                                     f"Implicados de {g_sel}:", 
                                     lista_grupo, 
                                     key=f"al_{g_sel}_{st.session_state.form_reset}"
                                 )
                                 
-                                # Si selecciona a alguien, le agregamos el prefijo internamente 
-                                # para que en el Excel quede clarísimo de qué salón era cada alumno
+                                # Si selecciona alumnos, guardamos el grupo exacto y el nombre limpio
                                 if sel_alumnos:
-                                    alumnos_final_crudo.extend([f"[{g_sel}] {nombre}" for nombre in sel_alumnos])
-                                    
+                                    for nombre in sel_alumnos:
+                                        alumnos_por_grupo_seleccionados.append((g_sel, nombre))
+                                        
                         except Exception:
                             st.warning(f"⚠️ No se encontró la base de datos para {g_sel}")
                 
-                # Si el profesor seleccionó alumnos en cualquiera de las pestañas, actualizamos la variable final
-                if alumnos_final_crudo:
-                    alumnos_final = alumnos_final_crudo
+                # Mantenemos la lista final para las validaciones del botón
+                if alumnos_por_grupo_seleccionados:
+                    alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
 
         # --- CASO B: REGISTRO NORMAL EN CLASE ---
         else:
@@ -306,17 +302,26 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 
             info_falta = dict_faltas.get(falta_original)
             p = info_falta["puntos"] if info_falta else 0
-            
-            # Aseguramos que guarde el color para la columna 'Es_Grave' de tu Excel
             s = info_falta["semaforo"] if info_falta else "Gris"
             
             f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
             
             lote = []
-            for g in grupo_final:
-                for al in alumnos_final:
-                    # Orden adaptado estrictamente a tus columnas: Fecha, Profesor, Materia, Grupo, Alumno, Categoría, Falta, Observaciones, Puntos_Descontados, Es_Grave
-                    lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs, p, s])
+            
+            if reporte_pasillo:
+                if alumnos_por_grupo_seleccionados:
+                    # Guardamos la correspondencia EXACTA: Grupo real del alumno -> Nombre limpio
+                    for g_real, al_limpio in alumnos_por_grupo_seleccionados:
+                        lote.append([f, nombre_prof, materia, g_real, al_limpio, categoria, falta_original, obs, p, s])
+                else:
+                    # Reporte a nivel grupo completo sin seleccionar alumnos individuales
+                    for g in grupo_final:
+                        lote.append([f, nombre_prof, materia, g, "General (Ver observaciones)", categoria, falta_original, obs, p, s])
+            else:
+                # Registro normal en clase
+                for g in grupo_final:
+                    for al in alumnos_final:
+                        lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs, p, s])
             
             doc = gc.open(FILE_REGISTROS)
             clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia} - {grupo_final[0]}"
@@ -325,7 +330,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 ws = doc.worksheet(clase_id)
             except gspread.exceptions.WorksheetNotFound:
                 ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
-                # Cabeceras ajustadas a tus capturas (Es_Grave en vez de Semaforo)
                 ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Es_Grave"])
             
             ws.append_rows(lote)
