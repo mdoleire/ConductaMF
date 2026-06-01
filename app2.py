@@ -468,7 +468,7 @@ def renderizar_panel_directivo(gc):
     mostrar_tablero_analitico(df_f, "Institucional")
     
 # ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (DOBLE CANDADO DE PERSISTENCIA)
+# 5. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO)
 # ==========================================
 import urllib.parse
 import requests
@@ -484,22 +484,17 @@ if "auth_email" not in st.session_state:
 if "auth_name" not in st.session_state:
     st.session_state["auth_name"] = None
 
-# 2. CAPTURA DE PARÁMETROS EN LA URL
+# 2. CAPTURA DE PARÁMETROS EN LA URL (Únicamente para interceptar el código temporal de Google)
 parametros_url = st.query_params.to_dict()
 
-# --- RESPALDO DE EMERGENCIA F5 ---
-# Si perdimos el session_state pero el parámetro persistente sigue en la URL, lo recuperamos
-if not st.session_state["auth_email"] and "_p_email" in parametros_url:
-    st.session_state["auth_email"] = parametros_url["_p_email"]
-    st.session_state["auth_name"] = parametros_url.get("_p_name", "Profesor Miraflores")
-
-# --- INTENTO DE RECUPERACIÓN POR COOKIE NATIVA ---
+# --- INTENTO DE RECUPERACIÓN EXCLUSIVA POR COOKIE NATIVA SEGURA DE STREAMLIT ---
+# Eliminamos cualquier lectura de parámetros '_p_email' o '_p_name' de la URL.
 if not st.session_state["auth_email"]:
     if hasattr(st, "user") and st.user and st.user.get("is_logged_in", False):
         st.session_state["auth_email"] = st.user.get("email", "")
         st.session_state["auth_name"] = st.user.get("name", "Profesor Miraflores")
 
-# 3. PROCESAMIENTO DEL RETORNO DE GOOGLE (PRIMER INGRESO)
+# 3. PROCESAMIENTO DEL RETORNO DE GOOGLE (SOLO MEDIANTE HANDSHAKE DE OAUTH OFICIAL)
 if "code" in parametros_url and not st.session_state["auth_email"]:
     codigo_autorizacion = parametros_url["code"]
     
@@ -521,24 +516,22 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers).json()
             
-            # Guardamos los datos reales del usuario
+            # Guardamos los datos reales entregados por la API de Google
             email_capturado = user_info.get("email", "")
             name_capturado = user_info.get("name", "Profesor Miraflores")
             
             st.session_state["auth_email"] = email_capturado
             st.session_state["auth_name"] = name_capturado
             
-            # Intentamos escribir la cookie nativa de Streamlit si la llave existe
+            # Intentamos asociar con la cookie de plataforma
             if hasattr(st, "login"):
                 try:
                     st.login(provider="google")
                 except:
                     pass
             
-            # Dejamos un parámetro de persistencia sutil en la URL para salvar el F5
+            # Limpiamos de forma absoluta la barra de direcciones del navegador
             st.query_params.clear()
-            st.query_params["_p_email"] = email_capturado
-            st.query_params["_p_name"] = name_capturado
             st.rerun()
             
     except Exception as e:
