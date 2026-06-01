@@ -6,6 +6,9 @@ Funcionalidades: RBAC, Filtros Multidimensionales Dinámicos, Caché,
 Semáforo Visual Institucional y Reportes por Periodo.
 """
 
+# ==========================================
+# 1. CONFIGURACIÓN Y CATÁLOGO
+# ==========================================
 import streamlit as st
 import pandas as pd
 import gspread
@@ -13,13 +16,12 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 import json
 from zoneinfo import ZoneInfo
-import os  # <--- Agrega esta línea para poder crear archivos temporales
+import os  
+import time  # <--- Agregado para corregir el NameError en sleep
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-# ==========================================
-# 1. CONFIGURACIÓN Y CATÁLOGO
-# ==========================================
-
-# ---> ESTAS 4 LÍNEAS SON LAS QUE FALTAN <---
 FILE_ALUMNOS = "1_Alumnos_por_Grupo"
 FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
 FILE_SEGURIDAD = "3_Usuarios_Seguridad"
@@ -564,74 +566,117 @@ if not st.session_state.get("auth_email"):
     st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
     
- # ESCENARIO B: El usuario está plenamente autenticado
+# ─────────────────────────────────────────────────────────────────
+# ESCENARIO B: El usuario está plenamente autenticado con Google
+# ─────────────────────────────────────────────────────────────────
 else:
-    correo_google = st.session_state["auth_email"]
+    # Normalizamos el correo de Google para evitar errores de mayúsculas/minúsculas
+    correo_google = st.session_state["auth_email"].lower().strip()
     nombre_google = st.session_state["auth_name"]
     
-    # 🚨 === ¡INYECCIÓN TEMPORAL DE PRUEBAS (BYPASS)! === 🚨
-    #rol_asignado_mock = "Coordinador"
-    #area_usuario_mock = "Humanidades"  
-    #nombre_mostrar_mock = "Marco Pruebas"
-    #usuario_registrado_mock = True 
-    # ───────────────────────────────────────────────────
+    # --- EL CANDADO DE DOMINIO INSTITUCIONAL ---
+    correo_admin = "marcodoleire@gmail.com"  # Tu correo personal para pruebas
     
-    if not correo_google.endswith("@miraflores.edu.mx"):
-        pass 
+    if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
+        st.error("⛔ Acceso denegado. Este sistema es exclusivo para personal del Colegio Miraflores.")
+        st.info("Si iniciaste sesión con una cuenta personal, cierra la sesión actual e ingresa con tu cuenta @miraflores.edu.mx.")
+        
+        # Botón de escape para salir del bloqueo de pantalla
+        if st.button("🔑 Volver a intentar con otra cuenta", type="secondary"):
+            st.session_state.clear()
+            st.query_params.clear()
+            if hasattr(st, "logout"):
+                st.logout()
+            st.rerun()
+        st.stop()
 
     try:
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
-        usuario_registrado = df_s[df_s['Usuario'] == correo_google] if not df_s.empty else df_s
-
+        
+        # Limpieza de espacios en columnas para evitar errores de lectura de la tabla de seguridad
+        if not df_s.empty:
+            df_s.columns = df_s.columns.str.strip()
+            df_s['Usuario'] = df_s['Usuario'].astype(str).str.lower().str.strip()
+            usuario_registrado = df_s[df_s['Usuario'] == correo_google]
+        else:
+            usuario_registrado = pd.DataFrame()
+        
+        # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
         if usuario_registrado.empty:
+            
+            # 🛡️ NUEVO CANDADO ANTI-ALUMNOS: Verificación de Plantilla Docente
+            df_asig_verif = leer_datos(gc, FILE_ASIGNACIONES)
+            es_profesor_oficial = False
+            
+            if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
+                # Normalizamos la lista de correos válidos para asegurar coincidencia exacta
+                profesores_validos = [
+                    str(email).lower().strip() 
+                    for email in df_asig_verif['Usuario_Profesor'].dropna().unique()
+                ]
+                if correo_google in profesores_validos:
+                    es_profesor_oficial = True
+            
+            # Excepción de desarrollo para el administrador de pruebas
+            if correo_google == correo_admin:
+                es_profesor_oficial = True
+
+            if not es_profesor_oficial:
+                st.error("⛔ Acceso denegado. Tu cuenta no se encuentra registrada en la plantilla docente activa.")
+                st.info("Si eres docente o directivo de la institución y requieres acceso, por favor contacta al área de soporte técnico o coordinación.")
+                
+                # Permite al usuario des-autenticarse si es el correo equivocado
+                if st.button("🔑 Cambiar de cuenta de Google", type="secondary"):
+                    st.session_state.clear()
+                    st.query_params.clear()
+                    if hasattr(st, "logout"):
+                        st.logout()
+                    st.rerun()
+                st.stop()
+
+            # --- Formulario de registro para nuevo docente verificado ---
             st.title("👋 ¡Bienvenido al Sistema de Conducta!")
-            st.info(f"Hola **{nombre_google}**, detectamos que es tu primera vez iniciando sesión. Para continuar, necesitamos configurar tu perfil.")
+            st.info(f"Hola **{nombre_google}**, detectamos que es tu primera vez iniciando sesión. Para continuar, por favor configura tu perfil de ingreso.")
             
             with st.form("form_registro_nuevo"):
-                st.write("Por favor, selecciona el departamento o área al que perteneces:")
-                area_seleccionada = st.selectbox("Área / Departamento:", 
-                                                 ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"])
+                st.write("Por favor, selecciona tu departamento o área correspondiente:")
+                area_seleccionada = st.selectbox(
+                    "Área / Departamento:", 
+                    ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"]
+                )
                 
                 if st.form_submit_button("Completar Registro y Entrar", type="primary"):
                     ws_seg = gc.open(FILE_SEGURIDAD).sheet1
                     
-                    # 🛡️ ESCUDO ANTI-DUPLICADOS EN TIEMPO REAL
-                    todos_los_usuarios = ws_seg.col_values(1) 
+                    # Escudo de consistencia anti-duplicados redundante en tiempo real
+                    todos_los_usuarios = [str(u).lower().strip() for u in ws_seg.col_values(1)]
                     
                     if correo_google not in todos_los_usuarios:
+                        # Respetando la estructura exacta de 3_Usuarios_Seguridad: Usuario, Nombre_Profesor, Rol, Area
                         ws_seg.append_row([correo_google, nombre_google, "Docente", area_seleccionada])
                         st.success("✅ Perfil creado con éxito. Entrando al sistema...")
                     else:
-                        st.warning("Tu perfil ya había sido registrado. Redirigiendo...")
+                        st.warning("Tu perfil ya se encontraba registrado en el sistema.")
                     
+                    # Limpiamos las cachés locales para asegurar la recarga del nuevo rol
                     leer_datos.clear()
                     time.sleep(1)
                     st.rerun()
                     
-            st.stop() # El st.stop() aquí es el freno de mano definitivo
-            
-        if 'usuario_registrado_mock' in locals():
-            rol_asignado = rol_asignado_mock
-            area_usuario = area_usuario_mock
-            nombre_mostrar = nombre_mostrar_mock
-        else:
-            if not usuario_registrado.empty:
-                rol_asignado = usuario_registrado['Rol'].iloc[0]
-                nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
-                area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
-            else:
-                ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-                ws_seg.append_row([correo_google, "OAuth_Manual", nombre_google, "Docente", "Ninguna"])
-                rol_asignado = "Docente"
-                nombre_mostrar = nombre_google
-                area_usuario = "Ninguna"
-        
+            st.stop()  # Se detiene la ejecución para forzar el flujo del formulario de registro
+        # ------------------------------------------
+
+        # --- FLUJO NORMAL PARA USUARIOS AUTORIZADOS Y REGISTRADOS ---
+        rol_asignado = usuario_registrado['Rol'].iloc[0]
+        nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
+        area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
+
         # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
         col1, col2 = st.columns([8, 2])
         col1.title("Panel de Conducta Institucional")
         
-        # Botón de Cerrar Sesión: Limpia URL, memoria y cookies por completo
+        # Botón de salida robusto (limpia sesión de Streamlit y del navegador)
         if col2.button("Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
@@ -639,7 +684,7 @@ else:
                 st.logout()
             st.rerun()
 
-        # --- SELECTOR DE VISTA DINÁMICA ---
+        # --- SELECTOR DE VISTA DINÁMICA DE ROLES (Directivos y Coordinadores) ---
         vista_actual = rol_asignado
         
         if rol_asignado in ['Director', 'Coordinador', 'Directivo']:
@@ -659,5 +704,5 @@ else:
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
 
     except Exception as e:
-        st.error("🚨 Ocurrió un error al procesar el panel de control.")
-        st.write(f"Detalle técnico: {e}")
+        st.error("🚨 Ocurrió un inconveniente al procesar la autenticación de usuario.")
+        st.write(f"Detalle técnico de la anomalía: {e}")
