@@ -1,7 +1,7 @@
 """
 Sistema Integral de Gestión Conductual - Colegio Miraflores
 ----------------------------------------------------------
-Versión: 3.2 (Edición Institucional - Alta Visibilidad)
+Versión: 3.3 (Tema Autoadaptable Inteligente)
 Funcionalidades: RBAC, Filtros Multidimensionales, Conectividad GSheets,
 Semáforo Visual, Reportes de Pasillo Multígrado y Doble Candado de Seguridad.
 """
@@ -89,7 +89,7 @@ def conectar_gsheets():
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"🚨 La llave 'gcp_json' está mal formada o incompleta: {e}")
+        st.error(f"🚨 La llave 'gcp_json' está mal formada: {e}")
         st.stop()
 
 @st.cache_data(ttl=300)
@@ -117,40 +117,59 @@ def format_calif(val):
     return f"🔴 {val:.1f}"
 
 # ==========================================
-# 3. DISEÑO CORPORATIVO Y MAQUILLAJE VISUAL
+# 3. DISEÑO CORPORATIVO AUTOADAPTABLE (THEME-AWARE)
 # ==========================================
 def aplicar_diseno_institucional():
     st.markdown(
         """
         <style>
-            /* Paleta e Identidad Visual */
-            :root {
-                --azul-miraflores: #0B1B3D;
-                --dorado-miraflores: #C5A059;
-                --fondo-gris: #F4F6F9;
-                --texto-oscuro: #101B2B;
+            /* --- DEFINICIÓN DE PALETA ADAPTABLE DE ACUERDO AL TEMA DEL NAVEGADOR --- */
+            @media (prefers-color-scheme: light) {
+                :root {
+                    --bg-principal: #F4F6F9;
+                    --texto-principal: #0B1B3D;
+                    --texto-secundario: #2C3E50;
+                    --card-bg: #FFFFFF;
+                    --chip-bg: #0B1B3D;
+                    --chip-text: #FFFFFF;
+                    --tab-active: #0B1B3D;
+                    --tab-inactive: #7F8C8D;
+                    --dorado-miraflores: #C5A059;
+                }
             }
-            
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg-principal: #0F172A;
+                    --texto-principal: #F8FAFC;
+                    --texto-secundario: #CBD5E1;
+                    --card-bg: #1E293B;
+                    --chip-bg: #334155;
+                    --chip-text: #F1F5F9;
+                    --tab-active: #C5A059;
+                    --tab-inactive: #94A3B8;
+                    --dorado-miraflores: #C5A059;
+                }
+            }
+
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             
-            /* Ajuste del cuerpo principal */
+            /* Ajuste del canvas de la app */
             .stApp {
-                background-color: var(--fondo-gris);
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background-color: var(--bg-principal) !important;
             }
 
-            /* --- 🎨 AJUSTES DE CONTRASTE DEL PANEL LATERAL (SIDEBAR) --- */
+            /* --- 🎨 BARRA LATERAL (SIDEBAR): Se mantiene siempre en Azul Corporativo --- */
             [data-testid="stSidebar"] {
-                background-color: var(--azul-miraflores) !important;
+                background-color: #0B1B3D !important;
                 border-right: 3px solid var(--dorado-miraflores);
             }
             
-            /* Asegurar que todos los textos dentro de la barra lateral sean blancos y legibles */
+            /* Textos generales de la barra lateral */
             [data-testid="stSidebar"] h1, 
             [data-testid="stSidebar"] h2, 
             [data-testid="stSidebar"] h3, 
-            [data-testid="stSidebar"] h4, 
             [data-testid="stSidebar"] p, 
             [data-testid="stSidebar"] label, 
             [data-testid="stSidebar"] span,
@@ -158,40 +177,72 @@ def aplicar_diseno_institucional():
                 color: #FFFFFF !important;
             }
             
-            /* Estilo específico para los Radio Buttons del panel lateral */
             [data-testid="stSidebar"] div[data-testid="stRadio"] label p {
                 color: #FFFFFF !important;
                 font-weight: 500 !important;
             }
 
-            /* --- 🛡️ AJUSTES DE TEXTOS DEL PANEL CENTRAL --- */
-            /* Forzar que todos los títulos principales sean Azul Miraflores en lugar de blanco */
+            /* --- 🛡️ TEXTOS Y ENCABEZADOS DEL CONTENEDOR CENTRAL --- */
             h1, h2, h3, h4, h5, h6, 
             div[data-testid="stAppViewBlockContainer"] h1,
             div[data-testid="stAppViewBlockContainer"] h2,
             div[data-testid="stAppViewBlockContainer"] h3 {
-                color: var(--azul-miraflores) !important;
+                color: var(--texto-principal) !important;
                 font-weight: bold !important;
             }
 
-            /* Forzar alta visibilidad para etiquetas de campos del formulario */
+            /* Etiquetas generales e inputs */
             div[data-testid="stWidgetLabel"] p, 
             label[data-testid="stWidgetLabel"] p,
             .stWidgetLabel p,
             .stMarkdown p {
-                color: var(--texto-oscuro) !important;
+                color: var(--texto-secundario) !important;
                 font-weight: 600 !important;
             }
             
-            /* Textos en casillas de verificación (Checkboxes) */
             div[data-testid="stCheckbox"] label span p {
-                color: var(--texto-oscuro) !important;
+                color: var(--texto-secundario) !important;
                 font-weight: 600 !important;
+            }
+
+            /* --- 🏷️ ELIMINACIÓN DE ROJO CORAL EN CHIPS (MULTIPLE SELECT) --- */
+            div[data-baseweb="tag"] {
+                background-color: var(--chip-bg) !important;
+                border: 1px solid var(--dorado-miraflores) !important;
+                border-radius: 6px !important;
+                padding: 4px 8px !important;
+            }
+            
+            div[data-baseweb="tag"] span {
+                color: var(--chip-text) !important;
+                font-weight: 500 !important;
+            }
+            
+            div[data-baseweb="tag"] svg {
+                fill: var(--chip-text) !important;
+            }
+
+            /* --- 🎓 ELIMINACIÓN DE ROJO EN TABS (PESTAÑAS MULTÍGRADO) --- */
+            button[data-baseweb="tab"] {
+                color: var(--tab-inactive) !important;
+                border-bottom: 2px solid transparent !important;
+                background-color: transparent !important;
+                font-weight: 500 !important;
+            }
+            
+            button[data-baseweb="tab"][aria-selected="true"] {
+                color: var(--tab-active) !important;
+                border-bottom-color: var(--dorado-miraflores) !important;
+                font-weight: bold !important;
+            }
+            
+            button[data-baseweb="tab"][aria-selected="true"] p {
+                color: var(--tab-active) !important;
             }
 
             /* Banner Superior Institucional */
             .header-banner {
-                background-color: var(--azul-miraflores);
+                background-color: #0B1B3D;
                 color: white !important;
                 padding: 2.2rem 1.5rem;
                 border-radius: 8px;
@@ -222,19 +273,19 @@ def aplicar_diseno_institucional():
 
             /* Tarjetas de Información */
             .card-conducta {
-                background: white;
+                background-color: var(--card-bg) !important;
                 padding: 1.5rem;
                 border-radius: 8px;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-                border-left: 5px solid var(--azul-miraflores);
+                border-left: 5px solid var(--dorado-miraflores);
                 margin-bottom: 1rem;
             }
 
             /* Estilización de Botones de Streamlit */
             div.stButton > button:first-child {
-                background-color: var(--azul-miraflores);
+                background-color: #0B1B3D;
                 color: white !important;
-                border: 1px solid var(--azul-miraflores);
+                border: 1px solid var(--dorado-miraflores);
                 border-radius: 4px;
                 padding: 0.5rem 1.5rem;
                 font-weight: 600;
@@ -253,7 +304,6 @@ def aplicar_diseno_institucional():
         unsafe_allow_html=True
     )
 
-    # Render del banner corporativo
     st.markdown(
         """
         <div class="header-banner">
