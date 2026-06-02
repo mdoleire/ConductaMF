@@ -637,8 +637,11 @@ def renderizar_panel_directivo(gc):
 
 
 # ==========================================
-# 6. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO)
+# 6. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO CON FIRMA DIGITAL)
 # ==========================================
+import hmac
+import hashlib
+
 CLIENT_ID = st.secrets["auth"]["google_client_id"]
 CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
@@ -650,13 +653,35 @@ if "auth_name" not in st.session_state:
 
 parametros_url = st.query_params.to_dict()
 
-# --- INTENTO DE RECUPERACIÓN EXCLUSIVA POR COOKIE NATIVA SEGURA DE STREAMLIT ---
-if not st.session_state["auth_email"]:
-    if hasattr(st, "user") and st.user and st.user.get("is_logged_in", False):
-        st.session_state["auth_email"] = st.user.get("email", "")
-        st.session_state["auth_name"] = st.user.get("name", "Profesor Miraflores")
+# --- FUNCIONES AUXILIARES DE SEGURIDAD (HMAC) ---
+def generar_firma_segura(correo_usuario):
+    """Genera un hash criptográfico único basado en el correo y la clave secreta del servidor."""
+    clave_privada = CLIENT_SECRET.encode('utf-8')
+    mensaje = correo_usuario.encode('utf-8')
+    return hmac.new(clave_privada, mensaje, hashlib.sha256).hexdigest()
 
-# 3. PROCESAMIENTO DEL RETORNO DE GOOGLE HANDSHAKE OFICIAL
+def verificar_firma_segura(correo_usuario, firma_recibida):
+    """Compara de manera segura si la firma recibida corresponde al correo proporcionado."""
+    if not correo_usuario or not firma_recibida:
+        return False
+    firma_real = generar_firma_segura(correo_usuario)
+    return hmac.compare_digest(firma_real, firma_recibida)
+
+
+# --- 🔄 VALIDACIÓN DE PERSISTENCIA (F5 RESILIENTE) ---
+# Si la sesión en memoria se borró, pero tenemos el correo firmado en la URL, restauramos con seguridad
+if not st.session_state["auth_email"] and "_p_email" in parametros_url and "_p_sig" in parametros_url:
+    correo_candidato = parametros_url["_p_email"].lower().strip()
+    firma_candidata = parametros_url["_p_sig"]
+    
+    if verificar_firma_segura(correo_candidato, firma_candidata):
+        st.session_state["auth_email"] = correo_candidato
+        st.session_state["auth_name"] = parametros_url.get("_p_name", "Docente Miraflores")
+    else:
+        st.query_params.clear()
+
+
+# --- 🔑 PROCESAMIENTO DEL RETORNO DE GOOGLE (HANDSHAKE OAUTH) ---
 if "code" in parametros_url and not st.session_state["auth_email"]:
     codigo_autorizacion = parametros_url["code"]
     
@@ -678,16 +703,20 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers).json()
             
-            st.session_state["auth_email"] = user_info.get("email", "")
-            st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
+            email_capturado = user_info.get("email", "").lower().strip()
+            name_capturado = user_info.get("name", "Docente Miraflores")
             
-            if hasattr(st, "login"):
-                try:
-                    st.login(provider="google")
-                except:
-                    pass
+            # Generamos la firma criptográfica para este inicio de sesión verificado por Google
+            firma_criptografica = generar_firma_segura(email_capturado)
             
-            st.query_params.clear()
+            st.session_state["auth_email"] = email_capturado
+            st.session_state["auth_name"] = name_capturado
+            
+            # Escribimos los parámetros firmados en la URL para sobrevivir a la recarga
+            st.query_params["_p_email"] = email_capturado
+            st.query_params["_p_sig"] = firma_criptografica
+            st.query_params["_p_name"] = name_capturado
+            
             st.rerun()
             
     except Exception as e:
@@ -700,7 +729,6 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 
 # ESCENARIO A: No hay sesión activa -> Mostrar login corporativo limpio
 if not st.session_state.get("auth_email"):
-    # Activamos la vista compacta para recortar espacios verticales y evitar scroll
     aplicar_diseno_institucional(compacto=True)
     
     # Generación segura de la URL del flujo OAuth de Google
@@ -713,7 +741,7 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Renderizado de la tarjeta y el botón de Google en un solo bloque HTML integrado
+    # Renderizado de la tarjeta y el botón de Google integrado y centrado
     st.markdown(
         f"""
         <div style="display: flex; justify-content: center; align-items: center; padding-top: 0.5rem;">
