@@ -128,8 +128,8 @@ def aplicar_diseno_institucional(compacto=False):
         f"""
         <style>
             /* --- DEFINICIÓN DE PALETA ADAPTABLE DE ACUERDO AL TEMA DEL NAVEGADOR --- */
-            @media (prefers-color-scheme: light) {
-                :root {
+            @media (prefers-color-scheme: light) {{
+                :root {{
                     --bg-principal: #F4F6F9;
                     --texto-principal: #0B1B3D;
                     --texto-secundario: #2C3E50;
@@ -139,11 +139,11 @@ def aplicar_diseno_institucional(compacto=False):
                     --tab-active: #0B1B3D;
                     --tab-inactive: #7F8C8D;
                     --dorado-miraflores: #C5A059;
-                }
-            }
+                }}
+            }}
 
-            @media (prefers-color-scheme: dark) {
-                :root {
+            @media (prefers-color-scheme: dark) {{
+                :root {{
                     --bg-principal: #0F172A;
                     --texto-principal: #F8FAFC;
                     --texto-secundario: #CBD5E1;
@@ -153,8 +153,8 @@ def aplicar_diseno_institucional(compacto=False):
                     --tab-active: #C5A059;
                     --tab-inactive: #94A3B8;
                     --dorado-miraflores: #C5A059;
-                }
-            }
+                }}
+            }}
 
             #MainMenu {{visibility: hidden;}}
             footer {{visibility: hidden;}}
@@ -237,7 +237,7 @@ def aplicar_diseno_institucional(compacto=False):
                 color: var(--tab-active) !important;
                 border-bottom-color: var(--dorado-miraflores) !important;
                 font-weight: bold !important;
-            }
+            }}
             
             button[data-baseweb="tab"][aria-selected="true"] p {{
                 color: var(--tab-active) !important;
