@@ -729,6 +729,7 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 
 # ESCENARIO A: No hay sesión activa -> Mostrar login corporativo limpio
 if not st.session_state.get("auth_email"):
+    # Activamos la vista compacta para recortar espacios verticales y evitar scroll
     aplicar_diseno_institucional(compacto=True)
     
     # Generación segura de la URL del flujo OAuth de Google
@@ -741,7 +742,7 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Renderizado de la tarjeta y el botón de Google integrado y centrado
+    # Renderizado de la tarjeta con el botón configurado en target="_blank" para cumplir con Google
     st.markdown(
         f"""
         <div style="display: flex; justify-content: center; align-items: center; padding-top: 0.5rem;">
@@ -750,7 +751,7 @@ if not st.session_state.get("auth_email"):
                 <p style="color: var(--texto-secundario); font-size: 0.92rem; margin-bottom: 1.2rem; line-height: 1.5;">
                     Por favor, inicia sesión con tu cuenta de correo institucional para acceder al panel que te corresponde de manera automática.
                 </p>
-                <a href="{url_google_auth}" target="_self" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
+                <a href="{url_google_auth}" target="_blank" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
             </div>
         </div>
         """, 
