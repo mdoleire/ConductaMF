@@ -22,6 +22,120 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+def aplicar_diseno_institucional():
+    # 1. Configuración de página con estilos personalizados inyectados
+    st.markdown(
+        """
+        <style>
+            /* Paleta de colores e identidad */
+            :root {
+                --azul-miraflores: #0B1B3D;
+                --dorado-miraflores: #C5A059;
+                --fondo-gris: #F4F6F9;
+            }
+            
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            
+            /* Contenedor principal de la aplicación */
+            .stApp {
+                background-color: var(--fondo-gris);
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }
+            
+            /* Ajuste responsivo global */
+            @media (max-width: 768px) {
+                .main .block-container {
+                    padding: 1rem 1rem !important;
+                }
+                .banner-titulo {
+                    font-size: 1.5rem !important;
+                }
+                .banner-sub {
+                    font-size: 0.9rem !important;
+                }
+            }
+
+            /* Banner Institucional Superior */
+            .header-banner {
+                background-color: var(--azul-miraflores);
+                color: white;
+                padding: 2.5rem 1.5rem;
+                border-radius: 8px;
+                margin-bottom: 2rem;
+                text-align: center;
+                border-bottom: 4px solid var(--dorado-miraflores);
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            }
+            
+            .banner-titulo {
+                font-family: 'Cinzel', 'Times New Roman', serif;
+                font-size: 2.2rem;
+                font-weight: bold;
+                letter-spacing: 2px;
+                margin: 0;
+            }
+            
+            .banner-sub {
+                font-size: 1.1rem;
+                color: #e0e0e0;
+                margin-top: 0.5rem;
+                font-weight: 300;
+            }
+
+            /* Tarjetas de Métricas y Contenedores */
+            .card-conducta {
+                background: white;
+                padding: 1.5rem;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                border-left: 5px solid var(--azul-miraflores);
+                margin-bottom: 1rem;
+            }
+            
+            /* Personalización de los botones principales de Streamlit */
+            div.stButton > button:first-child {
+                background-color: var(--azul-miraflores);
+                color: white !important;
+                border: 1px solid var(--azul-miraflores);
+                border-radius: 4px;
+                padding: 0.5rem 1.5rem;
+                font-weight: 600;
+                transition: all 0.3s ease;
+                width: 100%;
+            }
+            
+            div.stButton > button:first-child:hover {
+                background-color: var(--dorado-miraflores);
+                border-color: var(--dorado-miraflores);
+                color: white !important;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            }
+            
+            /* Tarjetas de Advertencia o Alerta */
+            .card-alerta {
+                background-color: #fff3cd;
+                border-left: 5px solid #ffc107;
+                padding: 1rem;
+                border-radius: 6px;
+                margin-bottom: 1.5rem;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # 2. Renderizado del Encabezado Institucional Responsivo
+    st.markdown(
+        """
+        <div class="header-banner">
+            <div class="banner-titulo">COLEGIO MIRAFLORES</div>
+            <div class="banner-sub">SISTEMA INTEGRAL DE GESTIÓN CONDUCTUAL</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
 FILE_ALUMNOS = "1_Alumnos_por_Grupo"
 FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
 FILE_SEGURIDAD = "3_Usuarios_Seguridad"
@@ -541,10 +655,23 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 # FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# ESCENARIO A: No hay sesión en ningún lado -> Botón de Acceso Oficial
+# ESCENARIO A: No hay sesión activa -> Mostrar inicio de sesión con estilo institucional
 if not st.session_state.get("auth_email"):
-    st.title("🔒 Acceso Seguro - Colegio Miraflores")
-    st.write("Para ingresar al panel de conducta, por favor inicia sesión con tu cuenta institucional.")
+    # Aplicamos el diseño y el banner superior
+    aplicar_diseno_institucional()
+    
+    # Contenedor de login centrado y limpio
+    st.markdown(
+        """
+        <div class="card-conducta" style="text-align: center; max-width: 500px; margin: 0 auto; padding: 2.5rem 1.5rem;">
+            <h3 style="color: #0B1B3D; margin-bottom: 1rem;">Acceso Seguro</h3>
+            <p style="color: #666; font-size: 0.95rem; margin-bottom: 2rem;">
+                Por favor, inicia sesión con tu cuenta de correo institucional para acceder al panel que te corresponde.
+            </p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
     
     params = {
         "client_id": CLIENT_ID,
@@ -555,14 +682,18 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Regresamos al único método autorizado por la arquitectura de Streamlit Cloud
-    st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
+    # Espaciador para centrar el botón de Google
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
     
 # ─────────────────────────────────────────────────────────────────
 # ESCENARIO B: El usuario está plenamente autenticado con Google
 # ─────────────────────────────────────────────────────────────────
 else:
+    # Aplicamos el diseño institucional a las vistas del panel de control
+    aplicar_diseno_institucional()
     # Normalizamos el correo de Google para evitar errores de mayúsculas/minúsculas
     correo_google = st.session_state["auth_email"].lower().strip()
     nombre_google = st.session_state["auth_name"]
@@ -699,3 +830,4 @@ else:
     except Exception as e:
         st.error("🚨 Ocurrió un inconveniente al procesar la autenticación de usuario.")
         st.write(f"Detalle técnico de la anomalía: {e}")
+
