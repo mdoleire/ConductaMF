@@ -119,9 +119,13 @@ def format_calif(val):
 # ==========================================
 # 3. DISEÑO CORPORATIVO AUTOADAPTABLE (THEME-AWARE)
 # ==========================================
-def aplicar_diseno_institucional():
+def aplicar_diseno_institucional(compacto=False):
+    # Ajuste dinámico de dimensiones para evitar scroll en el login
+    padding_banner = "1.1rem 1rem" if compacto else "2.2rem 1.5rem"
+    margin_banner = "1rem" if compacto else "2rem"
+
     st.markdown(
-        """
+        f"""
         <style>
             /* --- DEFINICIÓN DE PALETA ADAPTABLE DE ACUERDO AL TEMA DEL NAVEGADOR --- */
             @media (prefers-color-scheme: light) {
@@ -152,137 +156,136 @@ def aplicar_diseno_institucional():
                 }
             }
 
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
+            #MainMenu {{visibility: hidden;}}
+            footer {{visibility: hidden;}}
             
             /* Ajuste del canvas de la app */
-            .stApp {
+            .stApp {{
                 background-color: var(--bg-principal) !important;
-            }
+            }}
 
-            /* --- 🎨 BARRA LATERAL (SIDEBAR): Se mantiene siempre en Azul Corporativo --- */
-            [data-testid="stSidebar"] {
+            /* --- 🎨 BARRA LATERAL (SIDEBAR) --- */
+            [data-testid="stSidebar"] {{
                 background-color: #0B1B3D !important;
                 border-right: 3px solid var(--dorado-miraflores);
-            }
+            }}
             
-            /* Textos generales de la barra lateral */
             [data-testid="stSidebar"] h1, 
             [data-testid="stSidebar"] h2, 
             [data-testid="stSidebar"] h3, 
             [data-testid="stSidebar"] p, 
             [data-testid="stSidebar"] label, 
             [data-testid="stSidebar"] span,
-            [data-testid="stSidebar"] div {
+            [data-testid="stSidebar"] div {{
                 color: #FFFFFF !important;
-            }
+            }}
             
-            [data-testid="stSidebar"] div[data-testid="stRadio"] label p {
+            [data-testid="stSidebar"] div[data-testid="stRadio"] label p {{
                 color: #FFFFFF !important;
                 font-weight: 500 !important;
-            }
+            }}
 
             /* --- 🛡️ TEXTOS Y ENCABEZADOS DEL CONTENEDOR CENTRAL --- */
             h1, h2, h3, h4, h5, h6, 
             div[data-testid="stAppViewBlockContainer"] h1,
             div[data-testid="stAppViewBlockContainer"] h2,
-            div[data-testid="stAppViewBlockContainer"] h3 {
+            div[data-testid="stAppViewBlockContainer"] h3 {{
                 color: var(--texto-principal) !important;
                 font-weight: bold !important;
-            }
+            }}
 
             /* Etiquetas generales e inputs */
             div[data-testid="stWidgetLabel"] p, 
             label[data-testid="stWidgetLabel"] p,
             .stWidgetLabel p,
-            .stMarkdown p {
+            .stMarkdown p {{
                 color: var(--texto-secundario) !important;
                 font-weight: 600 !important;
-            }
+            }}
             
-            div[data-testid="stCheckbox"] label span p {
+            div[data-testid="stCheckbox"] label span p {{
                 color: var(--texto-secundario) !important;
                 font-weight: 600 !important;
-            }
+            }}
 
-            /* --- 🏷️ ELIMINACIÓN DE ROJO CORAL EN CHIPS (MULTIPLE SELECT) --- */
-            div[data-baseweb="tag"] {
+            /* --- 🏷️ CHIPS (MULTIPLE SELECT) --- */
+            div[data-baseweb="tag"] {{
                 background-color: var(--chip-bg) !important;
                 border: 1px solid var(--dorado-miraflores) !important;
                 border-radius: 6px !important;
                 padding: 4px 8px !important;
-            }
+            }}
             
-            div[data-baseweb="tag"] span {
+            div[data-baseweb="tag"] span {{
                 color: var(--chip-text) !important;
                 font-weight: 500 !important;
-            }
+            }}
             
-            div[data-baseweb="tag"] svg {
+            div[data-baseweb="tag"] svg {{
                 fill: var(--chip-text) !important;
-            }
+            }}
 
-            /* --- 🎓 ELIMINACIÓN DE ROJO EN TABS (PESTAÑAS MULTÍGRADO) --- */
-            button[data-baseweb="tab"] {
+            /* --- 🎓 TABS --- */
+            button[data-baseweb="tab"] {{
                 color: var(--tab-inactive) !important;
                 border-bottom: 2px solid transparent !important;
                 background-color: transparent !important;
                 font-weight: 500 !important;
-            }
+            }}
             
-            button[data-baseweb="tab"][aria-selected="true"] {
+            button[data-baseweb="tab"][aria-selected="true"] {{
                 color: var(--tab-active) !important;
                 border-bottom-color: var(--dorado-miraflores) !important;
                 font-weight: bold !important;
             }
             
-            button[data-baseweb="tab"][aria-selected="true"] p {
+            button[data-baseweb="tab"][aria-selected="true"] p {{
                 color: var(--tab-active) !important;
-            }
+            }}
 
             /* Banner Superior Institucional */
-            .header-banner {
+            .header-banner {{
                 background-color: #0B1B3D;
                 color: white !important;
-                padding: 2.2rem 1.5rem;
+                padding: {padding_banner};
                 border-radius: 8px;
-                margin-bottom: 2rem;
+                margin-bottom: {margin_banner};
                 text-align: center;
                 border-bottom: 4px solid var(--dorado-miraflores);
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
-            }
+            }}
             
-            .header-banner * {
+            .header-banner * {{
                 color: white !important;
-            }
+            }}
             
-            .banner-titulo {
+            .banner-titulo {{
                 font-family: 'Cinzel', 'Times New Roman', serif;
                 font-size: 2.1rem;
                 font-weight: bold;
                 letter-spacing: 2px;
                 margin: 0;
-            }
+            }}
             
-            .banner-sub {
+            .banner-sub {{
                 font-size: 1rem;
                 margin-top: 0.5rem;
                 font-weight: 300;
                 letter-spacing: 1px;
-            }
+            }}
 
             /* Tarjetas de Información */
-            .card-conducta {
+            .card-conducta {{
                 background-color: var(--card-bg) !important;
                 padding: 1.5rem;
                 border-radius: 8px;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.05);
                 border-left: 5px solid var(--dorado-miraflores);
                 margin-bottom: 1rem;
-            }
+            }}
 
             /* Estilización de Botones de Streamlit */
-            div.stButton > button:first-child {
+            div.stButton > button:first-child {{
                 background-color: #0B1B3D;
                 color: white !important;
                 border: 1px solid var(--dorado-miraflores);
@@ -291,14 +294,37 @@ def aplicar_diseno_institucional():
                 font-weight: 600;
                 transition: all 0.3s ease;
                 width: 100%;
-            }
+            }}
             
-            div.stButton > button:first-child:hover {
+            div.stButton > button:first-child:hover {{
                 background-color: var(--dorado-miraflores);
                 border-color: var(--dorado-miraflores);
                 color: white !important;
                 box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            }
+            }}
+
+            /* --- 🔑 BOTÓN DE ACCESO INTEGRADO EN TARJETA --- */
+            .custom-google-btn {{
+                display: inline-block;
+                background-color: #0B1B3D;
+                color: white !important;
+                border: 2px solid var(--dorado-miraflores);
+                border-radius: 4px;
+                padding: 0.65rem 2rem;
+                font-weight: 600;
+                text-decoration: none !important;
+                transition: all 0.3s ease;
+                margin-top: 1rem;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+            }}
+            
+            .custom-google-btn:hover {{
+                background-color: var(--dorado-miraflores);
+                border-color: var(--dorado-miraflores);
+                color: white !important;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+                text-decoration: none !important;
+            }}
         </style>
         """,
         unsafe_allow_html=True
@@ -674,20 +700,10 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 
 # ESCENARIO A: No hay sesión activa -> Mostrar login corporativo limpio
 if not st.session_state.get("auth_email"):
-    aplicar_diseno_institucional()
+    # Activamos la vista compacta para recortar espacios verticales y evitar scroll
+    aplicar_diseno_institucional(compacto=True)
     
-    st.markdown(
-        """
-        <div class="card-conducta" style="text-align: center; max-width: 500px; margin: 0 auto; padding: 2.5rem 1.5rem;">
-            <h3 style="color: #0B1B3D !important; margin-bottom: 1rem;">Acceso de Personal</h3>
-            <p style="color: #444; font-size: 0.95rem; margin-bottom: 2rem;">
-                Por favor, inicia sesión con tu cuenta de correo @miraflores.edu.mx. El sistema verificará tu rol docente de manera automática.
-            </p>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-    
+    # Generación segura de la URL del flujo OAuth de Google
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -697,9 +713,21 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
+    # Renderizado de la tarjeta y el botón de Google en un solo bloque HTML integrado
+    st.markdown(
+        f"""
+        <div style="display: flex; justify-content: center; align-items: center; padding-top: 0.5rem;">
+            <div class="card-conducta" style="text-align: center; max-width: 480px; width: 100%; padding: 2rem 1.5rem; margin: 0 auto;">
+                <h3 style="color: var(--texto-principal) !important; margin-bottom: 0.8rem; font-size: 1.5rem;">Acceso de Personal</h3>
+                <p style="color: var(--texto-secundario); font-size: 0.92rem; margin-bottom: 1.2rem; line-height: 1.5;">
+                    Por favor, inicia sesión con tu cuenta de correo institucional para acceder al panel que te corresponde de manera automática.
+                </p>
+                <a href="{url_google_auth}" target="_self" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
+            </div>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
     st.stop()
     
 # ESCENARIO B: Usuario autenticado correctamente con Google
