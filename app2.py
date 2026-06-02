@@ -265,6 +265,7 @@ def format_calif(val):
 #3. COMPONENTE ANALÍTICO MULTI-FILTRO
 # ==========================================
 def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
+    aplicar_diseno_institucional():
     if df.empty:
         st.info(f"No hay datos registrados con los filtros seleccionados."); return
 
@@ -307,6 +308,7 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
 # ==========================================
 
 def renderizar_panel_docente(gc, usuario, nombre_prof):
+    aplicar_diseno_institucional():
     st.header(f"🛡️ Panel Docente: {nombre_prof}")
     
     if "form_reset" not in st.session_state:
@@ -490,6 +492,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
 
 def renderizar_panel_coordinador(gc, area_coordinador):
+    aplicar_diseno_institucional():
     st.subheader(f"📋 Monitoreo de Coordinación: Área de {area_coordinador}")
     
     # 1. Traer la base de datos de TODOS los registros/incidencias de conducta
@@ -539,6 +542,7 @@ def renderizar_panel_coordinador(gc, area_coordinador):
             mostrar_tablero_analitico(df_coordinacion, f"Coordinación {area_coordinador}", modo_descarga=True)
             
 def renderizar_panel_directivo(gc):
+    aplicar_diseno_institucional():
     st.header("📊 Inteligencia Institucional (Directivo)")
     df_full = leer_todos_los_registros(gc)
     
