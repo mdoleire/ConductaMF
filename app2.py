@@ -1,14 +1,11 @@
 """
 Sistema Integral de Gestión Conductual - Colegio Miraflores
 ----------------------------------------------------------
-Versión: 3.1 (Filtros en Cascada y Auto-selección)
-Funcionalidades: RBAC, Filtros Multidimensionales Dinámicos, Caché,
-Semáforo Visual Institucional y Reportes por Periodo.
+Versión: 3.2 (Edición Institucional - Alta Visibilidad)
+Funcionalidades: RBAC, Filtros Multidimensionales, Conectividad GSheets,
+Semáforo Visual, Reportes de Pasillo Multígrado y Doble Candado de Seguridad.
 """
 
-# ==========================================
-# 1. CONFIGURACIÓN Y CATÁLOGO
-# ==========================================
 import streamlit as st
 import pandas as pd
 import gspread
@@ -17,152 +14,16 @@ from datetime import datetime, timedelta
 import json
 from zoneinfo import ZoneInfo
 import os  
-import time  # <--- Agregado para corregir el NameError en sleep
+import time  
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import urllib.parse
+import requests
 
-def aplicar_diseno_institucional():
-    # 1. Configuración de página con estilos personalizados de alto contraste
-    st.markdown(
-        """
-        <style>
-            /* Paleta de colores e identidad */
-            :root {
-                --azul-miraflores: #0B1B3D;
-                --dorado-miraflores: #C5A059;
-                --fondo-gris: #F4F6F9;
-                --texto-oscuro: #1A253C;
-            }
-            
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            
-            /* Contenedor principal de la aplicación */
-            .stApp {
-                background-color: var(--fondo-gris);
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            }
-            
-            /* Ajuste responsivo global */
-            @media (max-width: 768px) {
-                .main .block-container {
-                    padding: 1rem 1rem !important;
-                }
-                .banner-titulo {
-                    font-size: 1.5rem !important;
-                }
-                .banner-sub {
-                    font-size: 0.9rem !important;
-                }
-            }
-
-            /* Banner Institucional Superior */
-            .header-banner {
-                background-color: var(--azul-miraflores);
-                color: white;
-                padding: 2.5rem 1.5rem;
-                border-radius: 8px;
-                margin-bottom: 2rem;
-                text-align: center;
-                border-bottom: 4px solid var(--dorado-miraflores);
-                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
-            }
-            
-            .banner-titulo {
-                font-family: 'Cinzel', 'Times New Roman', serif;
-                font-size: 2.2rem;
-                font-weight: bold;
-                letter-spacing: 2px;
-                margin: 0;
-            }
-            
-            .banner-sub {
-                font-size: 1.1rem;
-                color: #e0e0e0;
-                margin-top: 0.5rem;
-                font-weight: 300;
-            }
-
-            /* Tarjetas de Métricas y Contenedores */
-            .card-conducta {
-                background: white;
-                padding: 1.5rem;
-                border-radius: 8px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-                border-left: 5px solid var(--azul-miraflores);
-                margin-bottom: 1rem;
-            }
-            
-            /* 
-               =============================================
-               🚨 CONTROL DE VISIBILIDAD DE TEXTOS (FIX CONTRASTE)
-               =============================================
-            */
-            /* Forzar color oscuro en todas las etiquetas de widgets (Selectbox, Multiselect, etc.) */
-            div[data-testid="stWidgetLabel"] p, 
-            label[data-testid="stWidgetLabel"] p,
-            .stWidgetLabel p,
-            .stMarkdown p {
-                color: var(--texto-oscuro) !important;
-                font-weight: 600 !important;
-            }
-            
-            /* Forzar color de texto en los checkboxes */
-            div[data-testid="stCheckbox"] label span p {
-                color: var(--texto-oscuro) !important;
-                font-weight: 600 !important;
-            }
-            
-            /* Forzar color de texto para las leyendas de radio buttons */
-            div[data-testid="stRadio"] label p {
-                color: var(--texto-oscuro) !important;
-                font-weight: 500 !important;
-            }
-
-            /* Personalización de los botones principales de Streamlit */
-            div.stButton > button:first-child {
-                background-color: var(--azul-miraflores);
-                color: white !important;
-                border: 1px solid var(--azul-miraflores);
-                border-radius: 4px;
-                padding: 0.5rem 1.5rem;
-                font-weight: 600;
-                transition: all 0.3s ease;
-                width: 100%;
-            }
-            
-            div.stButton > button:first-child:hover {
-                background-color: var(--dorado-miraflores);
-                border-color: var(--dorado-miraflores);
-                color: white !important;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            }
-            
-            /* Tarjetas de Advertencia o Alerta */
-            .card-alerta {
-                background-color: #fff3cd;
-                border-left: 5px solid #ffc107;
-                padding: 1rem;
-                border-radius: 6px;
-                margin-bottom: 1.5rem;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # 2. Renderizado del Encabezado Institucional Responsivo
-    st.markdown(
-        """
-        <div class="header-banner">
-            <div class="banner-titulo">COLEGIO MIRAFLORES</div>
-            <div class="banner-sub">SISTEMA INTEGRAL DE GESTIÓN CONDUCTUAL</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
+# ==========================================
+# 1. CONFIGURACIÓN Y CATÁLOGO
+# ==========================================
 FILE_ALUMNOS = "1_Alumnos_por_Grupo"
 FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
 FILE_SEGURIDAD = "3_Usuarios_Seguridad"
@@ -220,20 +81,15 @@ PERIODOS_LECTIVOS = [
 @st.cache_resource
 def conectar_gsheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    
-    # 1. Si no encuentra la llave en la bóveda, detenemos todo y mostramos el diagnóstico
     if "gcp_json" not in st.secrets:
         st.error("🚨 ERROR CRÍTICO: La llave 'gcp_json' no existe en los secretos de Streamlit.")
-        st.write("Lo que Streamlit SÍ está viendo actualmente en tu bóveda es:", list(st.secrets.keys()))
         st.stop()
-        
-    # 2. Si la encuentra, intentamos leerla
     try:
         creds_dict = json.loads(st.secrets["gcp_json"])
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"🚨 La llave 'gcp_json' existe, pero el texto JSON está mal formado o incompleto: {e}")
+        st.error(f"🚨 La llave 'gcp_json' está mal formada o incompleta: {e}")
         st.stop()
 
 @st.cache_data(ttl=300)
@@ -250,7 +106,6 @@ def leer_todos_los_registros(_client):
         if not hojas: return pd.DataFrame()
         df = pd.concat(hojas, ignore_index=True)
         if 'Grupo' in df.columns:
-            # Extracción inteligente del grado usando Regex (ej. "4°A" -> "4")
             df['Grado'] = df['Grupo'].astype(str).str.extract(r'(\d+)')[0].fillna('N/A')
         return df
     except:
@@ -262,12 +117,160 @@ def format_calif(val):
     return f"🔴 {val:.1f}"
 
 # ==========================================
-#3. COMPONENTE ANALÍTICO MULTI-FILTRO
+# 3. DISEÑO CORPORATIVO Y MAQUILLAJE VISUAL
+# ==========================================
+def aplicar_diseno_institucional():
+    st.markdown(
+        """
+        <style>
+            /* Paleta e Identidad Visual */
+            :root {
+                --azul-miraflores: #0B1B3D;
+                --dorado-miraflores: #C5A059;
+                --fondo-gris: #F4F6F9;
+                --texto-oscuro: #101B2B;
+            }
+            
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            
+            /* Ajuste del cuerpo principal */
+            .stApp {
+                background-color: var(--fondo-gris);
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }
+
+            /* --- 🎨 AJUSTES DE CONTRASTE DEL PANEL LATERAL (SIDEBAR) --- */
+            [data-testid="stSidebar"] {
+                background-color: var(--azul-miraflores) !important;
+                border-right: 3px solid var(--dorado-miraflores);
+            }
+            
+            /* Asegurar que todos los textos dentro de la barra lateral sean blancos y legibles */
+            [data-testid="stSidebar"] h1, 
+            [data-testid="stSidebar"] h2, 
+            [data-testid="stSidebar"] h3, 
+            [data-testid="stSidebar"] h4, 
+            [data-testid="stSidebar"] p, 
+            [data-testid="stSidebar"] label, 
+            [data-testid="stSidebar"] span,
+            [data-testid="stSidebar"] div {
+                color: #FFFFFF !important;
+            }
+            
+            /* Estilo específico para los Radio Buttons del panel lateral */
+            [data-testid="stSidebar"] div[data-testid="stRadio"] label p {
+                color: #FFFFFF !important;
+                font-weight: 500 !important;
+            }
+
+            /* --- 🛡️ AJUSTES DE TEXTOS DEL PANEL CENTRAL --- */
+            /* Forzar que todos los títulos principales sean Azul Miraflores en lugar de blanco */
+            h1, h2, h3, h4, h5, h6, 
+            div[data-testid="stAppViewBlockContainer"] h1,
+            div[data-testid="stAppViewBlockContainer"] h2,
+            div[data-testid="stAppViewBlockContainer"] h3 {
+                color: var(--azul-miraflores) !important;
+                font-weight: bold !important;
+            }
+
+            /* Forzar alta visibilidad para etiquetas de campos del formulario */
+            div[data-testid="stWidgetLabel"] p, 
+            label[data-testid="stWidgetLabel"] p,
+            .stWidgetLabel p,
+            .stMarkdown p {
+                color: var(--texto-oscuro) !important;
+                font-weight: 600 !important;
+            }
+            
+            /* Textos en casillas de verificación (Checkboxes) */
+            div[data-testid="stCheckbox"] label span p {
+                color: var(--texto-oscuro) !important;
+                font-weight: 600 !important;
+            }
+
+            /* Banner Superior Institucional */
+            .header-banner {
+                background-color: var(--azul-miraflores);
+                color: white !important;
+                padding: 2.2rem 1.5rem;
+                border-radius: 8px;
+                margin-bottom: 2rem;
+                text-align: center;
+                border-bottom: 4px solid var(--dorado-miraflores);
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            }
+            
+            .header-banner * {
+                color: white !important;
+            }
+            
+            .banner-titulo {
+                font-family: 'Cinzel', 'Times New Roman', serif;
+                font-size: 2.1rem;
+                font-weight: bold;
+                letter-spacing: 2px;
+                margin: 0;
+            }
+            
+            .banner-sub {
+                font-size: 1rem;
+                margin-top: 0.5rem;
+                font-weight: 300;
+                letter-spacing: 1px;
+            }
+
+            /* Tarjetas de Información */
+            .card-conducta {
+                background: white;
+                padding: 1.5rem;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                border-left: 5px solid var(--azul-miraflores);
+                margin-bottom: 1rem;
+            }
+
+            /* Estilización de Botones de Streamlit */
+            div.stButton > button:first-child {
+                background-color: var(--azul-miraflores);
+                color: white !important;
+                border: 1px solid var(--azul-miraflores);
+                border-radius: 4px;
+                padding: 0.5rem 1.5rem;
+                font-weight: 600;
+                transition: all 0.3s ease;
+                width: 100%;
+            }
+            
+            div.stButton > button:first-child:hover {
+                background-color: var(--dorado-miraflores);
+                border-color: var(--dorado-miraflores);
+                color: white !important;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Render del banner corporativo
+    st.markdown(
+        """
+        <div class="header-banner">
+            <div class="banner-titulo">COLEGIO MIRAFLORES</div>
+            <div class="banner-sub">SISTEMA INTEGRAL DE GESTIÓN CONDUCTUAL</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# ==========================================
+# 4. COMPONENTE ANALÍTICO MULTI-FILTRO
 # ==========================================
 def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
-    aplicar_diseno_institucional()
     if df.empty:
-        st.info(f"No hay datos registrados con los filtros seleccionados."); return
+        st.info("No hay datos registrados con los filtros seleccionados.")
+        return
 
     df['Fecha'] = pd.to_datetime(df['Fecha'])
     t_sem, t_mes, t_per = st.tabs(["📅 Semanal", "🗓️ Mensual", "🎓 Periodo Lectivo"])
@@ -276,14 +279,16 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
         df_s = df[df['Fecha'] >= (datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None) - timedelta(days=7))].copy()
         if not df_s.empty:
             st.dataframe(df_s.sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
-        else: st.success("Sin reportes esta semana.")
+        else:
+            st.success("Sin reportes esta semana.")
 
     with t_mes:
         df_m = df[df['Fecha'].dt.month == datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None).month].copy()
         if not df_m.empty:
             res = df_m.groupby(['Grupo', 'Alumno', 'Falta']).size().reset_index(name='Veces')
             st.dataframe(res.sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
-        else: st.info("Sin registros este mes.")
+        else:
+            st.info("Sin registros este mes.")
 
     with t_per:
         hoy = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
@@ -301,49 +306,38 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
             st.dataframe(boleta[['Grupo', 'Alumno', 'Calificación']].sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
             if modo_descarga:
                 st.download_button("📥 Descargar Excel", boleta.to_csv(index=False).encode('utf-8'), f"Reporte_{sel_p}.csv")
-        else: st.success("Sin incidencias en el periodo.")
+        else:
+            st.success("Sin incidencias en el periodo.")
 
 # ==========================================
-# 4. PANELES POR ROL
+# 5. PANELES POR ROL
 # ==========================================
-
 def renderizar_panel_docente(gc, usuario, nombre_prof):
-    aplicar_diseno_institucional()
     st.header(f"🛡️ Panel Docente: {nombre_prof}")
     
     if "form_reset" not in st.session_state:
         st.session_state["form_reset"] = 0
         
     with st.expander("📝 Registro de Incidencia", expanded=True):
-        # 1. CASILLA DE REPORTE DE PASILLO
         reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
-        
         st.markdown("---")
         
-        # Inicializamos variables de control
         materia = "Pasillo / Inst. General"
         grupo_final = []
         alumnos_final = ["General (Ver observaciones)"] 
         
-       # --- CASO A: REPORTE DE PASILLO ACTIVO ---
         if reporte_pasillo:
             c1, c2, c3 = st.columns(3)
             nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
-            
-            # Grados dinámicos según el nivel seleccionado
             opciones_grados = ["1°", "2°", "3°"] if nivel == "Secundaria" else ["4°", "5°", "6°"]
             
-            # 🔄 EVOLUCIÓN: Convertimos a multiselect para permitir seleccionar varios grados a la vez
             grados_sel = c2.multiselect("Grado(s):", opciones_grados, key=f"grad_{st.session_state.form_reset}")
             
-            # Extraemos los grupos reales cruzando todos los grados seleccionados
             grupos_disponibles = []
             df_asig_global = leer_datos(gc, FILE_ASIGNACIONES)
             
             if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
                 todos_los_grupos = df_asig_global['Grupo'].dropna().astype(str).unique().tolist()
-                
-                # Si hay grados seleccionados, extraemos los grupos de cada uno de ellos
                 if grados_sel:
                     for grad_individual in grados_sel:
                         numero_grado = grad_individual.replace("°", "") 
@@ -351,19 +345,15 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         grupos_disponibles.extend(grupos_del_grado)
                     grupos_disponibles = sorted(list(set(grupos_disponibles)))
             else:
-                # Fallback de emergencia por si no lee el archivo
                 if grados_sel:
                     for grad_individual in grados_sel:
                         grupos_disponibles.extend([f"{grad_individual}A", f"{grad_individual}B"])
                     grupos_disponibles = sorted(grupos_disponibles)
             
-            # Permite seleccionar uno o varios grupos de cualquiera de los grados seleccionados
             grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
             grupo_final = grupos_sel
             
-          # --- INTERFAZ DINÁMICA DE ALUMNOS (SISTEMA DE PESTAÑAS) ---
-            alumnos_por_grupo_seleccionados = [] # Guardaremos parejas (Grupo, Alumno)
-            
+            alumnos_por_grupo_seleccionados = []
             if grupos_sel:
                 st.markdown("**Selecciona a los alumnos involucrados por salón:**")
                 pestañas = st.tabs(grupos_sel) 
@@ -374,26 +364,19 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
                             if not df_al.empty and 'Nombre' in df_al.columns:
                                 lista_grupo = sorted(df_al['Nombre'].dropna().unique().tolist())
-                                
                                 sel_alumnos = st.multiselect(
                                     f"Implicados de {g_sel}:", 
                                     lista_grupo, 
                                     key=f"al_{g_sel}_{st.session_state.form_reset}"
                                 )
-                                
-                                # Si selecciona alumnos, guardamos el grupo exacto y el nombre limpio
                                 if sel_alumnos:
                                     for nombre in sel_alumnos:
                                         alumnos_por_grupo_seleccionados.append((g_sel, nombre))
-                                        
                         except Exception:
                             st.warning(f"⚠️ No se encontró la base de datos para {g_sel}")
                 
-                # Mantenemos la lista final para las validaciones del botón
                 if alumnos_por_grupo_seleccionados:
                     alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
-
-        # --- CASO B: REGISTRO NORMAL EN CLASE ---
         else:
             df_asig = leer_datos(gc, FILE_ASIGNACIONES)
             mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
@@ -408,7 +391,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
             
-            # Leemos a los alumnos yendo directamente a la pestaña de ese grupo
             try:
                 opc = leer_datos(gc, FILE_ALUMNOS, grupo)['Nombre'].tolist()
             except Exception:
@@ -423,11 +405,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         st.markdown("---")
         
-        # --- MENÚS EN CASCADA DE FALTAS ---
         c_cat, c_fal = st.columns(2)
         with c_cat:
             categoria = st.selectbox("Categoría:", list(CATALOGO_SANCIONES.keys()), key=f"cat_{st.session_state.form_reset}")
-            
         with c_fal:
             dict_faltas = CATALOGO_SANCIONES[categoria]
             opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
@@ -436,7 +416,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         falta_original = falta_seleccionada_visual.split(" (")[0]
         obs = st.text_area("Redacción de lo sucedido (Observaciones):", key=f"obs_{st.session_state.form_reset}")
 
-        # --- PROCESAMIENTO DEL GUARDADO ---
         if st.button("Guardar Registro", type="primary"):
             if reporte_pasillo and not grupo_final:
                 st.error("⚠️ Por favor, seleccione al menos un grupo implicado en el reporte de pasillo.")
@@ -450,20 +429,16 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             s = info_falta["semaforo"] if info_falta else "Gris"
             
             f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
-            
             lote = []
             
             if reporte_pasillo:
                 if alumnos_por_grupo_seleccionados:
-                    # Guardamos la correspondencia EXACTA: Grupo real del alumno -> Nombre limpio
                     for g_real, al_limpio in alumnos_por_grupo_seleccionados:
                         lote.append([f, nombre_prof, materia, g_real, al_limpio, categoria, falta_original, obs, p, s])
                 else:
-                    # Reporte a nivel grupo completo sin seleccionar alumnos individuales
                     for g in grupo_final:
                         lote.append([f, nombre_prof, materia, g, "General (Ver observaciones)", categoria, falta_original, obs, p, s])
             else:
-                # Registro normal en clase
                 for g in grupo_final:
                     for al in alumnos_final:
                         lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs, p, s])
@@ -481,7 +456,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             leer_todos_los_registros.clear()
             
             st.session_state.form_reset += 1
-            st.success("✅ Incidencia registrada. Correo automático en proceso de envío...")
+            st.success("✅ Incidencia registrada exitosamente en la base de datos.")
+            time.sleep(1)
             st.rerun()
 
     st.markdown("---")
@@ -492,118 +468,89 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
 
 def renderizar_panel_coordinador(gc, area_coordinador):
-    aplicar_diseno_institucional()
     st.subheader(f"📋 Monitoreo de Coordinación: Área de {area_coordinador}")
     
-    # 1. Traer la base de datos de TODOS los registros/incidencias de conducta
     df_incidencias = leer_todos_los_registros(gc)
-    
-    # 2. Traer el mapeo de asignaciones para saber qué materias pertenecen a este departamento
     df_asig = leer_datos(gc, FILE_ASIGNACIONES)
     
     if df_asig.empty:
-        st.error("No se pudo cargar el archivo de asignaciones para validar las materias del área.")
+        st.error("No se pudo cargar el archivo de asignaciones docentes.")
         return
 
-    # 3. FILTRADO INTELIGENTE: Identificamos qué materias pertenecen al área del coordinador
     if 'Area' in df_asig.columns and 'Materia' in df_asig.columns:
         materias_del_area = df_asig[df_asig['Area'] == area_coordinador]['Materia'].unique().tolist()
     else:
-        st.error("Estructura incorrecta en el archivo de asignaciones (faltan columnas 'Area' o 'Materia').")
+        st.error("Estructura de columnas incorrecta en la plantilla docente.")
         return
 
-    # 4. Evaluamos y mostramos las incidencias correspondientes
     if df_incidencias.empty:
-        st.info(f"No se han registrado incidencias en el sistema de manera global aún.")
+        st.info("No se han reportado incidencias en el sistema de forma global.")
     else:
-        # Filtramos los reportes de conducta donde la materia pertenezca a la lista del área
         df_coordinacion = df_incidencias[df_incidencias['Materia'].isin(materias_del_area)]
-        
         if df_coordinacion.empty:
-            st.warning(f"No se han reportado incidencias hasta el momento para las materias de {area_coordinador}.")
+            st.warning(f"Sin incidencias registradas en el área de {area_coordinador}.")
         else:
-            st.write(f"Se han encontrado **{len(df_coordinacion)}** incidencias registradas en tu departamento:")
+            st.write(f"Incidencias encontradas en tu coordinación: **{len(df_coordinacion)}**")
+            columnas_coordinador = [col for col in ['Fecha', 'Profesor', 'Materia', 'Grupo', 'Alumno', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados'] if col in df_coordinacion.columns]
             
-            # Formateamos la tabla para que sea altamente legible para supervisión
-            columnas_coordinador = [
-                col for col in ['Fecha', 'Profesor', 'Materia', 'Grupo', 'Alumno', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados'] 
-                if col in df_coordinacion.columns
-            ]
-            
-            # Desplegamos los reportes reales ordenados del más reciente al más antiguo
             if 'Fecha' in df_coordinacion.columns:
                 df_coordinacion = df_coordinacion.sort_values(by='Fecha', ascending=False)
                 
-            st.dataframe(df_coordinacion[columnas_coordinador], use_container_width=True)
+            st.dataframe(df_coordinacion[columnas_coordinador], use_container_width=True, hide_index=True)
             
-            # Opcional: Si quieres habilitar las gráficas analíticas exclusivas de su área:
             st.markdown("---")
             st.subheader("📊 Analítica del Departamento")
             mostrar_tablero_analitico(df_coordinacion, f"Coordinación {area_coordinador}", modo_descarga=True)
-            
+
+
 def renderizar_panel_directivo(gc):
-    aplicar_diseno_institucional()
     st.header("📊 Inteligencia Institucional (Directivo)")
     df_full = leer_todos_los_registros(gc)
     
     if df_full.empty:
-        st.info("Base de datos vacía.")
+        st.info("Base de datos de registros vacía.")
         return
 
-  # --- 🚨 SISTEMA DE NOTIFICACIONES DE PASILLO (POP-UPS Y ALERTAS) 🚨 ---
     df_pasillo = df_full[df_full['Materia'] == "Pasillo / Inst. General"]
-    
     if not df_pasillo.empty:
         df_pasillo['Fecha_DT'] = pd.to_datetime(df_pasillo['Fecha'], errors='coerce')
         hoy = datetime.now(ZoneInfo("America/Mexico_City"))
         limite_tiempo = hoy - timedelta(days=1)
-        
         alertas_recientes = df_pasillo[df_pasillo['Fecha_DT'] >= limite_tiempo.replace(tzinfo=None)]
         
         if not alertas_recientes.empty:
             num_alertas = len(alertas_recientes)
-            
-            # 1. EL POP-UP CON MEMORIA (Solo salta si hay un número distinto de alertas)
             if st.session_state.get("memoria_alertas_pasillo") != num_alertas:
                 st.toast(f"🚨 Tienes {num_alertas} reporte(s) de pasillo reciente(s).", icon="🚨")
-                # Guardamos el número actual en la memoria para no repetirlo
                 st.session_state["memoria_alertas_pasillo"] = num_alertas
             
-            # 2. LA BANDEJA DE ALERTA VISUAL (Esta sí se queda fija en pantalla)
             st.warning(f"🔔 **ALERTAS PRIORITARIAS:** Se han registrado {num_alertas} incidencias fuera de clase en las últimas 24 horas.")
             with st.expander("👀 Ver Detalles de Reportes de Pasillo", expanded=True):
                 cols_alerta = ["Fecha", "Profesor", "Grupo", "Alumno", "Falta", "Observaciones"]
                 cols_validas = [c for c in cols_alerta if c in alertas_recientes.columns]
-                st.dataframe(alertas_recientes[cols_validas].sort_values(by="Fecha", ascending=False), use_container_width=True)
+                st.dataframe(alertas_recientes[cols_validas].sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
         else:
-            # Si ya pasaron 24 hrs y no hay alertas, limpiamos la memoria
             st.session_state["memoria_alertas_pasillo"] = 0
-    # -----------------------------------------------------------------------
 
-    # --- FILTROS DINÁMICOS EN CASCADA 
     with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
         f1, f2, f3, f4 = st.columns(4)
         df_f = df_full.copy()
         
-        # 1. Filtro Grado
         grados = ["Todos"] + sorted(df_f['Grado'].astype(str).unique().tolist())
         sel_grado = f1.selectbox("Filtrar Grado:", grados)
         if sel_grado != "Todos":
             df_f = df_f[df_f['Grado'].astype(str) == sel_grado]
             
-        # 2. Filtro Grupo
         grupos = ["Todos"] + sorted(df_f['Grupo'].astype(str).unique().tolist())
         sel_grupo = f2.selectbox("Filtrar Grupo:", grupos)
         if sel_grupo != "Todos":
             df_f = df_f[df_f['Grupo'].astype(str) == sel_grupo]
             
-        # 3. Filtro Profesor
         profs = ["Todos"] + sorted(df_f['Profesor'].astype(str).unique().tolist())
         sel_prof = f3.selectbox("Filtrar Profesor:", profs)
         if sel_prof != "Todos":
             df_f = df_f[df_f['Profesor'].astype(str) == sel_prof]
             
-        # 4. Filtro Materia
         mats = ["Todos"] + sorted(df_f['Materia'].astype(str).unique().tolist())
         idx_mat = 1 if (len(mats) == 2 and sel_prof != "Todos") else 0
         sel_mat = f4.selectbox("Filtrar Materia:", mats, index=idx_mat)
@@ -611,35 +558,29 @@ def renderizar_panel_directivo(gc):
             df_f = df_f[df_f['Materia'].astype(str) == sel_mat]
 
     mostrar_tablero_analitico(df_f, "Institucional")
-    
-# ==========================================
-# 5. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO)
-# ==========================================
-import urllib.parse
-import requests
 
-# 1. Configuración de credenciales desde los Secrets
+
+# ==========================================
+# 6. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO)
+# ==========================================
 CLIENT_ID = st.secrets["auth"]["google_client_id"]
 CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
 
-# Inicializamos estados de sesión si no existen
 if "auth_email" not in st.session_state:
     st.session_state["auth_email"] = None
 if "auth_name" not in st.session_state:
     st.session_state["auth_name"] = None
 
-# 2. CAPTURA DE PARÁMETROS EN LA URL (Únicamente para interceptar el código temporal de Google)
 parametros_url = st.query_params.to_dict()
 
 # --- INTENTO DE RECUPERACIÓN EXCLUSIVA POR COOKIE NATIVA SEGURA DE STREAMLIT ---
-# Eliminamos cualquier lectura de parámetros '_p_email' o '_p_name' de la URL.
 if not st.session_state["auth_email"]:
     if hasattr(st, "user") and st.user and st.user.get("is_logged_in", False):
         st.session_state["auth_email"] = st.user.get("email", "")
         st.session_state["auth_name"] = st.user.get("name", "Profesor Miraflores")
 
-# 3. PROCESAMIENTO DEL RETORNO DE GOOGLE (SOLO MEDIANTE HANDSHAKE DE OAUTH OFICIAL)
+# 3. PROCESAMIENTO DEL RETORNO DE GOOGLE HANDSHAKE OFICIAL
 if "code" in parametros_url and not st.session_state["auth_email"]:
     codigo_autorizacion = parametros_url["code"]
     
@@ -661,43 +602,36 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers).json()
             
-            # Guardamos los datos reales entregados por la API de Google
-            email_capturado = user_info.get("email", "")
-            name_capturado = user_info.get("name", "Profesor Miraflores")
+            st.session_state["auth_email"] = user_info.get("email", "")
+            st.session_state["auth_name"] = user_info.get("name", "Profesor Miraflores")
             
-            st.session_state["auth_email"] = email_capturado
-            st.session_state["auth_name"] = name_capturado
-            
-            # Intentamos asociar con la cookie de plataforma
             if hasattr(st, "login"):
                 try:
                     st.login(provider="google")
                 except:
                     pass
             
-            # Limpiamos de forma absoluta la barra de direcciones del navegador
             st.query_params.clear()
             st.rerun()
             
     except Exception as e:
         st.error(f"Error en la conexión de seguridad: {e}")
 
+
 # ==========================================
 # FLUJO DE RENDERIZADO DE PANTALLA
 # ==========================================
 
-# ESCENARIO A: No hay sesión activa -> Mostrar inicio de sesión con estilo institucional
+# ESCENARIO A: No hay sesión activa -> Mostrar login corporativo limpio
 if not st.session_state.get("auth_email"):
-    # Aplicamos el diseño y el banner superior
     aplicar_diseno_institucional()
     
-    # Contenedor de login centrado y limpio
     st.markdown(
         """
         <div class="card-conducta" style="text-align: center; max-width: 500px; margin: 0 auto; padding: 2.5rem 1.5rem;">
-            <h3 style="color: #0B1B3D; margin-bottom: 1rem;">Acceso Seguro</h3>
-            <p style="color: #666; font-size: 0.95rem; margin-bottom: 2rem;">
-                Por favor, inicia sesión con tu cuenta de correo institucional para acceder al panel que te corresponde.
+            <h3 style="color: #0B1B3D !important; margin-bottom: 1rem;">Acceso de Personal</h3>
+            <p style="color: #444; font-size: 0.95rem; margin-bottom: 2rem;">
+                Por favor, inicia sesión con tu cuenta de correo @miraflores.edu.mx. El sistema verificará tu rol docente de manera automática.
             </p>
         </div>
         """, 
@@ -713,31 +647,24 @@ if not st.session_state.get("auth_email"):
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Espaciador para centrar el botón de Google
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         st.link_button("🔑 Iniciar Sesión con Google", url_google_auth, type="primary")
     st.stop()
     
-# ─────────────────────────────────────────────────────────────────
-# ESCENARIO B: El usuario está plenamente autenticado con Google
-# ─────────────────────────────────────────────────────────────────
+# ESCENARIO B: Usuario autenticado correctamente con Google
 else:
-    # Aplicamos el diseño institucional a las vistas del panel de control
     aplicar_diseno_institucional()
-    # Normalizamos el correo de Google para evitar errores de mayúsculas/minúsculas
+    
     correo_google = st.session_state["auth_email"].lower().strip()
     nombre_google = st.session_state["auth_name"]
     
-    # --- EL CANDADO DE DOMINIO INSTITUCIONAL ---
-    correo_admin = "marcodoleire@gmail.com"  # Tu correo personal para pruebas
-    
+    # Candado estricto de dominio institucional
+    correo_admin = "marcodoleire@gmail.com"  
     if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
-        st.error("⛔ Acceso denegado. Este sistema es exclusivo para personal del Colegio Miraflores.")
-        st.info("Si iniciaste sesión con una cuenta personal, cierra la sesión actual e ingresa con tu cuenta @miraflores.edu.mx.")
+        st.error("⛔ Acceso denegado. Este sistema está restringido exclusivamente para cuentas institucionales @miraflores.edu.mx.")
         
-        # Botón de escape para salir del bloqueo de pantalla
-        if st.button("🔑 Volver a intentar con otra cuenta", type="secondary"):
+        if st.button("🔑 Cambiar a cuenta del Colegio", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
             if hasattr(st, "logout"):
@@ -749,7 +676,6 @@ else:
         gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         
-        # Limpieza de espacios en columnas para evitar errores de lectura de la tabla de seguridad
         if not df_s.empty:
             df_s.columns = df_s.columns.str.strip()
             df_s['Usuario'] = df_s['Usuario'].astype(str).str.lower().str.strip()
@@ -759,30 +685,22 @@ else:
         
         # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
         if usuario_registrado.empty:
-            
-            # 🛡️ NUEVO CANDADO ANTI-ALUMNOS: Verificación de Plantilla Docente
             df_asig_verif = leer_datos(gc, FILE_ASIGNACIONES)
             es_profesor_oficial = False
             
             if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
-                # Normalizamos la lista de correos válidos para asegurar coincidencia exacta
-                profesores_validos = [
-                    str(email).lower().strip() 
-                    for email in df_asig_verif['Usuario_Profesor'].dropna().unique()
-                ]
+                profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
                 if correo_google in profesores_validos:
                     es_profesor_oficial = True
             
-            # Excepción de desarrollo para el administrador de pruebas
             if correo_google == correo_admin:
                 es_profesor_oficial = True
 
             if not es_profesor_oficial:
-                st.error("⛔ Acceso denegado. Tu cuenta no se encuentra registrada en la plantilla docente activa.")
-                st.info("Si eres docente o directivo de la institución y requieres acceso, por favor contacta al área de soporte técnico o coordinación.")
+                st.error("⛔ Tu correo no forma parte de la plantilla docente del ciclo escolar activo.")
+                st.info("Por favor, contacta a tu departamento de Coordinación Académica para ser dado de alta en las asignaciones.")
                 
-                # Permite al usuario des-autenticarse si es el correo equivocado
-                if st.button("🔑 Cambiar de cuenta de Google", type="secondary"):
+                if st.button("🔑 Intentar con otra cuenta", type="secondary"):
                     st.session_state.clear()
                     st.query_params.clear()
                     if hasattr(st, "logout"):
@@ -790,67 +708,50 @@ else:
                     st.rerun()
                 st.stop()
 
-            # --- Formulario de registro para nuevo docente verificado ---
-            st.title("👋 ¡Bienvenido al Sistema de Conducta!")
-            st.info(f"Hola **{nombre_google}**, detectamos que es tu primera vez iniciando sesión. Para continuar, por favor configura tu perfil de ingreso.")
+            # Formulario de autoregistro inicial
+            st.title("👋 Registro de Perfil Docente")
+            st.info(f"Hola **{nombre_google}**, detectamos tu primer ingreso. Configura tu departamento para activar tus permisos.")
             
             with st.form("form_registro_nuevo"):
-                st.write("Por favor, selecciona tu departamento o área correspondiente:")
-                area_seleccionada = st.selectbox(
-                    "Área / Departamento:", 
-                    ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"]
-                )
+                area_seleccionada = st.selectbox("Área / Departamento:", ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"])
                 
                 if st.form_submit_button("Completar Registro y Entrar", type="primary"):
                     ws_seg = gc.open(FILE_SEGURIDAD).sheet1
-                    
-                    # Escudo de consistencia anti-duplicados redundante en tiempo real
                     todos_los_usuarios = [str(u).lower().strip() for u in ws_seg.col_values(1)]
                     
                     if correo_google not in todos_los_usuarios:
-                        # Respetando la estructura exacta de 3_Usuarios_Seguridad: Usuario, Nombre_Profesor, Rol, Area
                         ws_seg.append_row([correo_google, nombre_google, "Docente", area_seleccionada])
-                        st.success("✅ Perfil creado con éxito. Entrando al sistema...")
-                    else:
-                        st.warning("Tu perfil ya se encontraba registrado en el sistema.")
+                        st.success("✅ Perfil creado exitosamente.")
                     
-                    # Limpiamos las cachés locales para asegurar la recarga del nuevo rol
                     leer_datos.clear()
                     time.sleep(1)
                     st.rerun()
-                    
-            st.stop()  # Se detiene la ejecución para forzar el flujo del formulario de registro
-        # ------------------------------------------
-
-        # --- FLUJO NORMAL PARA USUARIOS AUTORIZADOS Y REGISTRADOS ---
-        rol_asignado = usuario_registrado['Rol'].iloc[0]
+            st.stop()
+        
+        # --- USUARIO CORRECTAMENTE VALIDADO ---
+        rol_assigned = usuario_registrado['Rol'].iloc[0]
         nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
 
-        # --- PANEL PRINCIPAL DE LA APLICACIÓN ---
-        col1, col2 = st.columns([8, 2])
-        col1.title("Panel de Conducta Institucional")
+        # Barra lateral y selector de vistas
+        st.sidebar.title("Configuración de Vista")
         
-        # Botón de salida robusto (limpia sesión de Streamlit y del navegador)
-        if col2.button("Cerrar Sesión", type="secondary"):
+        # Botón para cerrar sesión dentro del menú lateral
+        if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
             if hasattr(st, "logout"):
                 st.logout()
             st.rerun()
 
-        # --- SELECTOR DE VISTA DINÁMICA DE ROLES (Directivos y Coordinadores) ---
-        vista_actual = rol_asignado
-        
-        if rol_asignado in ['Director', 'Coordinador', 'Directivo']:
-            st.sidebar.title("⚙️ Configuración de Vista")
-            opciones_vista = [f"Ver como {rol_asignado}", "Ver como Docente de Asignatura"]
+        vista_actual = rol_assigned
+        if rol_assigned in ['Director', 'Coordinador', 'Directivo']:
+            opciones_vista = [f"Ver como {rol_assigned}", "Ver como Docente de Asignatura"]
             seleccion = st.sidebar.radio("Selecciona tu rol para esta sesión:", opciones_vista)
-            
             if seleccion == "Ver como Docente de Asignatura":
                 vista_actual = 'Docente'
 
-        # --- RENDERIZADO SEGÚN LA VISTA SELECCIONADA ---
+        # Renderizado de los paneles
         if vista_actual == 'Director' or vista_actual == 'Directivo':
             renderizar_panel_directivo(gc)
         elif vista_actual == 'Coordinador':
@@ -859,6 +760,5 @@ else:
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
 
     except Exception as e:
-        st.error("🚨 Ocurrió un inconveniente al procesar la autenticación de usuario.")
-        st.write(f"Detalle técnico de la anomalía: {e}")
-
+        st.error("🚨 Ocurrió un error al cargar tus permisos del panel.")
+        st.write(f"Detalle de la anomalía técnica: {e}")
