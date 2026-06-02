@@ -23,7 +23,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 def aplicar_diseno_institucional():
-    # 1. Configuración de página con estilos personalizados inyectados
+    # 1. Configuración de página con estilos personalizados de alto contraste
     st.markdown(
         """
         <style>
@@ -32,6 +32,7 @@ def aplicar_diseno_institucional():
                 --azul-miraflores: #0B1B3D;
                 --dorado-miraflores: #C5A059;
                 --fondo-gris: #F4F6F9;
+                --texto-oscuro: #1A253C;
             }
             
             #MainMenu {visibility: hidden;}
@@ -93,6 +94,32 @@ def aplicar_diseno_institucional():
                 margin-bottom: 1rem;
             }
             
+            /* 
+               =============================================
+               🚨 CONTROL DE VISIBILIDAD DE TEXTOS (FIX CONTRASTE)
+               =============================================
+            */
+            /* Forzar color oscuro en todas las etiquetas de widgets (Selectbox, Multiselect, etc.) */
+            div[data-testid="stWidgetLabel"] p, 
+            label[data-testid="stWidgetLabel"] p,
+            .stWidgetLabel p,
+            .stMarkdown p {
+                color: var(--texto-oscuro) !important;
+                font-weight: 600 !important;
+            }
+            
+            /* Forzar color de texto en los checkboxes */
+            div[data-testid="stCheckbox"] label span p {
+                color: var(--texto-oscuro) !important;
+                font-weight: 600 !important;
+            }
+            
+            /* Forzar color de texto para las leyendas de radio buttons */
+            div[data-testid="stRadio"] label p {
+                color: var(--texto-oscuro) !important;
+                font-weight: 500 !important;
+            }
+
             /* Personalización de los botones principales de Streamlit */
             div.stButton > button:first-child {
                 background-color: var(--azul-miraflores);
