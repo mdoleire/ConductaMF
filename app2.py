@@ -576,9 +576,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             else:
                                 st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo. Proceda de manera manual.")
                 
-                except Exception as e:
+               except Exception as e:
                     st.error(f"⚠️ El clasificador automático no se encuentra disponible en este momento.")
-                    st.info(f"Detalle técnico omitido para el usuario. Por favor proceda con el registro manual.")
+                    st.warning(f"🔍 Detalle técnico real devuelto por Google: {e}")
         
         st.markdown("---")
         
