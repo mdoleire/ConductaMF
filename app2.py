@@ -394,6 +394,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
     
     if "form_reset" not in st.session_state:
         st.session_state["form_reset"] = 0
+    if "ia_closed_state" not in st.session_state:
+        st.session_state["ia_closed_state"] = 0
         
     with st.expander("📝 Registro de Incidencia", expanded=True):
         reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
@@ -495,9 +497,10 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         # =================================================================
         # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
         # =================================================================
-        # =================================================================
-        # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
-        # =================================================================
+        # La llave dinámica obliga a Streamlit a cerrar la ventana al incrementar el contador
+        popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
+        
+        with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
         with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True):
             st.markdown("### 🪄 Clasificación Inteligente")
             st.write("Redacta la situación abajo. La IA configurará automáticamente la categoría y falta correspondientes en el formulario de fondo.")
@@ -589,9 +592,10 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 
                 st.success(f"✅ ¡Clasificado con éxito! Sugerencia sugerida: **{cat_sug}** ➔ **{fal_sug}**.")
                 
-                # Botón con ancho completo para cerrar el Popover de manera cómoda
+                # Al hacer clic, incrementamos el contador para destruir y cerrar la ventana flotante
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("❌ Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
+                    st.session_state["ia_closed_state"] += 1
                     st.rerun()
         
         # --- MENÚS EN CASCADA DE FALTAS ---
