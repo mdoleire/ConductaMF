@@ -557,11 +557,11 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                                 cat_ia = datos_clasificados.get("categoria")
                                 fal_ia = datos_clasificados.get("falta")
                                 
-                                if cat_ia in CATALOGO_SANCIONES:
+                               if cat_ia in CATALOGO_SANCIONES:
                                     st.session_state[key_cat_recomendada] = cat_ia
                                     if fal_ia in CATALOGO_SANCIONES[cat_ia]:
                                         st.session_state[key_fal_recomendada] = fal_ia
-                                        st.success(f"✅ ¡Clasificado con éxito! Puedes cerrar esta ventana.")
+                                        st.success(f"✅ ¡Clasificado con éxito! Sugerencia: **{cat_ia}** ➔ **{fal_ia}**. Ya puedes cerrar esta ventana.")
                                         # Auto-actualizamos las observaciones de fondo
                                         st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
                                     else:
