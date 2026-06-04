@@ -501,7 +501,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
         
         with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
-        with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True):
             st.markdown("### 🪄 Clasificación Inteligente")
             st.write("Redacta la situación abajo. La IA configurará automáticamente la categoría y falta correspondientes en el formulario de fondo.")
             
