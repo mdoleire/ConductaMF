@@ -525,7 +525,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY' en la configuración.")
                         else:
                             genai.configure(api_key=api_key_gemini)
-                            modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
+                            modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
                             
                             prompt_sistema = f"""
                             Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
