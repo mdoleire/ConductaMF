@@ -483,18 +483,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         st.markdown("---")
         
-        # =================================================================
-        # 🪄 CLASIFICADOR AUTOMÁTICO DE FALTAS CON GEMINI AI
-        # =================================================================
-        st.markdown("#### 🪄 Asistente de Clasificación con IA")
-        relato_incidencia = st.text_area(
-            "Describe lo sucedido con tus propias palabras:",
-            placeholder="Ejemplo: El alumno llegó 15 minutos tarde a clase de Historia sin justificante y comenzó a distraer a sus compañeros.",
-            key=f"relato_ia_{st.session_state.form_reset}",
-            help="Escribe detalladamente los hechos y haz clic en el botón de abajo para clasificar la categoría y la falta automáticamente."
-        )
-
-        # Claves de control de estado dinámico ligadas al ciclo del formulario activo
+        # Claves de control de estado dinámico para la IA ligados al ciclo del formulario
         key_cat_recomendada = f"ia_cat_{st.session_state.form_reset}"
         key_fal_recomendada = f"ia_fal_{st.session_state.form_reset}"
 
@@ -503,86 +492,89 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         if key_fal_recomendada not in st.session_state:
             st.session_state[key_fal_recomendada] = None
 
-        if st.button("🪄 Clasificar con IA", type="secondary", key=f"btn_ia_{st.session_state.form_reset}"):
-            if not relato_incidencia.strip():
-                st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación con IA.")
-            else:
-                try:
-                    # 🔍 ALGORITMO DE BÚSQUEDA PROFUNDA DE LA LLAVE GEMINI
-                    api_key_gemini = None
-                    
-                    # 1. Intentamos buscar la llave en la raíz del archivo (mayúsculas o minúsculas)
-                    api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
-                    
-                    # 2. Si no está en la raíz, recorremos de forma inteligente cada subsección de los secretos
-                    if not api_key_gemini:
-                        for seccion_key in st.secrets.keys():
-                            contenido_seccion = st.secrets[seccion_key]
-                            # Verificamos si la sección es un diccionario (como [auth] o [smtp])
-                            if isinstance(contenido_seccion, dict) or hasattr(contenido_seccion, "get"):
-                                api_key_gemini = contenido_seccion.get("GEMINI_API_KEY") or contenido_seccion.get("gemini_api_key")
-                                if api_key_gemini:
-                                    break # Encontrada, salimos del ciclo
-                    
-                    # 3. Si tras la búsqueda profunda sigue sin aparecer, mostramos diagnóstico claro
-                    if not api_key_gemini:
-                        st.error("🔑 Error de Configuración: La llave 'GEMINI_API_KEY' no se encuentra registrada en los secretos de Streamlit.")
-                        st.info("💡 **Diagnóstico de Soporte:**")
-                        st.write("Las secciones que tu servidor de Streamlit SÍ está detectando actualmente en tu consola son:", list(st.secrets.keys()))
-                    else:
-                        # Configuración segura del SDK de Google con la clave localizada
-                        genai.configure(api_key=api_key_gemini)
-                        modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
+        # =================================================================
+        # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
+        # =================================================================
+        with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True):
+            st.markdown("### 🪄 Clasificación Inteligente")
+            st.write("Redacta la situación abajo. La IA configurará automáticamente la categoría y falta correspondientes en el formulario de fondo.")
+            
+            relato_incidencia = st.text_area(
+                "Describe lo sucedido con tus propias palabras:",
+                placeholder="Ejemplo: El alumno llegó tarde y comenzó a distraer a sus compañeros...",
+                key=f"relato_ia_{st.session_state.form_reset}",
+                help="Describe detalladamente los hechos y haz clic en Clasificar."
+            )
+
+            if st.button("🪄 Clasificar Hechos", type="primary", key=f"btn_ia_{st.session_state.form_reset}"):
+                if not relato_incidencia.strip():
+                    st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación.")
+                else:
+                    try:
+                        # Búsqueda profunda de la API Key en los secretos
+                        api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
+                        if not api_key_gemini:
+                            for seccion_key in st.secrets.keys():
+                                contenido_seccion = st.secrets[seccion_key]
+                                if isinstance(contenido_seccion, dict) or hasattr(contenido_seccion, "get"):
+                                    api_key_gemini = contenido_seccion.get("GEMINI_API_KEY") or contenido_seccion.get("gemini_api_key")
+                                    if api_key_gemini:
+                                        break
                         
-                        prompt_sistema = f"""
-                        Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
-                        
-                        CATÁLOGO DE INCIDENCIAS:
-                        {json.dumps(CATALOGO_SANCIONES, ensure_ascii=False, indent=2)}
-                        
-                        INCIDENCIA REPORTADA:
-                        "{relato_incidencia}"
-                        
-                        INSTRUCCIONES:
-                        1. Identifica qué "Categoría" y qué "Falta" específica del catálogo se asocian mejor al relato.
-                        2. Debes responder EXCLUSIVAMENTE en formato JSON plano con la siguiente estructura exacta:
-                        {{
-                            "categoria": "Nombre Exacto de la Categoría",
-                            "falta": "Nombre Exacto de la Falta"
-                        }}
-                        
-                        Asegúrate de respetar de forma estricta los acentos, mayúsculas y la ortografía del catálogo oficial provisto. No agregues bloques de código como ```json ni texto adicional.
-                        """
-                        
-                        with st.spinner("🪄 Analizando hechos con Inteligencia Artificial..."):
-                            respuesta_api = modelo_gemini.generate_content(
-                                prompt_sistema,
-                                generation_config={"response_mime_type": "application/json"}
-                            )
+                        if not api_key_gemini:
+                            st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY' en la configuración.")
+                        else:
+                            genai.configure(api_key=api_key_gemini)
+                            modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
                             
-                            datos_clasificados = json.loads(respuesta_api.text.strip())
-                            cat_ia = datos_clasificados.get("categoria")
-                            fal_ia = datos_clasificados.get("falta")
+                            prompt_sistema = f"""
+                            Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
                             
-                            # Validación de integridad de la respuesta contra nuestro catálogo estructurado
-                            if cat_ia in CATALOGO_SANCIONES:
-                                st.session_state[key_cat_recomendada] = cat_ia
-                                if fal_ia in CATALOGO_SANCIONES[cat_ia]:
-                                    st.session_state[key_fal_recomendada] = fal_ia
-                                    st.success(f"✅ IA sugirió: **{cat_ia}** ➔ **{fal_ia}**")
+                            CATÁLOGO DE INCIDENCIAS:
+                            {json.dumps(CATALOGO_SANCIONES, ensure_ascii=False, indent=2)}
+                            
+                            INCIDENCIA REPORTADA:
+                            "{relato_incidencia}"
+                            
+                            INSTRUCCIONES:
+                            1. Identifica qué "Categoría" y qué "Falta" específica del catálogo se asocian mejor al relato.
+                            2. Debes responder EXCLUSIVAMENTE en formato JSON plano con la siguiente estructura exacta:
+                            {{
+                                "categoria": "Nombre Exacto de la Categoría",
+                                "falta": "Nombre Exacto de la Falta"
+                            }}
+                            
+                            Asegúrate de respetar de forma estricta los acentos, mayúsculas y la ortografía del catálogo oficial provisto. No agregues bloques de código como ```json ni texto adicional.
+                            """
+                            
+                            with st.spinner("🪄 Analizando hechos con Inteligencia Artificial..."):
+                                respuesta_api = modelo_gemini.generate_content(
+                                    prompt_sistema,
+                                    generation_config={"response_mime_type": "application/json"}
+                                )
+                                
+                                datos_clasificados = json.loads(respuesta_api.text.strip())
+                                cat_ia = datos_clasificados.get("categoria")
+                                fal_ia = datos_clasificados.get("falta")
+                                
+                                if cat_ia in CATALOGO_SANCIONES:
+                                    st.session_state[key_cat_recomendada] = cat_ia
+                                    if fal_ia in CATALOGO_SANCIONES[cat_ia]:
+                                        st.session_state[key_fal_recomendada] = fal_ia
+                                        st.success(f"✅ ¡Clasificado con éxito! Puedes cerrar esta ventana.")
+                                        # Auto-actualizamos las observaciones de fondo
+                                        st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
+                                    else:
+                                        st.session_state[key_fal_recomendada] = None
+                                        st.success(f"✅ Categoría identificada: **{cat_ia}**.")
                                 else:
-                                    st.session_state[key_fal_recomendada] = None
-                                    st.success(f"✅ IA sugirió la categoría **{cat_ia}**. Por favor, selecciona la falta manualmente.")
-                            else:
-                                st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo. Proceda de manera manual.")
-                
-                except Exception as e:
-                    st.error(f"⚠️ El clasificador automático no se encuentra disponible en este momento.")
-                    st.warning(f"🔍 Detalle técnico real devuelto por Google: {e}")
+                                    st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo oficial.")
+                    
+                    except Exception as e:
+                        st.error(f"⚠️ El clasificador automático no se encuentra disponible.")
+                        st.info(f"Detalle técnico: {e}")
         
-        st.markdown("---")
-        
-        # --- MENÚS EN CASCADA DE FALTAS (VINCULADOS AL ESTADO DE LA IA) ---
+        # --- MENÚS EN CASCADA DE FALTAS ---
         c_cat, c_fal = st.columns(2)
         
         # 1. Selector de Categorías con índice autoadaptable
@@ -621,10 +613,12 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
         falta_original = falta_seleccionada_visual.split(" (")[0]
         
-        # Pre-llenamos el área de observaciones final con la descripción redactada arriba
+        # Verificamos si la IA pre-llenó la redacción para que el profesor no tenga que escribirla dos veces
+        redaccion_inicial = st.session_state.get(f"obs_prefill_{st.session_state.form_reset}", "")
+        
         obs = st.text_area(
             "Redacción final de lo sucedido (Observaciones):", 
-            value=relato_incidencia,
+            value=redaccion_inicial,
             key=f"obs_{st.session_state.form_reset}"
         )
 
