@@ -20,6 +20,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import urllib.parse
 import requests
+import google.generativeai as genai
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
@@ -402,6 +403,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         grupo_final = []
         alumnos_final = ["General (Ver observaciones)"] 
         
+        # --- SELECCIÓN DE ALUMNOS (PASILLO O GRUPO CLASE) ---
         if reporte_pasillo:
             c1, c2, c3 = st.columns(3)
             nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
@@ -481,17 +483,133 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         st.markdown("---")
         
+        # =================================================================
+        # 🪄 CLASIFICADOR AUTOMÁTICO DE FALTAS CON GEMINI AI
+        # =================================================================
+        st.markdown("#### 🪄 Asistente de Clasificación con IA")
+        relato_incidencia = st.text_area(
+            "Describe lo sucedido con tus propias palabras:",
+            placeholder="Ejemplo: El alumno llegó 15 minutos tarde a clase de Historia sin justificante y comenzó a distraer a sus compañeros.",
+            key=f"relato_ia_{st.session_state.form_reset}",
+            help="Escribe detalladamente los hechos y haz clic en el botón de abajo para clasificar la categoría y la falta automáticamente."
+        )
+
+        # Claves de control de estado dinámico ligadas al ciclo del formulario activo
+        key_cat_recomendada = f"ia_cat_{st.session_state.form_reset}"
+        key_fal_recomendada = f"ia_fal_{st.session_state.form_reset}"
+
+        if key_cat_recomendada not in st.session_state:
+            st.session_state[key_cat_recomendada] = list(CATALOGO_SANCIONES.keys())[0]
+        if key_fal_recomendada not in st.session_state:
+            st.session_state[key_fal_recomendada] = None
+
+        if st.button("🪄 Clasificar con IA", type="secondary", key=f"btn_ia_{st.session_state.form_reset}"):
+            if not relato_incidencia.strip():
+                st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación con IA.")
+            else:
+                try:
+                    if "GEMINI_API_KEY" not in st.secrets:
+                        st.error("🔑 Error de Configuración: La llave 'GEMINI_API_KEY' no se encuentra registrada en los secretos de Streamlit.")
+                    else:
+                        # Configuración segura del SDK de Google
+                        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                        modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
+                        
+                        prompt_sistema = f"""
+                        Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
+                        
+                        CATÁLOGO DE INCIDENCIAS:
+                        {json.dumps(CATALOGO_SANCIONES, ensure_ascii=False, indent=2)}
+                        
+                        INCIDENCIA REPORTADA:
+                        "{relato_incidencia}"
+                        
+                        INSTRUCCIONES:
+                        1. Identifica qué "Categoría" y qué "Falta" específica del catálogo se asocian mejor al relato.
+                        2. Debes responder EXCLUSIVAMENTE en formato JSON plano con la siguiente estructura exacta:
+                        {{
+                            "categoria": "Nombre Exacto de la Categoría",
+                            "falta": "Nombre Exacto de la Falta"
+                        }}
+                        
+                        Asegúrate de respetar de forma estricta los acentos, mayúsculas y la ortografía del catálogo oficial provisto. No agregues bloques de código como ```json ni texto adicional.
+                        """
+                        
+                        with st.spinner("🪄 Analizando hechos con Inteligencia Artificial..."):
+                            respuesta_api = modelo_gemini.generate_content(
+                                prompt_sistema,
+                                generation_config={"response_mime_type": "application/json"}
+                            )
+                            
+                            datos_clasificados = json.loads(respuesta_api.text.strip())
+                            cat_ia = datos_clasificados.get("categoria")
+                            fal_ia = datos_clasificados.get("falta")
+                            
+                            # Validación de integridad de la respuesta contra nuestro catálogo estructurado
+                            if cat_ia in CATALOGO_SANCIONES:
+                                st.session_state[key_cat_recomendada] = cat_ia
+                                if fal_ia in CATALOGO_SANCIONES[cat_ia]:
+                                    st.session_state[key_fal_recomendada] = fal_ia
+                                    st.success(f"✅ IA sugirió: **{cat_ia}** ➔ **{fal_ia}**")
+                                else:
+                                    st.session_state[key_fal_recomendada] = None
+                                    st.success(f"✅ IA sugirió la categoría **{cat_ia}**. Por favor, selecciona la falta manualmente.")
+                            else:
+                                st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo. Proceda de manera manual.")
+                
+                except Exception as e:
+                    st.error(f"⚠️ El clasificador automático no se encuentra disponible en este momento.")
+                    st.info(f"Detalle técnico omitido para el usuario. Por favor proceda con el registro manual.")
+        
+        st.markdown("---")
+        
+        # --- MENÚS EN CASCADA DE FALTAS (VINCULADOS AL ESTADO DE LA IA) ---
         c_cat, c_fal = st.columns(2)
+        
+        # 1. Selector de Categorías con índice autoadaptable
+        lista_categorias = list(CATALOGO_SANCIONES.keys())
+        try:
+            indice_categoria_defecto = lista_categorias.index(st.session_state[key_cat_recomendada])
+        except ValueError:
+            indice_categoria_defecto = 0
+            
         with c_cat:
-            categoria = st.selectbox("Categoría:", list(CATALOGO_SANCIONES.keys()), key=f"cat_{st.session_state.form_reset}")
+            categoria = st.selectbox(
+                "Categoría:", 
+                lista_categorias, 
+                index=indice_categoria_defecto, 
+                key=f"cat_{st.session_state.form_reset}"
+            )
+            
+        # 2. Selector de Falta cometida con índice autoadaptable
+        dict_faltas = CATALOGO_SANCIONES[categoria]
+        opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
+        
+        indice_falta_defecto = 0
+        if st.session_state[key_fal_recomendada]:
+            for index_opcion, texto_opcion in enumerate(opciones_visuales):
+                if texto_opcion.startswith(st.session_state[key_fal_recomendada]):
+                    indice_falta_defecto = index_opcion
+                    break
+                    
         with c_fal:
-            dict_faltas = CATALOGO_SANCIONES[categoria]
-            opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
-            falta_seleccionada_visual = st.selectbox("Falta cometida:", opciones_visuales, key=f"falta_{st.session_state.form_reset}")
+            falta_seleccionada_visual = st.selectbox(
+                "Falta cometida:", 
+                opciones_visuales, 
+                index=indice_falta_defecto, 
+                key=f"falta_{st.session_state.form_reset}"
+            )
             
         falta_original = falta_seleccionada_visual.split(" (")[0]
-        obs = st.text_area("Redacción de lo sucedido (Observaciones):", key=f"obs_{st.session_state.form_reset}")
+        
+        # Pre-llenamos el área de observaciones final con la descripción redactada arriba
+        obs = st.text_area(
+            "Redacción final de lo sucedido (Observaciones):", 
+            value=relato_incidencia,
+            key=f"obs_{st.session_state.form_reset}"
+        )
 
+        # --- PROCESAMIENTO DEL GUARDADO ---
         if st.button("Guardar Registro", type="primary"):
             if reporte_pasillo and not grupo_final:
                 st.error("⚠️ Por favor, seleccione al menos un grupo implicado en el reporte de pasillo.")
@@ -541,7 +659,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
     df_full = leer_todos_los_registros(gc)
     df_doc = df_full[df_full['Profesor'] == nombre_prof] if not df_full.empty else df_full
     mostrar_tablero_analitico(df_doc, "Mis Reportes", modo_descarga=False)
-
 
 def renderizar_panel_coordinador(gc, area_coordinador):
     st.subheader(f"📋 Monitoreo de Coordinación: Área de {area_coordinador}")
