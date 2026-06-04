@@ -503,17 +503,24 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         if key_fal_recomendada not in st.session_state:
             st.session_state[key_fal_recomendada] = None
 
-        if st.button("🪄 Clasificar con IA", type="secondary", key=f"btn_ia_{st.session_state.form_reset}"):
+       if st.button("🪄 Clasificar con IA", type="secondary", key=f"btn_ia_{st.session_state.form_reset}"):
             if not relato_incidencia.strip():
                 st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación con IA.")
             else:
                 try:
-                    if "GEMINI_API_KEY" not in st.secrets:
+                    # Búsqueda defensiva: intenta leer tanto en mayúsculas como en minúsculas
+                    api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
+                    
+                    if not api_key_gemini:
                         st.error("🔑 Error de Configuración: La llave 'GEMINI_API_KEY' no se encuentra registrada en los secretos de Streamlit.")
+                    else:
+                        # Configuración segura del SDK de Google con la clave encontrada
+                        genai.configure(api_key=api_key_gemini)
+                        modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
                     else:
                         # Configuración segura del SDK de Google
                         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                        modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
+                        modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
                         
                         prompt_sistema = f"""
                         Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
