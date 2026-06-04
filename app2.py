@@ -561,12 +561,18 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                                     st.session_state[key_cat_recomendada] = cat_ia
                                     if fal_ia in CATALOGO_SANCIONES[cat_ia]:
                                         st.session_state[key_fal_recomendada] = fal_ia
+                                        
+                                        # 🚨 FORZAR ACTUALIZACIÓN INMEDIATA DE LOS SELECTORES DE FONDO
+                                        st.session_state[f"cat_{st.session_state.form_reset}"] = cat_ia
+                                        
+                                        # Calculamos el formato exacto de texto que tiene el selector de faltas (Nombre + Puntos)
+                                        puntos_falta = CATALOGO_SANCIONES[cat_ia][fal_ia]["puntos"]
+                                        st.session_state[f"falta_{st.session_state.form_reset}"] = f"{fal_ia} ({puntos_falta} pt)"
+                                        
                                         st.success(f"✅ ¡Clasificado con éxito! Sugerencia: **{cat_ia}** ➔ **{fal_ia}**. Ya puedes cerrar esta ventana.")
+                                        
                                         # Auto-actualizamos las observaciones de fondo
                                         st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
-                                    else:
-                                        st.session_state[key_fal_recomendada] = None
-                                        st.success(f"✅ Categoría identificada: **{cat_ia}**.")
                                 else:
                                     st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo oficial.")
                     
