@@ -508,15 +508,31 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación con IA.")
             else:
                 try:
-                    # Búsqueda defensiva: intenta leer tanto en mayúsculas como en minúsculas
+                    # 🔍 ALGORITMO DE BÚSQUEDA PROFUNDA DE LA LLAVE GEMINI
+                    api_key_gemini = None
+                    
+                    # 1. Intentamos buscar la llave en la raíz del archivo (mayúsculas o minúsculas)
                     api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
                     
+                    # 2. Si no está en la raíz, recorremos de forma inteligente cada subsección de los secretos
+                    if not api_key_gemini:
+                        for seccion_key in st.secrets.keys():
+                            contenido_seccion = st.secrets[seccion_key]
+                            # Verificamos si la sección es un diccionario (como [auth] o [smtp])
+                            if isinstance(contenido_seccion, dict) or hasattr(contenido_seccion, "get"):
+                                api_key_gemini = contenido_seccion.get("GEMINI_API_KEY") or contenido_seccion.get("gemini_api_key")
+                                if api_key_gemini:
+                                    break # Encontrada, salimos del ciclo
+                    
+                    # 3. Si tras la búsqueda profunda sigue sin aparecer, mostramos diagnóstico claro
                     if not api_key_gemini:
                         st.error("🔑 Error de Configuración: La llave 'GEMINI_API_KEY' no se encuentra registrada en los secretos de Streamlit.")
+                        st.info("💡 **Diagnóstico de Soporte:**")
+                        st.write("Las secciones que tu servidor de Streamlit SÍ está detectando actualmente en tu consola son:", list(st.secrets.keys()))
                     else:
-                        # Configuración segura del SDK de Google con la clave encontrada
+                        # Configuración segura del SDK de Google con la clave localizada
                         genai.configure(api_key=api_key_gemini)
-                        modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
+                        modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
                         
                         prompt_sistema = f"""
                         Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
