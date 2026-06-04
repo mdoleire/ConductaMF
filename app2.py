@@ -517,10 +517,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         # Configuración segura del SDK de Google con la clave encontrada
                         genai.configure(api_key=api_key_gemini)
                         modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
-                    else:
-                        # Configuración segura del SDK de Google
-                        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                        modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
                         
                         prompt_sistema = f"""
                         Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
