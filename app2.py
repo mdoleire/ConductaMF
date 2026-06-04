@@ -503,7 +503,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         if key_fal_recomendada not in st.session_state:
             st.session_state[key_fal_recomendada] = None
 
-       if st.button("🪄 Clasificar con IA", type="secondary", key=f"btn_ia_{st.session_state.form_reset}"):
+        if st.button("🪄 Clasificar con IA", type="secondary", key=f"btn_ia_{st.session_state.form_reset}"):
             if not relato_incidencia.strip():
                 st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación con IA.")
             else:
