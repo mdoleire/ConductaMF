@@ -495,6 +495,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         # =================================================================
         # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
         # =================================================================
+        # =================================================================
+        # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
+        # =================================================================
         with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True):
             st.markdown("### 🪄 Clasificación Inteligente")
             st.write("Redacta la situación abajo. La IA configurará automáticamente la categoría y falta correspondientes en el formulario de fondo.")
@@ -525,7 +528,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY' en la configuración.")
                         else:
                             genai.configure(api_key=api_key_gemini)
-                            modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
+                            modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
                             
                             prompt_sistema = f"""
                             Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
@@ -562,23 +565,34 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                                     if fal_ia in CATALOGO_SANCIONES[cat_ia]:
                                         st.session_state[key_fal_recomendada] = fal_ia
                                         
-                                        # 🚨 FORZAR ACTUALIZACIÓN INMEDIATA DE LOS SELECTORES DE FONDO
+                                        # FORZAR ACTUALIZACIÓN INMEDIATA DE LOS SELECTORES DE FONDO
                                         st.session_state[f"cat_{st.session_state.form_reset}"] = cat_ia
                                         
-                                        # Calculamos el formato exacto de texto que tiene el selector de faltas (Nombre + Puntos)
                                         puntos_falta = CATALOGO_SANCIONES[cat_ia][fal_ia]["puntos"]
                                         st.session_state[f"falta_{st.session_state.form_reset}"] = f"{fal_ia} ({puntos_falta} pt)"
                                         
-                                        st.success(f"✅ ¡Clasificado con éxito! Sugerencia: **{cat_ia}** ➔ **{fal_ia}**. Ya puedes cerrar esta ventana.")
-                                        
                                         # Auto-actualizamos las observaciones de fondo
                                         st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
+                                    else:
+                                        st.session_state[key_fal_recomendada] = None
                                 else:
                                     st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo oficial.")
                     
                     except Exception as e:
                         st.error(f"⚠️ El clasificador automático no se encuentra disponible.")
                         st.info(f"Detalle técnico: {e}")
+
+            # --- RENDERIZADO PERSISTENTE DEL RESULTADO Y BOTÓN DE CIERRE ---
+            if st.session_state[key_fal_recomendada]:
+                cat_sug = st.session_state[key_cat_recomendada]
+                fal_sug = st.session_state[key_fal_recomendada]
+                
+                st.success(f"✅ ¡Clasificado con éxito! Sugerencia sugerida: **{cat_sug}** ➔ **{fal_sug}**.")
+                
+                # Botón con ancho completo para cerrar el Popover de manera cómoda
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("❌ Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
+                    st.rerun()
         
         # --- MENÚS EN CASCADA DE FALTAS ---
         c_cat, c_fal = st.columns(2)
