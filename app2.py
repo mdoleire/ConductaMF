@@ -76,6 +76,90 @@ PERIODOS_LECTIVOS = [
     {"nombre": "Periodo 4", "inicio": "2026-03-01", "fin": "2026-06-30"}
 ]
 
+REGLAMENTO_INSTITUCIONAL = """
+ACUERDO DE CONVIVENCIA ESCOLAR COLEGIO MIRAFLORES MÉXICO (CICLO 2025-2026)
+
+Capítulo II. Admisión y Permanencia de alumnos
+Artículo 5. Reserva del derecho de admisión: El Colegio no admite a alumnos repetidores o de sistemas no escolarizados.
+Artículo 6. Requisitos de reinscripción / permanencia:
+a. Cumplir con el 80% de asistencia.
+b. No tener más de 2 reportes de suspensión a lo largo del curso escolar vigente.
+c. Cumplir con la Carta Condicionamiento (si aplica).
+d. No haber reprobado el promedio final en más de 3 materias.
+e. En Secundaria (SEP): si reprueba materias, haber aprobado el extraordinario correspondiente.
+f. En Preparatoria (UNAM): si reprueba materias, haber aprobado el extraordinario o extemporáneo.
+g. Los padres de familia deberán asistir a por lo menos 2 conferencias obligatorias y juntas de tutores durante el año.
+
+Capítulo III. Derechos de los alumnos
+Artículo 9: Ser tratados con respeto y preservar su dignidad personal, evitando cualquier tipo de sanción o trato que atente contra la integridad humana.
+Artículo 11: Obtener retroalimentación oportuna, clara y constructiva sobre los resultados de las evaluaciones parciales.
+Artículo 13: Conocer las calificaciones de los exámenes finales y/o extraordinarios dentro de los tres días posteriores a su aplicación, junto con la fecha y horario asignados para su revisión.
+Artículo 14: Exentar exámenes finales como reconocimiento al esfuerzo académico, cumpliendo los requisitos del Colegio.
+Artículo 16: Acceder a un punto adicional en el promedio final de la materia que elijan en caso de no registrar ninguna falta durante el curso (no cuentan las faltas justificadas), siempre que la materia esté aprobada.
+
+Capítulo IV. Obligaciones de los alumnos y Normativa Disciplinaria (Capítulo X)
+Artículo 19. Horarios de entrada y salida oficiales:
+- Preescolar (Beginners): 9:00 a.m. - 1:00 p.m.
+- Preescolar (Maternal y Especial de Inglés): 7:50 a.m. - 2:30 p.m.
+- Primaria y Secundaria: 7:50 a.m. - 2:30 p.m.
+- Preparatoria (Variado según grado): 4° Bachillerato (7:50 a.m. - 2:30 p.m.), 5° y 6° Bachillerato (con días de entrada a las 7:00 a.m. o salida a las 14:20 p.m.).
+
+NORMAS DE PUNTUALIDAD Y RETARDOS (Capítulo X):
+- Llegar al Colegio después de la hora establecida: No se permitirá el acceso una vez cerrados los accesos.
+- Retardos en clase: Se considera retardo si el alumno ingresa dentro de los primeros 5 minutos de la clase. Tres retardos equivalen a 1 falta. A partir del sexto minuto, se registra directamente como falta, pero el alumno tiene la obligación de entrar al aula y trabajar.
+- No ingresar a clase o salirse sin autorización: 1ª ocasión el alumno permanecerá el viernes de 3:00 a 5:00 p.m. en actividades académicas. Reincidencia amerita suspensión de uno o más días.
+
+NORMAS DE UNIFORME Y PRESENTACIÓN PERSONAL (Artículo 22 y Capítulo X):
+- El uniforme de diario, gala, deportes, natación o huerta debe portarse completo, pulcro y limpio conforme a las especificaciones oficiales por sección.
+- Apariencia contraria a las normas (Varones): Deben presentarse debidamente rasurados; en caso contrario, deberán rasurarse en el colegio y reponer el rastrillo al día siguiente. El corte de cabello debe cumplir con lo establecido; si no cumple, se dará aviso a casa y deberá presentarse recortado al día siguiente.
+- Apariencia contraria a las normas (Mujeres): Si se presentan con las uñas pintadas o decoraciones llamativas, deberán retirarlas de inmediato.
+- Reincidencias en presentación/uñas/rasurado: A la segunda vez se enviará a casa suspendido por el día.
+- No portar el uniforme correcto/completo: 1ª ocasión se da aviso a casa, permanece en clases pero se le registra falta de todo el día. Ocasiones posteriores se envía a casa para corregirse y poder regresar.
+- Uso de prendas no autorizadas: 1ª ocasión se retira la prenda y queda bajo resguardo en Coordinación hasta el final del día. 2ª ocasión se retira y se dona a las misiones del Colegio.
+
+NORMAS DE DISPOSITIVOS ELECTRÓNICOS Y CELULARES (Capítulo X):
+- Uso de celulares, audífonos, tabletas, relojes inteligentes u otros dispositivos personales durante el horario escolar (sin autorización académica expresa):
+  - Primera ocasión: El dispositivo será retirado y permanecerá resguardado bajo llave durante 3 días hábiles.
+  - Segunda ocasión: El dispositivo será retirado por un periodo de 2 semanas.
+  - Tercera ocasión: El dispositivo será retenido por la institución hasta el final del ciclo escolar en curso.
+  * Nota: En todos los casos se envía reporte/aviso a casa. El dispositivo se entrega únicamente a los padres de familia previa identificación y firma de recibido en Coordinación.
+
+NORMAS DE CHROMEBOOKS (Artículos 23 a 26 y Capítulo X):
+- Obligatorio presentarse diariamente con la Chromebook completamente cargada y su carcasa protectora en buen estado.
+- No traer la Chromebook o traerla descargada: El alumno permanecerá todo el día trabajando bajo supervisión en la biblioteca. Se notifica a los padres. Reincidencia continua amerita envío a casa.
+- Prestar la Chromebook, instalar apps no autorizadas o alterar su sistema de seguridad: Suspensión de 1 a 2 días y turno al Comité de Disciplina.
+- Daño físico a la Chromebook: Si tiene seguro, los padres pagan el deducible. Si no está cubierto por el seguro, deben cubrir el costo total de la reparación o reposición.
+
+INTEGRIDAD ACADÉMICA Y USO DE INTELIGENCIA ARTIFICIAL (Artículos 27, 28, 41, 42 y Capítulo X):
+- Se prohíbe el plagio, copia (parcial o total) en exámenes, tareas o proyectos, así como compartir/recibir respuestas durante evaluaciones, o el uso no autorizado de Inteligencia Artificial (IA) para resolver tareas o exámenes.
+- Consecuencias de deshonestidad académica o uso no autorizado de IA:
+  1. Calificación automática de cero (0) en la actividad o examen sin derecho a recuperación.
+  2. Levantamiento de Reporte Disciplinario en el sistema del colegio.
+  3. Notificación formal por escrito a los padres o tutores.
+  4. Obligación del alumno de realizar una actividad formativa obligatoria.
+  5. Reincidencias consecutivas ameritan la aplicación de suspensiones o sanciones adicionales determinada por el Comité.
+
+COMPORTAMIENTO, CONVIVENCIA Y OTRAS SANCIONES:
+- Consumir alimentos o mascar chicle en el aula: Bajar la calificación de conducta del alumno en el día correspondiente.
+- Interrumpir, distraer o dificultar el desarrollo de la clase por desobediencia: Se refleja en la calificación de disciplina y evaluación continua de la materia. Reincidencia amerita envío del caso al Comité de Disciplina (puede incluir suspensión temporal).
+- Faltar al respeto a miembros de la comunidad escolar (palabras, gestos, mensajes, redes sociales): Suspensión temporal determinada por el Comité de Disciplina según la gravedad. En casos muy graves, se evalúa exclusión temporal o permanente.
+- Daños intencionales o vandalismo: Pagar la reparación/reposición completa. Segunda ocasión implica suspensión de 1 a 2 días.
+- Faltas graves (Fomentar/poseer/consumir sustancias nocivas, cigarros, vapes, alcohol, drogas; portar armas; agredir física/verbalmente; falsificar firmas o sellos; apropiación ilícita de exámenes; conductas inmorales/connotación sexual): Turno de inmediato al Comité de Disciplina. Sanciones aplicables:
+  - Suspensión temporal de 3 a 15 días.
+  - Calificación disciplinaria y conductual reprobatoria obligatoria de 5.0 (cinco).
+  - Condicionamiento de reinscripción o la separación definitiva del Colegio.
+
+Capítulo VI. Uso de cámaras de videovigilancia
+- Las cámaras instaladas en áreas comunes son de uso exclusivamente interno para seguridad.
+- La revisión de grabaciones es de facultad exclusiva de las Coordinaciones o Dirección.
+- Por confidencialidad de menores, el material captado jamás podrá ser mostrado a los estudiantes ni a los padres de familia.
+
+Capítulo VII. Evaluaciones y Ausencias Justificadas
+Artículo 38. Ausencias justificadas: En caso de faltas por motivos médicos o fuerza mayor, se deben entregar los justificantes ante la Coordinación de Etapa en un plazo máximo de 2 días hábiles tras la reincorporación para poder reponer trabajos o evaluaciones (máximo 2 asignaturas).
+Artículo 40. Exámenes de periodo: No se pueden reprogramar salvo autorización expresa de Coordinación por causas plenamente justificadas. Inasistencia injustificada equivale a calificación de cero (0).
+Artículo 43. Suspensión de clases (Efectos): El alumno suspendido pierde derecho a evaluación continua del periodo de suspensión (calificación cero en tareas/trabajos de aula realizados esos días). Solo se le permite entregar tareas de casa si las envía en tiempo y forma.
+"""
+
 # ==========================================
 # 2. MOTOR DE DATOS (CACHÉ Y OPTIMIZACIÓN)
 # ==========================================
@@ -995,6 +1079,99 @@ else:
 
         # Barra lateral y selector de vistas
         st.sidebar.title("Configuración de Vista")
+
+        # =================================================================
+        # 📜 ORÁCULO DEL REGLAMENTO (CHATBOT EN SIDEBAR)
+        # =================================================================
+        if "historial_oraculo" not in st.session_state:
+            st.session_state["historial_oraculo"] = []
+
+        st.sidebar.markdown("---")
+        with st.sidebar.expander("📜 Oráculo del Reglamento", expanded=False):
+            st.write("Consulta dudas sobre las normas de disciplina del Colegio.")
+            
+            # 1. Renderizado del historial de mensajes
+            for mensaje in st.session_state["historial_oraculo"]:
+                rol_etiqueta = "Profesor" if mensaje["role"] == "user" else "Oráculo"
+                # Estilo visual de burbujas sencillo para diferenciar mensajes en el sidebar
+                color_burbuja = "#1E293B" if mensaje["role"] == "assistant" else "transparent"
+                border_style = "1px solid #C5A059" if mensaje["role"] == "assistant" else "1px solid #CBD5E1"
+                
+                st.markdown(
+                    f"""
+                    <div style="padding: 8px; border-radius: 6px; border: {border_style}; background-color: {color_burbuja}; margin-bottom: 8px;">
+                        <strong style="color: #C5A059;">{rol_etiqueta}:</strong><br/>
+                        <span style="font-size: 0.9rem; color: #FFFFFF;">{mensaje['text']}</span>
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
+            
+            # 2. Entrada de texto para la pregunta del profesor
+            pregunta_profesor = st.text_input(
+                "Escribe tu duda sobre las normas:", 
+                placeholder="Ej. ¿Qué pasa si usan celular?",
+                key=f"pregunta_oraculo_input_{len(st.session_state['historial_oraculo'])}"
+            )
+            
+            # 3. Botón de ejecución
+            if st.button("Preguntar al Oráculo", key="btn_preguntar_oraculo", type="primary", use_container_width=True):
+                if not pregunta_profesor.strip():
+                    st.warning("Escribe una pregunta para consultar al Oráculo.")
+                else:
+                    # Guardamos la pregunta del docente en el historial
+                    st.session_state["historial_oraculo"].append({"role": "user", "text": pregunta_profesor})
+                    
+                    try:
+                        # Búsqueda profunda de la API Key en los secretos
+                        api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
+                        if not api_key_gemini:
+                            for seccion_key in st.secrets.keys():
+                                contenido_seccion = st.secrets[seccion_key]
+                                if isinstance(contenido_seccion, dict) or hasattr(contenido_seccion, "get"):
+                                    api_key_gemini = contenido_seccion.get("GEMINI_API_KEY") or contenido_seccion.get("gemini_api_key")
+                                    if api_key_gemini:
+                                        break
+                        
+                        if not api_key_gemini:
+                            st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY'.")
+                        else:
+                            genai.configure(api_key=api_key_gemini)
+                            # Usamos el modelo gemini-3.5-flash tal como lo especificaste en tus configuraciones
+                            modelo_oraculo = genai.GenerativeModel('gemini-3.5-flash')
+                            
+                            prompt_oraculo = f"""
+                            Eres el Oráculo de Disciplina del Colegio Miraflores. Tu trabajo es responder las dudas de los profesores basándote ESTRICTAMENTE en este reglamento institucional:
+                            
+                            REGLAMENTO INSTITUCIONAL:
+                            {REGLAMENTO_INSTITUCIONAL}
+                            
+                            INSTRUCCIONES DE RESPUESTA:
+                            1. Responde a la pregunta del profesor basándote únicamente en el reglamento anterior.
+                            2. Si la respuesta o la situación consultada no se encuentra explícitamente en el reglamento anterior, di textualmente de forma amable: "No tengo esa información detallada en el reglamento escolar vigente. Por favor, sugiero contactar directamente a Coordinación Académica."
+                            3. Sé extremadamente amable, claro, preciso y redacta respuestas breves de no más de 3 líneas.
+                            
+                            PREGUNTA DEL PROFESOR:
+                            "{pregunta_profesor}"
+                            """
+                            
+                            with st.spinner("Consultando el reglamento..."):
+                                respuesta_api = modelo_oraculo.generate_content(prompt_oraculo)
+                                respuesta_texto = respuesta_api.text.strip()
+                                
+                                # Guardamos la respuesta en el historial
+                                st.session_state["historial_oraculo"].append({"role": "assistant", "text": respuesta_texto})
+                                st.rerun()
+                                
+                    except Exception as e:
+                        st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
+            
+            # 4. Botón para limpiar el chat
+            if st.session_state["historial_oraculo"]:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🗑️ Limpiar Conversación", key="btn_limpiar_oraculo", use_container_width=True):
+                    st.session_state["historial_oraculo"] = []
+                    st.rerun()
         
         # Botón para cerrar sesión dentro del menú lateral
         if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
