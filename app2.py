@@ -1115,11 +1115,12 @@ else:
             )
             
             # 3. Botón de ejecución
+            # 3. Botón de ejecución con Streaming en Tiempo Real
             if st.button("Preguntar al Oráculo", key="btn_preguntar_oraculo", type="primary", use_container_width=True):
                 if not pregunta_profesor.strip():
                     st.warning("Escribe una pregunta para consultar al Oráculo.")
                 else:
-                    # Guardamos la pregunta del docente en el historial
+                    # Guardamos inmediatamente la pregunta del docente en el historial
                     st.session_state["historial_oraculo"].append({"role": "user", "text": pregunta_profesor})
                     
                     try:
@@ -1137,7 +1138,7 @@ else:
                             st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY'.")
                         else:
                             genai.configure(api_key=api_key_gemini)
-                            # Usamos el modelo gemini-3.5-flash tal como lo especificaste en tus configuraciones
+                            # Usamos tu identificador de modelo configurado
                             modelo_oraculo = genai.GenerativeModel('gemini-3.5-flash')
                             
                             prompt_oraculo = f"""
@@ -1149,19 +1150,37 @@ else:
                             INSTRUCCIONES DE RESPUESTA:
                             1. Responde a la pregunta del profesor basándote únicamente en el reglamento anterior.
                             2. Si la respuesta o la situación consultada no se encuentra explícitamente en el reglamento anterior, di textualmente de forma amable: "No tengo esa información detallada en el reglamento escolar vigente. Por favor, sugiero contactar directamente a Coordinación Académica."
-                            3. Sé extremadamente amable, claro, preciso y redacta respuestas breves de no más de 3 líneas.
+                            3. Sé amigable, claro, preciso y redacta respuestas muy breves de no más de 3 líneas.
                             
                             PREGUNTA DEL PROFESOR:
                             "{pregunta_profesor}"
                             """
                             
+                            # Marcamos un espacio vacío en la interfaz para el renderizado del flujo
+                            contenedor_stream = st.empty()
+                            texto_acumulado = ""
+                            
+                            # Hacemos la petición a Google solicitando el flujo de datos (stream=True)
                             with st.spinner("Consultando el reglamento..."):
-                                respuesta_api = modelo_oraculo.generate_content(prompt_oraculo)
-                                respuesta_texto = respuesta_api.text.strip()
+                                respuesta_stream = modelo_oraculo.generate_content(prompt_oraculo, stream=True)
                                 
-                                # Guardamos la respuesta en el historial
-                                st.session_state["historial_oraculo"].append({"role": "assistant", "text": respuesta_texto})
-                                st.rerun()
+                                # Leemos cada fragmento conforme va llegando del servidor
+                                for fragmento in respuesta_stream:
+                                    texto_acumulado += fragmento.text
+                                    # Renderizamos en tiempo real con un cursor dinámico simulando escritura
+                                    contenedor_stream.markdown(
+                                        f"""
+                                        <div style="padding: 8px; border-radius: 6px; border: 1px solid #C5A059; background-color: #1E293B; margin-bottom: 8px;">
+                                            <strong style="color: #C5A059;">Oráculo:</strong><br/>
+                                            <span style="font-size: 0.9rem; color: #FFFFFF;">{texto_acumulado}▌</span>
+                                        </div>
+                                        """, 
+                                        unsafe_allow_html=True
+                                    )
+                            
+                            # Una vez finalizada la generación, consolidamos el texto en el historial y recargamos
+                            st.session_state["historial_oraculo"].append({"role": "assistant", "text": texto_acumulado})
+                            st.rerun()
                                 
                     except Exception as e:
                         st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
