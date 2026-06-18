@@ -164,13 +164,16 @@ def buscar_articulos_relevantes(pregunta, top_n=2):
     Filtra los artículos del reglamento basándose en la coincidencia
     de palabras clave de la pregunta del profesor para reducir el prompt enviado a la IA.
     """
+    # Dividimos dinámicamente el reglamento por párrafos usando los saltos de línea dobles
+    articulos_lista = [parrafo.strip() for parrafo in REGLAMENTO_INSTITUCIONAL.split("\n\n") if parrafo.strip()]
+    
     # Limpiamos y extraemos palabras significativas de la pregunta (ignorando palabras cortas)
     palabras_clave = [p.lower().strip() for p in pregunta.split() if len(p) > 3]
     if not palabras_clave:
-        return ARTICULOS_REGLAMENTO[:top_n]
+        return articulos_lista[:top_n]
     
     puntuaciones = []
-    for art in ARTICULOS_REGLAMENTO:
+    for art in articulos_lista:
         score = 0
         art_lower = art.lower()
         for palabra in palabras_clave:
@@ -186,7 +189,7 @@ def buscar_articulos_relevantes(pregunta, top_n=2):
     
     # Si nada coincidió, enviamos los primeros por cortesía; de lo contrario, el top de relevancia
     if not relevantes:
-        return ARTICULOS_REGLAMENTO[:top_n]
+        return articulos_lista[:top_n]
     
     return relevantes[:top_n]
 # ==========================================
