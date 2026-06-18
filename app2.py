@@ -159,7 +159,36 @@ Artículo 38. Ausencias justificadas: En caso de faltas por motivos médicos o f
 Artículo 40. Exámenes de periodo: No se pueden reprogramar salvo autorización expresa de Coordinación por causas plenamente justificadas. Inasistencia injustificada equivale a calificación de cero (0).
 Artículo 43. Suspensión de clases (Efectos): El alumno suspendido pierde derecho a evaluación continua del periodo de suspensión (calificación cero en tareas/trabajos de aula realizados esos días). Solo se le permite entregar tareas de casa si las envía en tiempo y forma.
 """
-
+def buscar_articulos_relevantes(pregunta, top_n=2):
+    """
+    Filtra los artículos del reglamento basándose en la coincidencia
+    de palabras clave de la pregunta del profesor para reducir el prompt enviado a la IA.
+    """
+    # Limpiamos y extraemos palabras significativas de la pregunta (ignorando palabras cortas)
+    palabras_clave = [p.lower().strip() for p in pregunta.split() if len(p) > 3]
+    if not palabras_clave:
+        return ARTICULOS_REGLAMENTO[:top_n]
+    
+    puntuaciones = []
+    for art in ARTICULOS_REGLAMENTO:
+        score = 0
+        art_lower = art.lower()
+        for palabra in palabras_clave:
+            if palabra in art_lower:
+                score += 2  # Coincidencia directa de palabra clave
+        puntuaciones.append((score, art))
+    
+    # Ordenamos de mayor a menor relevancia según la puntuación obtenida
+    puntuaciones.sort(key=lambda x: x[0], reverse=True)
+    
+    # Extraemos solo los artículos que tuvieron al menos una coincidencia
+    relevantes = [art for score, art in puntuaciones if score > 0]
+    
+    # Si nada coincidió, enviamos los primeros por cortesía; de lo contrario, el top de relevancia
+    if not relevantes:
+        return ARTICULOS_REGLAMENTO[:top_n]
+    
+    return relevantes[:top_n]
 # ==========================================
 # 2. MOTOR DE DATOS (CACHÉ Y OPTIMIZACIÓN)
 # ==========================================
@@ -1080,8 +1109,8 @@ else:
         # Barra lateral y selector de vistas
         st.sidebar.title("Configuración de Vista")
 
-        # =================================================================
-        # 📜 ORÁCULO DEL REGLAMENTO (CHATBOT EN SIDEBAR)
+       # =================================================================
+        # 📜 ORÁCULO DEL REGLAMENTO (RAG INTEGRADO CON STREAMING)
         # =================================================================
         if "historial_oraculo" not in st.session_state:
             st.session_state["historial_oraculo"] = []
@@ -1093,7 +1122,6 @@ else:
             # 1. Renderizado del historial de mensajes
             for mensaje in st.session_state["historial_oraculo"]:
                 rol_etiqueta = "Profesor" if mensaje["role"] == "user" else "Oráculo"
-                # Estilo visual de burbujas sencillo para diferenciar mensajes en el sidebar
                 color_burbuja = "#1E293B" if mensaje["role"] == "assistant" else "transparent"
                 border_style = "1px solid #C5A059" if mensaje["role"] == "assistant" else "1px solid #CBD5E1"
                 
@@ -1107,20 +1135,19 @@ else:
                     unsafe_allow_html=True
                 )
             
-            # 2. Entrada de texto para la pregunta del profesor
+            # 2. Entrada de texto para la pregunta
             pregunta_profesor = st.text_input(
                 "Escribe tu duda sobre las normas:", 
-                placeholder="Ej. ¿Qué pasa si usan celular?",
+                placeholder="Ej. ¿Cuántos retardos suspenden?",
                 key=f"pregunta_oraculo_input_{len(st.session_state['historial_oraculo'])}"
             )
             
-            # 3. Botón de ejecución
-            # 3. Botón de ejecución con Streaming en Tiempo Real
+            # 3. Botón de ejecución con Streaming y RAG integrado
             if st.button("Preguntar al Oráculo", key="btn_preguntar_oraculo", type="primary", use_container_width=True):
                 if not pregunta_profesor.strip():
                     st.warning("Escribe una pregunta para consultar al Oráculo.")
                 else:
-                    # Guardamos inmediatamente la pregunta del docente en el historial
+                    # Guardamos la pregunta del docente en el historial inmediatamente
                     st.session_state["historial_oraculo"].append({"role": "user", "text": pregunta_profesor})
                     
                     try:
@@ -1138,36 +1165,38 @@ else:
                             st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY'.")
                         else:
                             genai.configure(api_key=api_key_gemini)
-                            # Usamos tu identificador de modelo configurado
                             modelo_oraculo = genai.GenerativeModel('gemini-3.5-flash')
                             
-                            prompt_oraculo = f"""
-                            Eres el Oráculo de Disciplina del Colegio Miraflores. Tu trabajo es responder las dudas de los profesores basándote ESTRICTAMENTE en este reglamento institucional:
+                            # 🔍 EJECUTAMOS EL BUSCADOR RAG LOCAL (Toma microsegundos)
+                            articulos_filtrados = buscar_articulos_relevantes(pregunta_profesor)
+                            contexto_reducido = "\n\n".join(articulos_filtrados)
                             
-                            REGLAMENTO INSTITUCIONAL:
-                            {REGLAMENTO_INSTITUCIONAL}
+                            # Construimos el prompt optimizado (90% más pequeño y rápido)
+                            prompt_oraculo = f"""
+                            Eres el Oráculo de Disciplina del Colegio Miraflores. Tu trabajo es responder las dudas de los profesores basándote ÚNICAMENTE en estos artículos del reglamento escolar:
+                            
+                            REGLAMENTO RELEVANTE SELECCIONADO:
+                            {contexto_reducido}
                             
                             INSTRUCCIONES DE RESPUESTA:
-                            1. Responde a la pregunta del profesor basándote únicamente en el reglamento anterior.
-                            2. Si la respuesta o la situación consultada no se encuentra explícitamente en el reglamento anterior, di textualmente de forma amable: "No tengo esa información detallada en el reglamento escolar vigente. Por favor, sugiero contactar directamente a Coordinación Académica."
-                            3. Sé amigable, claro, preciso y redacta respuestas muy breves de no más de 3 líneas.
+                            1. Responde a la pregunta del profesor basándote únicamente en el fragmento de reglamento anterior.
+                            2. Si la respuesta o la situación consultada no se encuentra explícitamente en el fragmento anterior, di amablemente: "No tengo esa información en el reglamento escolar vigente. Te sugiero contactar directamente a Coordinación Académica."
+                            3. Sé muy amable, breve, claro y redacta respuestas de no más de 3 líneas.
                             
                             PREGUNTA DEL PROFESOR:
                             "{pregunta_profesor}"
                             """
                             
-                            # Marcamos un espacio vacío en la interfaz para el renderizado del flujo
+                            # Reservamos contenedor de escritura en tiempo real
                             contenedor_stream = st.empty()
                             texto_acumulado = ""
                             
-                            # Hacemos la petición a Google solicitando el flujo de datos (stream=True)
                             with st.spinner("Consultando el reglamento..."):
                                 respuesta_stream = modelo_oraculo.generate_content(prompt_oraculo, stream=True)
                                 
-                                # Leemos cada fragmento conforme va llegando del servidor
+                                # Renderizado en tiempo real (mecanografía)
                                 for fragmento in respuesta_stream:
                                     texto_acumulado += fragmento.text
-                                    # Renderizamos en tiempo real con un cursor dinámico simulando escritura
                                     contenedor_stream.markdown(
                                         f"""
                                         <div style="padding: 8px; border-radius: 6px; border: 1px solid #C5A059; background-color: #1E293B; margin-bottom: 8px;">
@@ -1177,15 +1206,15 @@ else:
                                         """, 
                                         unsafe_allow_html=True
                                     )
-                            
-                            # Una vez finalizada la generación, consolidamos el texto en el historial y recargamos
+                                    
+                            # Guardamos la respuesta final en el historial y recargamos la app
                             st.session_state["historial_oraculo"].append({"role": "assistant", "text": texto_acumulado})
                             st.rerun()
                                 
                     except Exception as e:
                         st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
             
-            # 4. Botón para limpiar el chat
+            # 4. Botón para limpiar la conversación
             if st.session_state["historial_oraculo"]:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🗑️ Limpiar Conversación", key="btn_limpiar_oraculo", use_container_width=True):
