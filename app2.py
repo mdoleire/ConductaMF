@@ -1152,8 +1152,7 @@ else:
                             
                             PREGUNTA DEL PROFESOR:
                             "{pregunta_profesor}"
-                            """
-                            
+                            """       
                             texto_acumulado = ""
                             contenedor_stream = st.empty()
                             
@@ -1177,13 +1176,6 @@ else:
                                 
                     except Exception as e:
                         st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
-            
-            # 4. Botón para limpiar la conversación
-            if st.session_state["historial_oraculo"]:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🗑️ Limpiar Conversación", key="btn_limpiar_oraculo", use_container_width=True):
-                    st.session_state["historial_oraculo"] = []
-                    st.rerun()
                     
             # 4. Botón para limpiar la conversación
             if st.session_state["historial_oraculo"]:
