@@ -159,39 +159,7 @@ Artículo 38. Ausencias justificadas: En caso de faltas por motivos médicos o f
 Artículo 40. Exámenes de periodo: No se pueden reprogramar salvo autorización expresa de Coordinación por causas plenamente justificadas. Inasistencia injustificada equivale a calificación de cero (0).
 Artículo 43. Suspensión de clases (Efectos): El alumno suspendido pierde derecho a evaluación continua del periodo de suspensión (calificación cero en tareas/trabajos de aula realizados esos días). Solo se le permite entregar tareas de casa si las envía en tiempo y forma.
 """
-def buscar_articulos_relevantes(pregunta, top_n=2):
-    """
-    Filtra los artículos del reglamento basándose en la coincidencia
-    de palabras clave de la pregunta del profesor para reducir el prompt enviado a la IA.
-    """
-    # Dividimos dinámicamente el reglamento por párrafos usando los saltos de línea dobles
-    articulos_lista = [parrafo.strip() for parrafo in REGLAMENTO_INSTITUCIONAL.split("\n\n") if parrafo.strip()]
-    
-    # Limpiamos y extraemos palabras significativas de la pregunta (ignorando palabras cortas)
-    palabras_clave = [p.lower().strip() for p in pregunta.split() if len(p) > 3]
-    if not palabras_clave:
-        return articulos_lista[:top_n]
-    
-    puntuaciones = []
-    for art in articulos_lista:
-        score = 0
-        art_lower = art.lower()
-        for palabra in palabras_clave:
-            if palabra in art_lower:
-                score += 2  # Coincidencia directa de palabra clave
-        puntuaciones.append((score, art))
-    
-    # Ordenamos de mayor a menor relevancia según la puntuación obtenida
-    puntuaciones.sort(key=lambda x: x[0], reverse=True)
-    
-    # Extraemos solo los artículos que tuvieron al menos una coincidencia
-    relevantes = [art for score, art in puntuaciones if score > 0]
-    
-    # Si nada coincidió, enviamos los primeros por cortesía; de lo contrario, el top de relevancia
-    if not relevantes:
-        return articulos_lista[:top_n]
-    
-    return relevantes[:top_n]
+
 # ==========================================
 # 2. MOTOR DE DATOS (CACHÉ Y OPTIMIZACIÓN)
 # ==========================================
@@ -1113,7 +1081,7 @@ else:
         st.sidebar.title("Configuración de Vista")
 
        # =================================================================
-        # 📜 ORÁCULO DEL REGLAMENTO (RAG INTEGRADO CON STREAMING)
+        # 📜 ORÁCULO DEL REGLAMENTO (VERSIÓN ORIGINAL ESTÁNDAR)
         # =================================================================
         if "historial_oraculo" not in st.session_state:
             st.session_state["historial_oraculo"] = []
@@ -1145,7 +1113,7 @@ else:
                 key=f"pregunta_oraculo_input_{len(st.session_state['historial_oraculo'])}"
             )
             
-            # 3. Botón de ejecución con Streaming y RAG integrado
+            # 3. Botón de ejecución original (envía el reglamento completo)
             if st.button("Preguntar al Oráculo", key="btn_preguntar_oraculo", type="primary", use_container_width=True):
                 if not pregunta_profesor.strip():
                     st.warning("Escribe una pregunta para consultar al Oráculo.")
@@ -1170,49 +1138,52 @@ else:
                             genai.configure(api_key=api_key_gemini)
                             modelo_oraculo = genai.GenerativeModel('gemini-3.5-flash')
                             
-                            # 🔍 EJECUTAMOS EL BUSCADOR RAG LOCAL (Toma microsegundos)
-                            articulos_filtrados = buscar_articulos_relevantes(pregunta_profesor)
-                            contexto_reducido = "\n\n".join(articulos_filtrados)
-                            
-                            # Construimos el prompt optimizado (90% más pequeño y rápido)
+                            # Prompt original con el texto completo del reglamento
                             prompt_oraculo = f"""
-                            Eres el Oráculo de Disciplina del Colegio Miraflores. Tu trabajo es responder las dudas de los profesores basándote ÚNICAMENTE en estos artículos del reglamento escolar:
+                            Eres el Oráculo de Disciplina del Colegio Miraflores. Tu trabajo es responder las dudas de los profesores basándote ESTRICTAMENTE en este reglamento institucional:
                             
-                            REGLAMENTO RELEVANTE SELECCIONADO:
-                            {contexto_reducido}
+                            REGLAMENTO INSTITUCIONAL:
+                            {REGLAMENTO_INSTITUCIONAL}
                             
                             INSTRUCCIONES DE RESPUESTA:
-                            1. Responde a la pregunta del profesor basándote únicamente en el fragmento de reglamento anterior.
-                            2. Si la respuesta o la situación consultada no se encuentra explícitamente en el fragmento anterior, di amablemente: "No tengo esa información en el reglamento escolar vigente. Te sugiero contactar directamente a Coordinación Académica."
-                            3. Sé muy amable, breve, claro y redacta respuestas de no más de 3 líneas.
+                            1. Responde a la pregunta del profesor basándote únicamente en el reglamento anterior.
+                            2. Si la respuesta o la situación consultada no se encuentra explícitamente en el reglamento anterior, di amablemente: "No tengo esa información en el reglamento escolar vigente. Te sugiero contactar directamente a Coordinación Académica."
+                            3. Sé muy amable, claro, preciso y redacta respuestas de máximo 3 líneas.
                             
                             PREGUNTA DEL PROFESOR:
                             "{pregunta_profesor}"
                             """
                             
-                            # Reservamos contenedor de escritura en tiempo real
-                            contenedor_stream = st.empty()
                             texto_acumulado = ""
+                            contenedor_stream = st.empty()
                             
                             with st.spinner("Consultando el reglamento..."):
                                 respuesta_stream = modelo_oraculo.generate_content(prompt_oraculo, stream=True)
                                 
-                                # Renderizado en tiempo real (mecanografía)
                                 for fragmento in respuesta_stream:
                                     texto_acumulado += fragmento.text
                                     contenedor_stream.markdown(
                                         f"""
-                                        <div style="padding: 8px; border-radius: 6px; border: 1px solid #C5A059; background-color: #1E293B; margin-bottom: 8px;">
+                                        <div style="padding: 8px; border-radius: 6px; border: {border_style}; background-color: {color_burbuja}; margin-bottom: 8px;">
                                             <strong style="color: #C5A059;">Oráculo:</strong><br/>
                                             <span style="font-size: 0.9rem; color: #FFFFFF;">{texto_acumulado}▌</span>
                                         </div>
                                         """, 
                                         unsafe_allow_html=True
                                     )
-                                    
-                            # Guardamos la respuesta final en el historial y recargamos la app
+                            
                             st.session_state["historial_oraculo"].append({"role": "assistant", "text": texto_acumulado})
                             st.rerun()
+                                
+                    except Exception as e:
+                        st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
+            
+            # 4. Botón para limpiar la conversación
+            if st.session_state["historial_oraculo"]:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🗑️ Limpiar Conversación", key="btn_limpiar_oraculo", use_container_width=True):
+                    st.session_state["historial_oraculo"] = []
+                    st.rerun()
                                 
                     except Exception as e:
                         st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
