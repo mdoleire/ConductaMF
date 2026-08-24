@@ -872,7 +872,119 @@ def renderizar_panel_directivo(gc):
 
     mostrar_tablero_analitico(df_f, "Institucional")
 
-
+def renderizar_panel_tutor(gc, usuario, nombre_prof):
+    st.header(f"🧑‍🏫 Panel de Tutoría: {nombre_prof}")
+    
+    # 1. Buscar los grupos donde el profesor es "Tutor"
+    df_asig = leer_datos(gc, FILE_ASIGNACIONES)
+    mis_grupos_tutor = df_asig[(df_asig['Usuario_Profesor'] == usuario) & (df_asig['Materia'] == 'Tutor')]['Grupo'].unique().tolist()
+    
+    if not mis_grupos_tutor:
+        st.warning("⚠️ El sistema no detectó ningún grupo asignado a tu nombre bajo la materia 'Tutor'.")
+        return
+        
+    c1, c2 = st.columns(2)
+    grupo_sel = c1.selectbox("Selecciona tu Grupo de Tutoría:", mis_grupos_tutor)
+    
+    # 2. Extraer alumnos de ese grupo
+    try:
+        opc_alumnos = leer_datos(gc, FILE_ALUMNOS, grupo_sel)['Nombre'].dropna().unique().tolist()
+        opc_alumnos = sorted(opc_alumnos)
+    except Exception:
+        opc_alumnos = []
+        st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
+        
+    if not opc_alumnos:
+        return
+        
+    alumno_sel = c2.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
+    
+    if alumno_sel == "Seleccione...":
+        st.info("👈 Selecciona un alumno en el menú superior para generar su reporte conductual.")
+        return
+        
+    st.markdown("---")
+    st.subheader(f"📄 Generador de Reporte: {alumno_sel}")
+    
+    # 3. Controles del Reporte
+    tipo_reporte = st.radio("Elige el rango de tiempo:", ["Mensual", "Por Periodo Lectivo"], horizontal=True)
+    
+    df_full = leer_todos_los_registros(gc)
+    if df_full.empty:
+        st.warning("La base de datos institucional está vacía.")
+        return
+        
+    # Filtramos exclusivamente al alumno seleccionado
+    df_alumno = df_full[(df_full['Grupo'] == grupo_sel) & (df_full['Alumno'] == alumno_sel)].copy()
+    
+    if df_alumno.empty:
+        st.success(f"✨ ¡Excelente noticia! **{alumno_sel}** no tiene ninguna incidencia registrada en todo el ciclo.")
+        return
+        
+    df_alumno['Fecha_DT'] = pd.to_datetime(df_alumno['Fecha'], errors='coerce')
+    df_filtrado = pd.DataFrame()
+    nombre_archivo_descarga = f"Reporte_Conducta_{alumno_sel.replace(' ', '_')}"
+    
+    # 4. Lógica de Filtrado de Fechas
+    if tipo_reporte == "Mensual":
+        meses_dict = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+        meses_disponibles = sorted(df_alumno['Fecha_DT'].dt.month.dropna().unique().tolist())
+        nombres_meses = [meses_dict[m] for m in meses_disponibles]
+        
+        if not nombres_meses:
+            st.info("No hay registros válidos con fecha reconocida.")
+            return
+            
+        mes_sel_nombre = st.selectbox("Selecciona el Mes a reportar:", nombres_meses)
+        mes_num = [k for k, v in meses_dict.items() if v == mes_sel_nombre][0]
+        
+        df_filtrado = df_alumno[df_alumno['Fecha_DT'].dt.month == mes_num].copy()
+        nombre_archivo_descarga += f"_{mes_sel_nombre}.csv"
+        
+    else:
+        hoy = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
+        pers = [p for p in PERIODOS_LECTIVOS if datetime.strptime(p['inicio'], '%Y-%m-%d') <= hoy]
+        nombres_pers = [p['nombre'] for p in pers]
+        
+        if not nombres_pers:
+            st.info("Aún no hay periodos activos configurados.")
+            return
+            
+        per_sel = st.selectbox("Selecciona el Periodo Lectivo:", nombres_pers)
+        p_inf = next(p for p in pers if p['nombre'] == per_sel)
+        
+        df_filtrado = df_alumno[(df_alumno['Fecha_DT'] >= p_inf['inicio']) & (df_alumno['Fecha_DT'] <= p_inf['fin'])].copy()
+        nombre_archivo_descarga += f"_{per_sel}.csv"
+        
+    # 5. Despliegue del Reporte
+    if df_filtrado.empty:
+        st.success(f"✨ **{alumno_sel}** no tiene incidencias en el rango seleccionado.")
+    else:
+        df_filtrado['Puntos_Descontados'] = pd.to_numeric(df_filtrado['Puntos_Descontados'], errors='coerce').fillna(0)
+        total_puntos = df_filtrado['Puntos_Descontados'].sum()
+        
+        # Fórmula de calificación base (10 menos 1 punto por cada 5 descontados)
+        calificacion_base = 10 + (total_puntos / 5)
+        calificacion_final = max(0, min(10, calificacion_base))
+        color_calif = format_calif(calificacion_final)
+        
+        c_res1, c_res2 = st.columns(2)
+        c_res1.metric(label="Calificación de Conducta (Periodo/Mes)", value=color_calif.split(" ")[1], delta=f"{total_puntos} pts de sanción", delta_color="inverse")
+        c_res2.info(f"Semáforo Visual: **{color_calif.split(' ')[0]}**")
+        
+        st.markdown("### 📋 Desglose de Incidencias")
+        cols_mostrar = ['Fecha', 'Profesor', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados']
+        st.dataframe(df_filtrado[cols_mostrar].sort_values('Fecha', ascending=False), use_container_width=True, hide_index=True)
+        
+        csv_data = df_filtrado[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
+        
+        st.download_button(
+            label="📥 Descargar Reporte (Excel / CSV)",
+            data=csv_data,
+            file_name=nombre_archivo_descarga,
+            mime="text/csv",
+            type="primary"
+        )
 # ==========================================
 # 6. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO CON FIRMA DIGITAL)
 # ==========================================
@@ -1078,113 +1190,9 @@ else:
         area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
 
         # Barra lateral y selector de vistas
-        st.sidebar.title("Configuración de Vista")
-
-       # =================================================================
-        # 📜 ORÁCULO DEL REGLAMENTO (VERSIÓN ORIGINAL ESTÁNDAR)
-        # =================================================================
-        if "historial_oraculo" not in st.session_state:
-            st.session_state["historial_oraculo"] = []
-
-        st.sidebar.markdown("---")
-        with st.sidebar.expander("📜 Oráculo del Reglamento", expanded=False):
-            st.write("Consulta dudas sobre las normas de disciplina del Colegio.")
-            
-            # 1. Renderizado del historial de mensajes
-            for mensaje in st.session_state["historial_oraculo"]:
-                rol_etiqueta = "Profesor" if mensaje["role"] == "user" else "Oráculo"
-                color_burbuja = "#1E293B" if mensaje["role"] == "assistant" else "transparent"
-                border_style = "1px solid #C5A059" if mensaje["role"] == "assistant" else "1px solid #CBD5E1"
-                
-                st.markdown(
-                    f"""
-                    <div style="padding: 8px; border-radius: 6px; border: {border_style}; background-color: {color_burbuja}; margin-bottom: 8px;">
-                        <strong style="color: #C5A059;">{rol_etiqueta}:</strong><br/>
-                        <span style="font-size: 0.9rem; color: #FFFFFF;">{mensaje['text']}</span>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
-            
-            # 2. Entrada de texto para la pregunta
-            pregunta_profesor = st.text_input(
-                "Escribe tu duda sobre las normas:", 
-                placeholder="Ej. ¿Cuántos retardos suspenden?",
-                key=f"pregunta_oraculo_input_{len(st.session_state['historial_oraculo'])}"
-            )
-            
-            # 3. Botón de ejecución original (envía el reglamento completo)
-            if st.button("Preguntar al Oráculo", key="btn_preguntar_oraculo", type="primary", use_container_width=True):
-                if not pregunta_profesor.strip():
-                    st.warning("Escribe una pregunta para consultar al Oráculo.")
-                else:
-                    # Guardamos la pregunta del docente en el historial inmediatamente
-                    st.session_state["historial_oraculo"].append({"role": "user", "text": pregunta_profesor})
-                    
-                    try:
-                        # Búsqueda profunda de la API Key en los secretos
-                        api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
-                        if not api_key_gemini:
-                            for seccion_key in st.secrets.keys():
-                                contenido_seccion = st.secrets[seccion_key]
-                                if isinstance(contenido_seccion, dict) or hasattr(contenido_seccion, "get"):
-                                    api_key_gemini = contenido_seccion.get("GEMINI_API_KEY") or contenido_seccion.get("gemini_api_key")
-                                    if api_key_gemini:
-                                        break
-                        
-                        if not api_key_gemini:
-                            st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY'.")
-                        else:
-                            genai.configure(api_key=api_key_gemini)
-                            modelo_oraculo = genai.GenerativeModel('gemini-3.5-flash')
-                            
-                            # Prompt original con el texto completo del reglamento
-                            prompt_oraculo = f"""
-                            Eres el Oráculo de Disciplina del Colegio Miraflores. Tu trabajo es responder las dudas de los profesores basándote ESTRICTAMENTE en este reglamento institucional:
-                            
-                            REGLAMENTO INSTITUCIONAL:
-                            {REGLAMENTO_INSTITUCIONAL}
-                            
-                            INSTRUCCIONES DE RESPUESTA:
-                            1. Responde a la pregunta del profesor basándote únicamente en el reglamento anterior.
-                            2. Si la respuesta o la situación consultada no se encuentra explícitamente en el reglamento anterior, di amablemente: "No tengo esa información en el reglamento escolar vigente. Te sugiero contactar directamente a Coordinación Académica."
-                            3. Sé muy amable, claro, preciso y redacta respuestas de máximo 3 líneas.
-                            
-                            PREGUNTA DEL PROFESOR:
-                            "{pregunta_profesor}"
-                            """       
-                            texto_acumulado = ""
-                            contenedor_stream = st.empty()
-                            
-                            with st.spinner("Consultando el reglamento..."):
-                                respuesta_stream = modelo_oraculo.generate_content(prompt_oraculo, stream=True)
-                                
-                                for fragmento in respuesta_stream:
-                                    texto_acumulado += fragmento.text
-                                    contenedor_stream.markdown(
-                                        f"""
-                                        <div style="padding: 8px; border-radius: 6px; border: {border_style}; background-color: {color_burbuja}; margin-bottom: 8px;">
-                                            <strong style="color: #C5A059;">Oráculo:</strong><br/>
-                                            <span style="font-size: 0.9rem; color: #FFFFFF;">{texto_acumulado}▌</span>
-                                        </div>
-                                        """, 
-                                        unsafe_allow_html=True
-                                    )
-                            
-                            st.session_state["historial_oraculo"].append({"role": "assistant", "text": texto_acumulado})
-                            st.rerun()
-                                
-                    except Exception as e:
-                        st.sidebar.error(f"Error en la consulta al Oráculo: {e}")
-                    
-            # 4. Botón para limpiar la conversación
-            if st.session_state["historial_oraculo"]:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🗑️ Limpiar Conversación", key="btn_limpiar_oraculo", use_container_width=True):
-                    st.session_state["historial_oraculo"] = []
-                    st.rerun()
+      # Barra lateral y selector de vistas
+        st.sidebar.title("⚙️ Configuración de Vista")
         
-        # Botón para cerrar sesión dentro del menú lateral
         if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
@@ -1192,18 +1200,37 @@ else:
                 st.logout()
             st.rerun()
 
+        # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA
+        df_asig_check = leer_datos(gc, FILE_ASIGNACIONES)
+        mis_materias_check = df_asig_check[df_asig_check['Usuario_Profesor'] == correo_google]['Materia'].tolist()
+        es_tutor = "Tutor" in mis_materias_check
+
+        # Construcción dinámica del menú de roles
         vista_actual = rol_assigned
+        opciones_vista = [f"Ver como {rol_assigned}"]
+        
         if rol_assigned in ['Director', 'Coordinador', 'Directivo']:
-            opciones_vista = [f"Ver como {rol_assigned}", "Ver como Docente de Asignatura"]
+            opciones_vista.append("Ver como Docente de Asignatura")
+            
+        if es_tutor:
+            opciones_vista.append("Ver como Tutor")
+
+        # Solo mostramos el radio button si el usuario tiene más de un rol disponible
+        if len(opciones_vista) > 1:
             seleccion = st.sidebar.radio("Selecciona tu rol para esta sesión:", opciones_vista)
+            
             if seleccion == "Ver como Docente de Asignatura":
                 vista_actual = 'Docente'
+            elif seleccion == "Ver como Tutor":
+                vista_actual = 'Tutor'
 
-        # Renderizado de los paneles
+        # --- RENDERIZADO DE LOS PANELES SEGÚN LA VISTA ---
         if vista_actual == 'Director' or vista_actual == 'Directivo':
             renderizar_panel_directivo(gc)
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
+        elif vista_actual == 'Tutor':
+            renderizar_panel_tutor(gc, correo_google, nombre_mostrar)
         elif vista_actual == 'Docente':
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
 
