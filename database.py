@@ -47,3 +47,36 @@ def format_calif(val):
     if val >= 9.0: return f"🟢 {val:.1f}"
     if val >= 7.0: return f"🟡 {val:.1f}"
     return f"🔴 {val:.1f}"
+
+def obtener_lista_alumnos(gc, archivo, pestaña):
+    """
+    Lee las columnas de alumnos por posición para evitar errores tipográficos
+    en los encabezados del Excel y genera un solo nombre limpio.
+    """
+    try:
+        df = leer_datos(gc, archivo, pestaña)
+        if df.empty: return []
+        
+        # Si por alguna razón la columna 'Nombre' ya existe, la usamos
+        if 'Nombre' in df.columns:
+            nombres = df['Nombre'].fillna('').astype(str)
+        else:
+            # iloc lee por número de columna (0 es ID, 1 es Paterno, 2 es Materno, 3 es Nombres)
+            paterno = df.iloc[:, 1].fillna('').astype(str)
+            materno = df.iloc[:, 2].fillna('').astype(str)
+            nombres_pila = df.iloc[:, 3].fillna('').astype(str)
+            
+            # Concatenamos las tres columnas
+            nombres = paterno + " " + materno + " " + nombres_pila
+            
+        # MAGIA DE LIMPIEZA: 
+        # Si alguien no tiene materno, quedarían dos espacios en blanco. Esto lo reduce a 1 solo espacio.
+        nombres = nombres.str.replace(r'\s+', ' ', regex=True).str.strip()
+        
+        # Filtramos las filas que quedaron completamente vacías
+        nombres = nombres[nombres != '']
+        
+        # Devolvemos la lista ordenada de la A a la Z
+        return sorted(nombres.unique().tolist())
+    except Exception as e:
+        return []
