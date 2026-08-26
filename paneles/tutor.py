@@ -98,13 +98,13 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     else:
         try:
          opc_alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_sel)
-     except Exception:
-         opc_alumnos = []
-         st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
+    except Exception:
+        opc_alumnos = []
+        st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
 
-     if not opc_alumnos:
-         st.warning("No se encontraron alumnos en este grupo.")
-         return            
+    if not opc_alumnos:
+        st.warning("No se encontraron alumnos en este grupo.")
+        return            
         alumno_sel = st.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
         
         if alumno_sel == "Seleccione...":
