@@ -473,24 +473,31 @@ else:
         mis_materias_check = df_asig_check[df_asig_check['Usuario_Profesor'] == correo_google]['Materia'].tolist()
         es_tutor = "Tutor" in mis_materias_check
 
-        # Construcción dinámica del menú de roles
+# Construcción dinámica del menú lateral
         vista_actual = rol_assigned
-        opciones_vista = [f"Ver como {rol_assigned}"]
         
-        if rol_assigned in ['Director', 'Coordinador', 'Directivo']:
-            opciones_vista.append("Ver como Docente de Asignatura")
+        # Si es docente, sus herramientas principales son Conducta y Asistencia
+        if rol_assigned == 'Docente':
+            opciones_vista = ["📝 Reportar Conducta", "📅 Pasar Lista"]
+        else:
+            # Si es Director/Coordinador, ve su panel administrativo MÁS las herramientas docentes
+            opciones_vista = [f"Ver como {rol_assigned}", "📝 Reportar Conducta", "📅 Pasar Lista"]
             
         if es_tutor:
-            opciones_vista.append("Ver como Tutor")
+            opciones_vista.append("👤 Ver como Tutor")
 
-        # Solo mostramos el radio button si el usuario tiene más de un rol disponible
-        if len(opciones_vista) > 1:
-            seleccion = st.sidebar.radio("Selecciona tu rol para esta sesión:", opciones_vista)
+        # Mostramos el menú siempre, ya que todos tendrán al menos 2 opciones
+        seleccion = st.sidebar.radio("Navegación del Sistema:", opciones_vista)
             
-            if seleccion == "Ver como Docente de Asignatura":
-                vista_actual = 'Docente'
-            elif seleccion == "Ver como Tutor":
-                vista_actual = 'Tutor'
+        # Mapeamos lo que el usuario eligió con el módulo que debe arrancar
+        if seleccion == "📝 Reportar Conducta":
+            vista_actual = 'Docente'
+        elif seleccion == "📅 Pasar Lista":
+            vista_actual = 'Asistencia'
+        elif seleccion == "👤 Ver como Tutor":
+            vista_actual = 'Tutor'
+        else:
+            vista_actual = rol_assigned
 
         # --- RENDERIZADO DE LOS PANELES SEGÚN LA VISTA ---
         if vista_actual == 'Director' or vista_actual == 'Directivo':
@@ -501,6 +508,8 @@ else:
             renderizar_panel_tutor(gc, correo_google, nombre_mostrar)
         elif vista_actual == 'Docente':
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+        elif vista_actual == 'Asistencia':
+            renderizar_panel_asistencia(gc, correo_google, nombre_mostrar)
 
     except Exception as e:
         st.error("🚨 Ocurrió un error al cargar tus permisos del panel.")
