@@ -61,7 +61,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.markdown("**Selecciona a los alumnos involucrados por salón:**")
                 pestañas = st.tabs(grupos_sel) 
                 
-               for idx, g_sel in enumerate(grupos_sel):
+                for idx, g_sel in enumerate(grupos_sel):
                     with pestañas[idx]:
                         try:
                             # Usamos la nueva función inteligente aquí también
