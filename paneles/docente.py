@@ -98,8 +98,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
         try:
             opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo)
-        if not opc:
-            st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados con el formato correcto.")
+            if not opc:
+                st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados con el formato correcto.")
         except Exception:
             opc = []
             st.error(f"Falta la pestaña '{grupo}' en el archivo 1_Alumnos_por_Grupo")
