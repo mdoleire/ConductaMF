@@ -25,7 +25,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     st.markdown("---")
 
-    # 2. Obtener la lista inteligente (inmune a errores)
+    # 2. Obtener la lista inteligente de alumnos
     try:
         alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo)
     except Exception:
@@ -35,56 +35,57 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         st.warning(f"No se encontraron alumnos registrados para el grupo {grupo}.")
         return
 
-    # 3. Leer historial para calcular porcentajes (%)
-    historial = pd.DataFrame()
+    # Creamos un nombre de pestaña único, ej: "Matemáticas - 5°B"
+    nombre_pestana = f"{materia} - {grupo}"
+    fecha_hoy = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%d-%m-%Y")
+
+    # 3. Leer el historial en formato de "Matriz" (Columnas = Fechas)
     try:
-        df_historial = leer_datos(gc, FILE_ASISTENCIA, "General")
-        if not df_historial.empty:
-            historial = df_historial[(df_historial['Materia'] == materia) & (df_historial['Grupo'] == grupo)]
+        df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
     except Exception:
-        pass # Si el archivo o pestaña no existe aún, no pasa nada
+        df_historial = pd.DataFrame()
 
-    # 4. Lógica Matemática de Faltas
+    # Si la pestaña es nueva, iniciamos con la columna de alumnos
+    if df_historial.empty or 'Alumno' not in df_historial.columns:
+        df_historial = pd.DataFrame({"Alumno": alumnos})
+
+    # BLOQUEO DE SEGURIDAD: Evitar doble pase de lista
+    if fecha_hoy in df_historial.columns:
+        st.info(f"✅ Ya pasaste lista para **{nombre_pestana}** el día de hoy ({fecha_hoy}).")
+        st.dataframe(df_historial[['Alumno', fecha_hoy]], hide_index=True, use_container_width=True)
+        return
+
+    # 4. Calcular Estadísticas (contando hacia atrás en las columnas)
     stats = {}
-    fecha_hoy = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d")
-    
-    if not historial.empty:
-        total_clases = historial['Fecha'].nunique() # Cuenta los días únicos que has pasado lista
-        
-        # Bloqueo de seguridad: Evitar pase de lista doble el mismo día
-        ya_paso = historial[historial['Fecha'] == fecha_hoy]
-        if not ya_paso.empty:
-            st.info(f"✅ Ya pasaste lista para **{materia} - {grupo}** el día de hoy.")
-            return
+    columnas_fechas = [c for c in df_historial.columns if c != 'Alumno']
+    total_clases = len(columnas_fechas)
 
-        for al in alumnos:
-            faltas_al = len(historial[(historial['Alumno'] == al) & (historial['Estatus'] == '🔴 Falta')])
-            retardos_al = len(historial[(historial['Alumno'] == al) & (historial['Estatus'] == '🟡 Retardo')])
-            pct = (faltas_al / total_clases) * 100 if total_clases > 0 else 0
-            stats[al] = f"{pct:.1f}% ({faltas_al}F, {retardos_al}R)"
-    else:
-        # Si es la primera vez que se usa el sistema
-        for al in alumnos:
+    for al in alumnos:
+        if total_clases > 0 and al in df_historial['Alumno'].values:
+            fila_alumno = df_historial[df_historial['Alumno'] == al].iloc[0]
+            faltas = (fila_alumno[columnas_fechas] == '🔴 Falta').sum()
+            retardos = (fila_alumno[columnas_fechas] == '🟡 Retardo').sum()
+            pct = (faltas / total_clases) * 100
+            stats[al] = f"{pct:.1f}% ({faltas}F, {retardos}R)"
+        else:
             stats[al] = "0.0% (0F, 0R)"
 
-    # 5. Armar la tabla visual
+    # 5. Armar la tabla visual interactiva
     df_view = pd.DataFrame({
         "Alumno": alumnos,
-        "Asistencia": ["✅ Presente"] * len(alumnos), # <-- El prellenado mágico
+        "Asistencia": ["✅ Presente"] * len(alumnos),
         "Historial Acumulado": [stats[al] for al in alumnos]
     })
 
     st.markdown(f"### 📋 Lista de {grupo} ({materia})")
-    st.caption("💡 Haz clic en '✅ Presente' para cambiar el estatus de un alumno. Los porcentajes se calculan con base en las clases impartidas hasta hoy.")
+    st.caption("💡 Haz clic en '✅ Presente' para cambiar el estatus. Al guardar, se añadirá una nueva columna en Excel.")
 
-    # El editor interactivo
     df_editado = st.data_editor(
         df_view,
         column_config={
             "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
             "Asistencia": st.column_config.SelectboxColumn(
                 "Asistencia de Hoy",
-                help="Selecciona Presente, Retardo o Falta",
                 options=["✅ Presente", "🟡 Retardo", "🔴 Falta"],
                 required=True,
             ),
@@ -95,27 +96,44 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         key=f"editor_{materia}_{grupo}"
     )
 
-    # 6. Procesar y Guardar
+    # 6. Procesar y Guardar como Matriz
     if st.button("💾 Guardar Asistencia", type="primary"):
-        lote = []
-        for _, row in df_editado.iterrows():
-            lote.append([fecha_hoy, nombre_prof, materia, grupo, row['Alumno'], row['Asistencia']])
-
-        with st.spinner("Sincronizando con Google Drive..."):
+        with st.spinner(f"Agregando columna del {fecha_hoy} a Google Drive..."):
             try:
                 doc = gc.open(FILE_ASISTENCIA)
             except gspread.exceptions.SpreadsheetNotFound:
-                st.error(f"⚠️ No se encontró el archivo '{FILE_ASISTENCIA}' en tu Google Drive.")
+                st.error(f"⚠️ No se encontró el archivo '{FILE_ASISTENCIA}'.")
                 st.stop()
 
             try:
-                ws = doc.worksheet("General")
+                ws = doc.worksheet(nombre_pestana)
             except gspread.exceptions.WorksheetNotFound:
-                # Si es la primera vez, crea la pestaña y los encabezados automáticamente
-                ws = doc.add_worksheet(title="General", rows="1000", cols="6")
-                ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Estatus"])
+                ws = doc.add_worksheet(title=nombre_pestana, rows="100", cols="50")
+
+            # Hacemos una copia de la matriz actual
+            df_actualizado = df_historial.copy()
+
+            # Truco de magia: Si entró un alumno nuevo a mitad de ciclo, lo agregamos a las filas
+            alumnos_existentes = df_actualizado['Alumno'].tolist() if 'Alumno' in df_actualizado.columns else []
+            nuevos_alumnos = [a for a in alumnos if a not in alumnos_existentes]
+            if nuevos_alumnos:
+                df_nuevos = pd.DataFrame({"Alumno": nuevos_alumnos})
+                df_actualizado = pd.concat([df_actualizado, df_nuevos], ignore_index=True)
+                df_actualizado = df_actualizado.sort_values('Alumno').reset_index(drop=True)
+
+            # Mapeamos lo que el profesor seleccionó en la pantalla hacia una nueva columna con la fecha de hoy
+            asistencia_dict = dict(zip(df_editado['Alumno'], df_editado['Asistencia']))
+            df_actualizado[fecha_hoy] = df_actualizado['Alumno'].map(asistencia_dict)
             
-            ws.append_rows(lote)
-            st.success("✅ Asistencia registrada correctamente. Calculando nuevos porcentajes...")
+            # Limpiamos huecos vacíos para que Google Sheets no marque error
+            df_actualizado = df_actualizado.fillna("")
+
+            # Sobreescribimos la pestaña con la nueva tabla completa (es rapidísimo)
+            ws.clear()
+            ws.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
+            
+            leer_datos.clear() # Limpiamos la memoria caché para que se actualice al instante
+            
+            st.success(f"✅ Asistencia registrada. ¡Se agregó la columna '{fecha_hoy}' en tu Excel!")
             time.sleep(2)
             st.rerun()
