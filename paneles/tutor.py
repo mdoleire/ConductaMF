@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, PERIODOS_LECTIVOS
 from database import leer_datos, leer_todos_los_registros
 from calculadora import format_calif, calcular_calificacion_progresiva
+from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos
 
 def renderizar_panel_tutor(gc, usuario, nombre_prof):
     st.header(f"🧑‍🏫 Panel de Tutoría: {nombre_prof}")
@@ -96,15 +97,14 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     # =================================================================
     else:
         try:
-            opc_alumnos = leer_datos(gc, FILE_ALUMNOS, grupo_sel)['Nombre'].dropna().unique().tolist()
-            opc_alumnos = sorted(opc_alumnos)
-        except Exception:
-            opc_alumnos = []
-            st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
-            
-        if not opc_alumnos:
-            return
-            
+         opc_alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_sel)
+     except Exception:
+         opc_alumnos = []
+         st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
+
+     if not opc_alumnos:
+         st.warning("No se encontraron alumnos en este grupo.")
+         return            
         alumno_sel = st.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
         
         if alumno_sel == "Seleccione...":
