@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 
 # Importamos desde las otras piezas del sistema
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, PERIODOS_LECTIVOS
-from database import leer_datos, leer_todos_los_registros
 from calculadora import format_calif, calcular_calificacion_progresiva
 from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos
 
@@ -97,7 +96,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     # =================================================================
     else:
         try:
-        opc_alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_sel)
+            opc_alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_sel)
         except Exception:
             opc_alumnos = []
             st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
@@ -105,11 +104,11 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     if not opc_alumnos:
         st.warning("No se encontraron alumnos en este grupo.")
         return            
-        alumno_sel = st.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
+    alumno_sel = st.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
         
-        if alumno_sel == "Seleccione...":
-            st.info("👈 Selecciona un alumno para generar su reporte conductual individual.")
-            return
+    if alumno_sel == "Seleccione...":
+        st.info("👈 Selecciona un alumno para generar su reporte conductual individual.")
+        return
             
         st.subheader(f"📄 Generador de Reporte: {alumno_sel}")
         
