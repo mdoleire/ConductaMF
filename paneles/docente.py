@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import google.generativeai as genai
 
 from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_REGISTROS, CATALOGO_SANCIONES
-from database import leer_datos, leer_todos_los_registros
+from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos
 from paneles.analitica import mostrar_tablero_analitico
 
 def renderizar_panel_docente(gc, usuario, nombre_prof):
@@ -61,12 +61,12 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.markdown("**Selecciona a los alumnos involucrados por salón:**")
                 pestañas = st.tabs(grupos_sel) 
                 
-                for idx, g_sel in enumerate(grupos_sel):
+               for idx, g_sel in enumerate(grupos_sel):
                     with pestañas[idx]:
                         try:
-                            df_al = leer_datos(gc, FILE_ALUMNOS, g_sel)
-                            if not df_al.empty and 'Nombre' in df_al.columns:
-                                lista_grupo = sorted(df_al['Nombre'].dropna().unique().tolist())
+                            # Usamos la nueva función inteligente aquí también
+                            lista_grupo = obtener_lista_alumnos(gc, FILE_ALUMNOS, g_sel)
+                            if lista_grupo:
                                 sel_alumnos = st.multiselect(
                                     f"Implicados de {g_sel}:", 
                                     lista_grupo, 
@@ -75,6 +75,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                                 if sel_alumnos:
                                     for nombre in sel_alumnos:
                                         alumnos_por_grupo_seleccionados.append((g_sel, nombre))
+                            else:
+                                st.warning(f"⚠️ No hay alumnos listos en {g_sel}")
                         except Exception:
                             st.warning(f"⚠️ No se encontró la base de datos para {g_sel}")
                 
@@ -102,11 +104,11 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             opc = []
             st.error(f"Falta la pestaña '{grupo}' en el archivo 1_Alumnos_por_Grupo")
             
-            if not captura_multiple:
-                alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
-                alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
-            else:
-                alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
+        if not captura_multiple:
+            alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
+            alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
+        else:
+            alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
 
         st.markdown("---")
         
