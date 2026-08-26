@@ -94,13 +94,13 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
             
-         try:
-             opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo)
-             if not opc:
-                 st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados con el formato correcto.")
-         except Exception:
-             opc = []
-             st.error(f"Falta la pestaña '{grupo}' en el archivo 1_Alumnos_por_Grupo")
+        try:
+            opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo)
+        if not opc:
+            st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados con el formato correcto.")
+        except Exception:
+            opc = []
+            st.error(f"Falta la pestaña '{grupo}' en el archivo 1_Alumnos_por_Grupo")
             
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
