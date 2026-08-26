@@ -50,7 +50,7 @@ PERIODOS_LECTIVOS = [
     {"nombre": "Periodo 1", "inicio": "2026-08-17", "fin": "2026-10-16"},
     {"nombre": "Periodo 2", "inicio": "2026-10-19", "fin": "2026-12-18"},
     {"nombre": "Periodo 3", "inicio": "2027-01-07", "fin": "2027-02-26"},
-    {"nombre": "Periodo 4", "inicio": "2027-03-01", "fin": "2027-04-30"}
+    {"nombre": "Periodo 4", "inicio": "2027-03-01", "fin": "2027-04-30"},
     {"nombre": "Periodo 5", "inicio": "2027-05-03", "fin": "2027-05-14"}
 ]
 
