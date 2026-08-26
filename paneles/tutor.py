@@ -101,14 +101,15 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             opc_alumnos = []
             st.error(f"Falta la pestaña '{grupo_sel}' en el archivo de alumnos.")
 
-    if not opc_alumnos:
-        st.warning("No se encontraron alumnos en este grupo.")
-        return            
-    alumno_sel = st.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
+        if not opc_alumnos:
+            st.warning("No se encontraron alumnos en este grupo.")
+            return            
+            
+        alumno_sel = st.selectbox("Selecciona al Alumno:", ["Seleccione..."] + opc_alumnos)
         
-    if alumno_sel == "Seleccione...":
-        st.info("👈 Selecciona un alumno para generar su reporte conductual individual.")
-        return
+        if alumno_sel == "Seleccione...":
+            st.info("👈 Selecciona un alumno para generar su reporte conductual individual.")
+            return
             
         st.subheader(f"📄 Generador de Reporte: {alumno_sel}")
         
