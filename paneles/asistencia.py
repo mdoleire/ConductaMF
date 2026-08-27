@@ -25,9 +25,15 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     st.markdown("---")
 
-    c1, c2 = st.columns(2)
+    # --- NUEVO: Layout de 3 columnas para alinear el botón a la derecha ---
+    c1, c2, c3 = st.columns([3, 3, 2])
     materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key="asist_mat")
     grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key="asist_grup")
+    
+    with c3:
+        # Empujamos el interruptor hacia abajo para que quede alineado con los selectores
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        mostrar_edicion = st.toggle("⚙️ Modificar horario")
     
     # 2. Obtener la lista de alumnos
     try:
@@ -42,7 +48,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     nombre_pestana = f"{materia} - {grupo}"
 
     # ========================================================
-    # 🚀 MOTOR DE CONFIGURACIÓN DE HORARIOS (CON EDICIÓN)
+    # 🚀 MOTOR DE CONFIGURACIÓN DE HORARIOS
     # ========================================================
     try:
         df_config = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
@@ -61,55 +67,58 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         v_jue = int(config_actual.iloc[0]['Jueves'])
         v_vie = int(config_actual.iloc[0]['Viernes'])
 
+    # Lógica de despliegue
     if config_actual.empty:
         st.info(f"⚙️ **Configuración Inicial requerida para {nombre_pestana}**")
         st.write("Antes de pasar lista, define el horario de esta materia para calcular correctamente las faltas.")
-        contenedor_form = st.container()
+        mostrar_formulario = True
         detener_app = True
     else:
-        contenedor_form = st.expander("⚙️ Modificar Horario de esta Materia", expanded=False)
+        mostrar_formulario = mostrar_edicion # Solo se muestra si el toggle está encendido
         detener_app = False
 
-    with contenedor_form:
-        with st.form(f"form_horario_{nombre_pestana}"):
-            st.write("Indica cuántas horas de clase tienes cada día (0 = No hay clase, 1 = Sencilla, 2 = Doble):")
-            
-            c_lun, c_mar, c_mie, c_jue, c_vie = st.columns(5)
-            h_lun = c_lun.number_input("Lunes", min_value=0, max_value=4, value=v_lun)
-            h_mar = c_mar.number_input("Martes", min_value=0, max_value=4, value=v_mar)
-            h_mie = c_mie.number_input("Miérc.", min_value=0, max_value=4, value=v_mie)
-            h_jue = c_jue.number_input("Jueves", min_value=0, max_value=4, value=v_jue)
-            h_vie = c_vie.number_input("Viernes", min_value=0, max_value=4, value=v_vie)
+    # Si está encendido (o si es nuevo), mostramos la tabla
+    if mostrar_formulario:
+        with st.container():
+            with st.form(f"form_horario_{nombre_pestana}"):
+                st.write("Indica cuántas horas de clase tienes cada día (0 = No hay clase, 1 = Sencilla, 2 = Doble):")
+                
+                c_lun, c_mar, c_mie, c_jue, c_vie = st.columns(5)
+                h_lun = c_lun.number_input("Lunes", min_value=0, max_value=4, value=v_lun)
+                h_mar = c_mar.number_input("Martes", min_value=0, max_value=4, value=v_mar)
+                h_mie = c_mie.number_input("Miérc.", min_value=0, max_value=4, value=v_mie)
+                h_jue = c_jue.number_input("Jueves", min_value=0, max_value=4, value=v_jue)
+                h_vie = c_vie.number_input("Viernes", min_value=0, max_value=4, value=v_vie)
 
-            if st.form_submit_button("💾 Guardar Horario", type="primary"):
-                if sum([h_lun, h_mar, h_mie, h_jue, h_vie]) == 0:
-                    st.error("⚠️ Debes asignar al menos 1 hora de clase a la semana.")
-                else:
-                    with st.spinner("Actualizando configuración en Google Drive..."):
-                        doc = gc.open(FILE_ASISTENCIA)
-                        try:
-                            ws_conf = doc.worksheet("Configuracion")
-                        except gspread.exceptions.WorksheetNotFound:
-                            ws_conf = doc.add_worksheet(title="Configuracion", rows="100", cols="6")
-                            ws_conf.append_row(["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
+                if st.form_submit_button("💾 Guardar Horario", type="primary"):
+                    if sum([h_lun, h_mar, h_mie, h_jue, h_vie]) == 0:
+                        st.error("⚠️ Debes asignar al menos 1 hora de clase a la semana.")
+                    else:
+                        with st.spinner("Actualizando configuración en Google Drive..."):
+                            doc = gc.open(FILE_ASISTENCIA)
+                            try:
+                                ws_conf = doc.worksheet("Configuracion")
+                            except gspread.exceptions.WorksheetNotFound:
+                                ws_conf = doc.add_worksheet(title="Configuracion", rows="100", cols="6")
+                                ws_conf.append_row(["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
 
-                        if config_actual.empty:
-                            nueva_fila = pd.DataFrame([[nombre_pestana, h_lun, h_mar, h_mie, h_jue, h_vie]], columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
-                            df_actualizado = pd.concat([df_config, nueva_fila], ignore_index=True)
-                        else:
-                            df_actualizado = df_config.copy()
-                            idx = df_actualizado[df_actualizado['Clase'] == nombre_pestana].index
-                            df_actualizado.loc[idx, ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes']] = [h_lun, h_mar, h_mie, h_jue, h_vie]
-                        
-                        df_actualizado = df_actualizado.fillna("")
-                        ws_conf.clear()
-                        ws_conf.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
-                        
-                        leer_datos.clear() 
-                        st.success("✅ Horario actualizado con éxito.")
-                        time.sleep(1.5)
-                        st.rerun()
-                        
+                            if config_actual.empty:
+                                nueva_fila = pd.DataFrame([[nombre_pestana, h_lun, h_mar, h_mie, h_jue, h_vie]], columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
+                                df_actualizado = pd.concat([df_config, nueva_fila], ignore_index=True)
+                            else:
+                                df_actualizado = df_config.copy()
+                                idx = df_actualizado[df_actualizado['Clase'] == nombre_pestana].index
+                                df_actualizado.loc[idx, ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes']] = [h_lun, h_mar, h_mie, h_jue, h_vie]
+                            
+                            df_actualizado = df_actualizado.fillna("")
+                            ws_conf.clear()
+                            ws_conf.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
+                            
+                            leer_datos.clear() 
+                            st.success("✅ Horario actualizado con éxito.")
+                            time.sleep(1.5)
+                            st.rerun()
+                            
     if detener_app:
         return
 
