@@ -12,6 +12,10 @@ from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignacio
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     st.header(f"📅 Gestión de Asistencia")
     
+    # --- Variable de memoria para el menú ---
+    if "modo_edicion_horario" not in st.session_state:
+        st.session_state.modo_edicion_horario = False
+    
     # 1. Buscar materias asignadas (Soporte multinivel)
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
@@ -25,15 +29,18 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     st.markdown("---")
 
-    # --- Layout de 3 columnas para alinear el interruptor a la derecha ---
+    # --- Layout de 3 columnas ---
     c1, c2, c3 = st.columns([3, 3, 2])
     materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key="asist_mat")
     grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key="asist_grup")
     
     with c3:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        # Le asignamos un "key" (llave) en la memoria para poder controlarlo desde el botón "X"
-        mostrar_edicion = st.toggle("⚙️ Modificar horario", key="toggle_edicion")
+        # Solo mostramos el botón de abrir si el panel está oculto
+        if not st.session_state.modo_edicion_horario:
+            if st.button("⚙️ Modificar horario", use_container_width=True):
+                st.session_state.modo_edicion_horario = True
+                st.rerun()
     
     # 2. Obtener la lista de alumnos
     try:
@@ -73,20 +80,18 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         mostrar_formulario = True
         detener_app = True
     else:
-        # Leemos el estado del interruptor desde la memoria
-        mostrar_formulario = st.session_state.get("toggle_edicion", False)
+        mostrar_formulario = st.session_state.modo_edicion_horario
         detener_app = False
 
     # Si está encendido (o si es nuevo), mostramos el panel
     if mostrar_formulario:
         with st.container():
-            # --- NUEVO: Botón de Cerrar (X) visible solo si NO es configuración inicial ---
+            # Botón de Cerrar (X) visible solo si NO es configuración inicial
             if not config_actual.empty:
                 c_vacio, c_cerrar = st.columns([8, 2])
                 with c_cerrar:
                     if st.button("❌ Cerrar", use_container_width=True):
-                        # Apagamos el interruptor en la memoria y recargamos
-                        st.session_state.toggle_edicion = False
+                        st.session_state.modo_edicion_horario = False
                         st.rerun()
 
             with st.form(f"form_horario_{nombre_pestana}"):
@@ -123,8 +128,8 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                             ws_conf.clear()
                             ws_conf.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
                             
-                            # Al guardar exitosamente, también apagamos el panel
-                            st.session_state.toggle_edicion = False
+                            # Apagamos el menú de forma segura
+                            st.session_state.modo_edicion_horario = False
                             leer_datos.clear() 
                             st.success("✅ Horario actualizado con éxito.")
                             time.sleep(1.5)
