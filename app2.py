@@ -469,11 +469,11 @@ else:
             st.rerun()
 
         # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA
-        df_asig_check = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+        df_asig_check = leer_datos(gc, FILE_ASIGNACIONES)
         mis_materias_check = df_asig_check[df_asig_check['Usuario_Profesor'] == correo_google]['Materia'].tolist()
         es_tutor = "Tutor" in mis_materias_check
 
-# Construcción dinámica del menú lateral
+        # Construcción dinámica del menú lateral
         vista_actual = rol_assigned
         
         # Si es docente, sus herramientas principales son Conducta y Asistencia
