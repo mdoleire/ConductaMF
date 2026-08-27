@@ -169,24 +169,35 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     # MODO 1: PASE DE LISTA Y EDICIÓN
     # ========================================================
     if modo_vista == "📝 Pasar Lista / Editar Día":
-        # 1. Generar lista inteligente de fechas válidas (últimos 30 días)
+        
+        # 1. Diccionario de traducción
+        dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+        
         fechas_validas = []
+        etiquetas_fechas = {} # Guardará el formato bonito (ej. "Jueves 27-08-2026")
+        
         hoy = datetime.now(ZoneInfo("America/Mexico_City"))
         
-        for i in range(30): # Buscamos hacia atrás en el último mes
+        for i in range(30): 
             fecha_eval = hoy - timedelta(days=i)
             dia_semana = fecha_eval.weekday()
             
-            # Si en la configuración ese día tiene 1 o 2 horas, es válido
             if horario_clase.get(dia_semana, 0) > 0:
-                fechas_validas.append(fecha_eval.strftime("%d-%m-%Y"))
+                f_str = fecha_eval.strftime("%d-%m-%Y")
+                fechas_validas.append(f_str)
+                etiquetas_fechas[f_str] = f"{dias_espanol[dia_semana]} {f_str}"
                 
-        # Si la lista está vacía (ej. configuró todo en 0 accidentalmente), mostramos hoy por defecto
         if not fechas_validas:
-            fechas_validas = [hoy.strftime("%d-%m-%Y")]
+            f_str = hoy.strftime("%d-%m-%Y")
+            fechas_validas = [f_str]
+            etiquetas_fechas[f_str] = f"{dias_espanol[hoy.weekday()]} {f_str}"
 
-        # 2. Selector estricto en lugar de calendario libre
-        fecha_str = st.selectbox("📅 Selecciona la fecha de la clase:", fechas_validas)
+        # 2. Selector con format_func (Muestra la etiqueta bonita, pero guarda la fecha real)
+        fecha_str = st.selectbox(
+            "📅 Selecciona la fecha de la clase:", 
+            fechas_validas,
+            format_func=lambda x: etiquetas_fechas[x]
+        )
         
         # 3. Avisos visuales
         fecha_sel_dt = datetime.strptime(fecha_str, "%d-%m-%Y")
