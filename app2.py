@@ -409,7 +409,7 @@ else:
         
         # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
         if usuario_registrado.empty:
-            df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+            df_asig_verif = leer_datos(gc, FILE_ASIGNACIONES)
             es_profesor_oficial = False
             
             if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
@@ -454,6 +454,7 @@ else:
         
         # --- USUARIO CORRECTAMENTE VALIDADO ---
         rol_assigned = usuario_registrado['Rol'].iloc[0]
+        
         nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
 
