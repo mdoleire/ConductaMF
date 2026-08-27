@@ -7,14 +7,14 @@ import gspread
 
 # Importamos desde las otras piezas del sistema
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA, PERIODOS_LECTIVOS
-from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos
+from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos, leer_todas_las_asignaciones
 from calculadora import format_calif, calcular_calificacion_progresiva
 
 def renderizar_panel_tutor(gc, usuario, nombre_prof):
     st.header(f"🧑‍🏫 Panel de Tutoría: {nombre_prof}")
     
     # 1. Buscar los grupos donde el profesor es "Tutor"
-    df_asig = leer_datos(gc, FILE_ASIGNACIONES)
+    df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     mis_grupos_tutor = df_asig[(df_asig['Usuario_Profesor'] == usuario) & (df_asig['Materia'] == 'Tutor')]['Grupo'].unique().tolist()
     
     if not mis_grupos_tutor:
