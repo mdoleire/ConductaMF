@@ -385,7 +385,7 @@ else:
     
     # Candado estricto de dominio institucional
     correo_admin = "marcodoleire@gmail.com"  
-    if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
+    """if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
         st.error("⛔ Acceso denegado. Este sistema está restringido exclusivamente para cuentas institucionales @miraflores.edu.mx.")
         
         if st.button("🔑 Cambiar a cuenta del Colegio", type="secondary"):
@@ -394,7 +394,7 @@ else:
             if hasattr(st, "logout"):
                 st.logout()
             st.rerun()
-        st.stop()
+        st.stop()"""
 
     try:
         gc = conectar_gsheets()
