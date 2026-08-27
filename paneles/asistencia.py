@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import gspread
 import time
+from datetime import datetime, timedelta
 
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA
 from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignaciones
@@ -168,15 +169,31 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     # MODO 1: PASE DE LISTA Y EDICIÓN
     # ========================================================
     if modo_vista == "📝 Pasar Lista / Editar Día":
-        fecha_input = st.date_input("📅 Selecciona la fecha de la clase:", datetime.now(ZoneInfo("America/Mexico_City")))
-        fecha_str = fecha_input.strftime("%d-%m-%Y")
+        # 1. Generar lista inteligente de fechas válidas (últimos 30 días)
+        fechas_validas = []
+        hoy = datetime.now(ZoneInfo("America/Mexico_City"))
         
-        # Advertencia visual si el maestro intenta pasar lista en un día que marcó sin clases
-        dia_semana_actual = fecha_input.weekday()
-        if horario_clase.get(dia_semana_actual, 0) == 0:
-            st.warning("⚠️ Ojo: Según tu configuración, hoy NO tienes clases con este grupo. Si guardas la lista, se contabilizará como 1 hora extraordinaria.")
-        elif horario_clase.get(dia_semana_actual) == 2:
-            st.info("⏱️ **Dato:** Hoy tienes clase doble. Las inasistencias contarán como 2 faltas.")
+        for i in range(30): # Buscamos hacia atrás en el último mes
+            fecha_eval = hoy - timedelta(days=i)
+            dia_semana = fecha_eval.weekday()
+            
+            # Si en la configuración ese día tiene 1 o 2 horas, es válido
+            if horario_clase.get(dia_semana, 0) > 0:
+                fechas_validas.append(fecha_eval.strftime("%d-%m-%Y"))
+                
+        # Si la lista está vacía (ej. configuró todo en 0 accidentalmente), mostramos hoy por defecto
+        if not fechas_validas:
+            fechas_validas = [hoy.strftime("%d-%m-%Y")]
+
+        # 2. Selector estricto en lugar de calendario libre
+        fecha_str = st.selectbox("📅 Selecciona la fecha de la clase:", fechas_validas)
+        
+        # 3. Avisos visuales
+        fecha_sel_dt = datetime.strptime(fecha_str, "%d-%m-%Y")
+        dia_semana_actual = fecha_sel_dt.weekday()
+        
+        if horario_clase.get(dia_semana_actual) == 2:
+            st.info("⏱️ **Dato:** Este día es de clase doble. Las inasistencias contarán como 2 faltas.")
 
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -187,7 +204,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         else:
             st.info(f"✨ **Nuevo Registro:** Pasando lista para el **{fecha_str}**.")
             col_asistencia = ["✅ Presente"] * len(alumnos)
-
         df_view = pd.DataFrame({
             "Alumno": alumnos,
             "Asistencia": col_asistencia,
