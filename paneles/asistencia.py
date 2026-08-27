@@ -43,76 +43,82 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     nombre_pestana = f"{materia} - {grupo}"
 
     # ========================================================
-    # 🚀 MOTOR DE CONFIGURACIÓN DE HORARIOS
+    # 🚀 MOTOR DE CONFIGURACIÓN DE HORARIOS (CON EDICIÓN)
     # ========================================================
     try:
         df_config = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
     except Exception:
-        df_config = pd.DataFrame()
+        df_config = pd.DataFrame(columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
 
     config_actual = pd.DataFrame()
     if not df_config.empty and 'Clase' in df_config.columns:
         config_actual = df_config[df_config['Clase'] == nombre_pestana]
 
-    # Si la clase no ha sido configurada, mostramos el formulario y detenemos la app
+    # Valores por defecto (si ya existe, cargamos lo que el profesor guardó antes)
+    v_lun, v_mar, v_mie, v_jue, v_vie = 0, 0, 0, 0, 0
+    if not config_actual.empty:
+        v_lun = int(config_actual.iloc[0]['Lunes'])
+        v_mar = int(config_actual.iloc[0]['Martes'])
+        v_mie = int(config_actual.iloc[0]['Miercoles'])
+        v_jue = int(config_actual.iloc[0]['Jueves'])
+        v_vie = int(config_actual.iloc[0]['Viernes'])
+
+    # Si es la primera vez, el formulario es obligatorio y bloquea la pantalla
     if config_actual.empty:
         st.info(f"⚙️ **Configuración Inicial requerida para {nombre_pestana}**")
-        st.write("Antes de pasar lista, define el horario de esta materia para calcular correctamente las faltas (ej. Clase doble = 2 faltas).")
-        
-        with st.form("form_config_horario"):
+        st.write("Antes de pasar lista, define el horario de esta materia para calcular correctamente las faltas.")
+        contenedor_form = st.container()
+        detener_app = True
+    else:
+        # Si ya existe, lo ocultamos en un menú desplegable (expander) para no estorbar
+        contenedor_form = st.expander("⚙️ Modificar Horario de esta Materia", expanded=False)
+        detener_app = False
+
+    with contenedor_form:
+        with st.form(f"form_horario_{nombre_pestana}"):
             st.write("Indica cuántas horas de clase tienes cada día (0 = No hay clase, 1 = Sencilla, 2 = Doble):")
             
             c_lun, c_mar, c_mie, c_jue, c_vie = st.columns(5)
-            h_lun = c_lun.number_input("Lunes", min_value=0, max_value=4, value=0)
-            h_mar = c_mar.number_input("Martes", min_value=0, max_value=4, value=0)
-            h_mie = c_mie.number_input("Miérc.", min_value=0, max_value=4, value=0)
-            h_jue = c_jue.number_input("Jueves", min_value=0, max_value=4, value=0)
-            h_vie = c_vie.number_input("Viernes", min_value=0, max_value=4, value=0)
+            h_lun = c_lun.number_input("Lunes", min_value=0, max_value=4, value=v_lun)
+            h_mar = c_mar.number_input("Martes", min_value=0, max_value=4, value=v_mar)
+            h_mie = c_mie.number_input("Miérc.", min_value=0, max_value=4, value=v_mie)
+            h_jue = c_jue.number_input("Jueves", min_value=0, max_value=4, value=v_jue)
+            h_vie = c_vie.number_input("Viernes", min_value=0, max_value=4, value=v_vie)
 
             if st.form_submit_button("💾 Guardar Horario", type="primary"):
                 if sum([h_lun, h_mar, h_mie, h_jue, h_vie]) == 0:
                     st.error("⚠️ Debes asignar al menos 1 hora de clase a la semana.")
                 else:
-                    with st.spinner("Guardando configuración..."):
-                        try:
-                            doc = gc.open(FILE_ASISTENCIA)
-                        except gspread.exceptions.SpreadsheetNotFound:
-                            st.error(f"⚠️ No se encontró el archivo '{FILE_ASISTENCIA}'.")
-                            st.stop()
-                            
+                    with st.spinner("Actualizando configuración en Google Drive..."):
+                        doc = gc.open(FILE_ASISTENCIA)
                         try:
                             ws_conf = doc.worksheet("Configuracion")
                         except gspread.exceptions.WorksheetNotFound:
-                            ws_conf = doc.add_worksheet(title="Configuracion", rows="100", cols="7")
+                            ws_conf = doc.add_worksheet(title="Configuracion", rows="100", cols="6")
                             ws_conf.append_row(["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
 
-                        ws_conf.append_row([nombre_pestana, h_lun, h_mar, h_mie, h_jue, h_vie])
-                        leer_datos.clear()
-                        st.success("✅ Horario configurado. Recargando el sistema...")
+                        # Si es nuevo, lo añadimos. Si ya existe, lo modificamos en la memoria.
+                        if config_actual.empty:
+                            nueva_fila = pd.DataFrame([[nombre_pestana, h_lun, h_mar, h_mie, h_jue, h_vie]], columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
+                            df_actualizado = pd.concat([df_config, nueva_fila], ignore_index=True)
+                        else:
+                            df_actualizado = df_config.copy()
+                            idx = df_actualizado[df_actualizado['Clase'] == nombre_pestana].index
+                            df_actualizado.loc[idx, ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes']] = [h_lun, h_mar, h_mie, h_jue, h_vie]
+                        
+                        df_actualizado = df_actualizado.fillna("")
+                        ws_conf.clear()
+                        ws_conf.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
+                        
+                        leer_datos.clear() # Limpiamos caché
+                        st.success("✅ Horario actualizado con éxito.")
                         time.sleep(1.5)
                         st.rerun()
-        return  # Pausa la ejecución hasta que el maestro configure el horario
-
-    # Si ya está configurado, extraemos el peso de cada día en un diccionario
-    horario_clase = {
-        0: int(config_actual.iloc[0]['Lunes']),
-        1: int(config_actual.iloc[0]['Martes']),
-        2: int(config_actual.iloc[0]['Miercoles']),
-        3: int(config_actual.iloc[0]['Jueves']),
-        4: int(config_actual.iloc[0]['Viernes']),
-        5: 0, # Sábado (Por si acaso)
-        6: 0  # Domingo (Por si acaso)
-    }
-
-    # 3. Leer el historial en formato de "Matriz"
-    try:
-        df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
-    except Exception:
-        df_historial = pd.DataFrame()
-
-    if df_historial.empty or 'Alumno' not in df_historial.columns:
-        df_historial = pd.DataFrame({"Alumno": alumnos})
-
+                        
+    # Si la clase no estaba configurada, detenemos el pase de lista aquí
+    if detener_app:
+        return
+        
     # ========================================================
     # 🧮 MOTOR MATEMÁTICO DE PESOS (SENCILLA VS DOBLE)
     # ========================================================
