@@ -385,16 +385,16 @@ else:
     
     # Candado estricto de dominio institucional
     correo_admin = "marcodoleire@gmail.com"  
-    #if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
-    #    st.error("⛔ Acceso denegado. Este sistema está restringido exclusivamente para cuentas institucionales @miraflores.edu.mx.")
-    #    
-    #    if st.button("🔑 Cambiar a cuenta del Colegio", type="secondary"):
-    #        st.session_state.clear()
-    #        st.query_params.clear()
-    #        if hasattr(st, "logout"):
-    #            st.logout()
-    #        st.rerun()
-    #    st.stop()
+    if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
+        st.error("⛔ Acceso denegado. Este sistema está restringido exclusivamente para cuentas institucionales @miraflores.edu.mx.")
+        
+        if st.button("🔑 Cambiar a cuenta del Colegio", type="secondary"):
+            st.session_state.clear()
+            st.query_params.clear()
+            if hasattr(st, "logout"):
+                st.logout()
+            st.rerun()
+        st.stop()
 
     try:
         gc = conectar_gsheets()
@@ -416,11 +416,6 @@ else:
                 profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
                 if correo_google in profesores_validos:
                     es_profesor_oficial = True
-            # LÍNEA MÁGICA PARA PRUEBAS: Todos son aceptados temporalmente
-            es_profesor_oficial = True 
-
-            if not es_profesor_oficial:
-                st.error("⛔ Tu correo no forma parte de la plantilla docente del ciclo escolar activo.")
                 
             if correo_google == correo_admin:
                 es_profesor_oficial = True
