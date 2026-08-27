@@ -12,11 +12,10 @@ from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignacio
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     st.header(f"📅 Gestión de Asistencia")
     
-    # --- Variable de memoria para el menú ---
     if "modo_edicion_horario" not in st.session_state:
         st.session_state.modo_edicion_horario = False
     
-    # 1. Buscar materias asignadas (Soporte multinivel)
+    # 1. Buscar materias asignadas
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
     if mis_asig.empty:
@@ -29,14 +28,12 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     st.markdown("---")
 
-    # --- Layout de 3 columnas ---
     c1, c2, c3 = st.columns([3, 3, 2])
     materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key="asist_mat")
     grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key="asist_grup")
     
     with c3:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        # Solo mostramos el botón de abrir si el panel está oculto
         if not st.session_state.modo_edicion_horario:
             if st.button("⚙️ Modificar horario", use_container_width=True):
                 st.session_state.modo_edicion_horario = True
@@ -83,10 +80,8 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         mostrar_formulario = st.session_state.modo_edicion_horario
         detener_app = False
 
-    # Si está encendido (o si es nuevo), mostramos el panel
     if mostrar_formulario:
         with st.container():
-            # Botón de Cerrar (X) visible solo si NO es configuración inicial
             if not config_actual.empty:
                 c_vacio, c_cerrar = st.columns([8, 2])
                 with c_cerrar:
@@ -128,7 +123,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                             ws_conf.clear()
                             ws_conf.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
                             
-                            # Apagamos el menú de forma segura
                             st.session_state.modo_edicion_horario = False
                             leer_datos.clear() 
                             st.success("✅ Horario actualizado con éxito.")
@@ -138,12 +132,14 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if detener_app:
         return
 
-    # Diccionario de pesos del horario (Fines de semana apagados)
-    horario_clase = {
-        0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie,
-        5: 0, # Sábado apagado
-        6: 0  # Domingo apagado
-    }
+    # Extraemos cuántos días a la semana tiene clase realmente
+    dias_semana_clase = sum(1 for h in [v_lun, v_mar, v_mie, v_jue, v_vie] if h > 0)
+    
+    # Aplicamos la regla del Excel: Límite de faltas según días de clase a la semana
+    limite_faltas_dict = {0: 99, 1: 2, 2: 4, 3: 5, 4: 7, 5: 9}
+    limite_faltas = limite_faltas_dict.get(dias_semana_clase, 9)
+
+    horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
 
     # ========================================================
     # 3. LEER EL HISTORIAL Y CALCULAR FALTAS PONDERADAS
@@ -157,8 +153,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         df_historial = pd.DataFrame({"Alumno": alumnos})
 
     columnas_fechas = [c for c in df_historial.columns if c != 'Alumno']
-    
-    total_horas_impartidas = 0
     peso_fechas = {} 
     
     for col_fecha in columnas_fechas:
@@ -166,19 +160,17 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             dia_semana = datetime.strptime(col_fecha, "%d-%m-%Y").weekday()
             horas_ese_dia = horario_clase.get(dia_semana, 1)
             if horas_ese_dia == 0: horas_ese_dia = 1 
-            
             peso_fechas[col_fecha] = horas_ese_dia
-            total_horas_impartidas += horas_ese_dia
         except:
             peso_fechas[col_fecha] = 1
-            total_horas_impartidas += 1
 
-    stats = {}
     faltas_dict = {}
     retardos_dict = {}
+    faltas_efectivas_dict = {}
+    derecho_examen_dict = {}
     
     for al in alumnos:
-        if total_horas_impartidas > 0 and al in df_historial['Alumno'].values:
+        if al in df_historial['Alumno'].values:
             fila_alumno = df_historial[df_historial['Alumno'] == al].iloc[0]
             faltas_ponderadas = 0
             retardos_ponderados = 0
@@ -192,19 +184,29 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 elif estado == '🟡 Retardo':
                     retardos_ponderados += peso
             
-            pct = (faltas_ponderadas / total_horas_impartidas) * 100
-            stats[al] = f"{pct:.1f}%"
+            # --- LÓGICA MIRAFLORES: 3 Retardos = 1 Falta ---
+            faltas_efectivas = faltas_ponderadas + (retardos_ponderados // 3)
+            
             faltas_dict[al] = faltas_ponderadas
             retardos_dict[al] = retardos_ponderados
+            faltas_efectivas_dict[al] = faltas_efectivas
+            
+            if faltas_efectivas <= limite_faltas:
+                derecho_examen_dict[al] = "✅ SÍ"
+            else:
+                derecho_examen_dict[al] = "❌ NO"
         else:
-            stats[al] = "0.0%"
             faltas_dict[al] = 0
             retardos_dict[al] = 0
+            faltas_efectivas_dict[al] = 0
+            derecho_examen_dict[al] = "✅ SÍ"
 
     # ========================================================
     # MODO 1: PASE DE LISTA Y EDICIÓN
     # ========================================================
     if modo_vista == "📝 Pasar Lista / Editar Día":
+        
+        st.info(f"💡 **Reglas del Colegio:** Esta materia tiene clase **{dias_semana_clase} días** a la semana. Límite permitido: **{limite_faltas} faltas**. *(3 Retardos = 1 Falta)*")
         
         dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
         fechas_validas = []
@@ -226,34 +228,29 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             fechas_validas = [f_str]
             etiquetas_fechas[f_str] = f"{dias_espanol[hoy.weekday()]} {f_str}"
 
-        fecha_str = st.selectbox(
-            "📅 Selecciona la fecha de la clase:", 
-            fechas_validas,
-            format_func=lambda x: etiquetas_fechas[x]
-        )
+        fecha_str = st.selectbox("📅 Selecciona la fecha de la clase:", fechas_validas, format_func=lambda x: etiquetas_fechas[x])
         
         fecha_sel_dt = datetime.strptime(fecha_str, "%d-%m-%Y")
         dia_semana_actual = fecha_sel_dt.weekday()
         
         if horario_clase.get(dia_semana_actual) == 2:
-            st.info("⏱️ **Dato:** Este día es de clase doble. Las inasistencias contarán como 2 faltas.")
+            st.caption("⏱️ *Nota: Este día es de clase doble. Las inasistencias contarán como 2 faltas.*")
 
         st.markdown("<br>", unsafe_allow_html=True)
         
         if fecha_str in df_historial.columns:
-            st.info(f"📝 **Modo Edición:** Modificando asistencia del **{fecha_str}**.")
             valores_previos = dict(zip(df_historial['Alumno'], df_historial[fecha_str]))
             col_asistencia = [valores_previos.get(al, "✅ Presente") if pd.notna(valores_previos.get(al)) and valores_previos.get(al) != "" else "✅ Presente" for al in alumnos]
         else:
-            st.info(f"✨ **Nuevo Registro:** Pasando lista para el **{fecha_str}**.")
             col_asistencia = ["✅ Presente"] * len(alumnos)
 
         df_view = pd.DataFrame({
             "Alumno": alumnos,
             "Asistencia": col_asistencia,
-            "% Inasistencia": [stats[al] for al in alumnos],
-            "Faltas Acum.": [faltas_dict[al] for al in alumnos],
-            "Retardos Acum.": [retardos_dict[al] for al in alumnos]
+            "Faltas Reales": [faltas_dict[al] for al in alumnos],
+            "Retardos Reales": [retardos_dict[al] for al in alumnos],
+            "Faltas Efectivas": [faltas_efectivas_dict[al] for al in alumnos],
+            "Derecho Examen": [derecho_examen_dict[al] for al in alumnos]
         })
 
         st.markdown(f"### 📋 Lista de {grupo} ({materia})")
@@ -262,14 +259,11 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             df_view,
             column_config={
                 "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
-                "Asistencia": st.column_config.SelectboxColumn(
-                    "Asistencia",
-                    options=["✅ Presente", "🟡 Retardo", "🔴 Falta"],
-                    required=True,
-                ),
-                "% Inasistencia": st.column_config.TextColumn("% Inasistencia", disabled=True),
-                "Faltas Acum.": st.column_config.NumberColumn("Faltas", disabled=True),
-                "Retardos Acum.": st.column_config.NumberColumn("Retardos", disabled=True)
+                "Asistencia": st.column_config.SelectboxColumn("Asistencia", options=["✅ Presente", "🟡 Retardo", "🔴 Falta"], required=True),
+                "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
+                "Retardos Reales": st.column_config.NumberColumn("Retardos", disabled=True),
+                "Faltas Efectivas": st.column_config.NumberColumn("Faltas Efectivas (Regla Miraflores)", disabled=True),
+                "Derecho Examen": st.column_config.TextColumn("Derecho Examen", disabled=True)
             },
             hide_index=True,
             use_container_width=True,
@@ -302,12 +296,10 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 df_actualizado[fecha_str] = df_actualizado['Alumno'].map(asistencia_dict)
                 
                 df_actualizado = df_actualizado.fillna("")
-
                 ws.clear()
                 ws.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
                 
                 leer_datos.clear()
-                
                 st.success(f"✅ ¡Asistencia del {fecha_str} guardada correctamente!")
                 time.sleep(1.5)
                 st.rerun()
@@ -324,9 +316,10 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
         df_mostrar = pd.DataFrame({"Alumno": df_historial["Alumno"]})
         
-        df_mostrar["% Faltas"] = df_mostrar["Alumno"].map(stats)
-        df_mostrar["Total Faltas"] = df_mostrar["Alumno"].map(faltas_dict)
-        df_mostrar["Total Retardos"] = df_mostrar["Alumno"].map(retardos_dict)
+        df_mostrar["Derecho Examen"] = df_mostrar["Alumno"].map(derecho_examen_dict)
+        df_mostrar["Faltas Efectivas"] = df_mostrar["Alumno"].map(faltas_efectivas_dict)
+        df_mostrar["Faltas Reales"] = df_mostrar["Alumno"].map(faltas_dict)
+        df_mostrar["Retardos Reales"] = df_mostrar["Alumno"].map(retardos_dict)
         
         for col in columnas_fechas:
             df_mostrar[col] = df_historial[col]
