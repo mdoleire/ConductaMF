@@ -22,7 +22,7 @@ import urllib.parse
 import requests
 import google.generativeai as genai
 from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_SEGURIDAD, FILE_REGISTROS, CATALOGO_SANCIONES, PERIODOS_LECTIVOS
-from database import conectar_gsheets, leer_datos, leer_todos_los_registros
+from database import conectar_gsheets, leer_datos, leer_todos_los_registros,leer_todas_las_asignaciones
 from paneles.tutor import renderizar_panel_tutor
 from paneles.directivo import renderizar_panel_directivo
 from paneles.coordinador import renderizar_panel_coordinador
@@ -409,7 +409,7 @@ else:
         
         # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
         if usuario_registrado.empty:
-            df_asig_verif = leer_datos(gc, FILE_ASIGNACIONES)
+            df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             es_profesor_oficial = False
             
             if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
