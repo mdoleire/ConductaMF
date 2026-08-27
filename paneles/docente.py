@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import google.generativeai as genai
 
 from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_REGISTROS, CATALOGO_SANCIONES
-from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos
+from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos,leer_todas_las_asignaciones
 from paneles.analitica import mostrar_tablero_analitico
 
 def renderizar_panel_docente(gc, usuario, nombre_prof):
@@ -37,7 +37,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             grados_sel = c2.multiselect("Grado(s):", opciones_grados, key=f"grad_{st.session_state.form_reset}")
             
             grupos_disponibles = []
-            df_asig_global = leer_datos(gc, FILE_ASIGNACIONES)
+            df_asig_global = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
             if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
                 todos_los_grupos = df_asig_global['Grupo'].dropna().astype(str).unique().tolist()
@@ -83,7 +83,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 if alumnos_por_grupo_seleccionados:
                     alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
         else:
-            df_asig = leer_datos(gc, FILE_ASIGNACIONES)
+            df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
             if mis_asig.empty: 
                 st.warning("Sin materias asignadas.")
