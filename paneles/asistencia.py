@@ -1,11 +1,10 @@
 # paneles/asistencia.py
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import gspread
 import time
-from datetime import datetime, timedelta
 
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA
 from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignaciones
@@ -13,7 +12,7 @@ from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignacio
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     st.header(f"📅 Gestión de Asistencia")
     
-    # 1. Buscar materias asignadas
+    # 1. Buscar materias asignadas (Soporte multinivel)
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
     if mis_asig.empty:
@@ -54,7 +53,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if not df_config.empty and 'Clase' in df_config.columns:
         config_actual = df_config[df_config['Clase'] == nombre_pestana]
 
-    # Valores por defecto (si ya existe, cargamos lo que el profesor guardó antes)
     v_lun, v_mar, v_mie, v_jue, v_vie = 0, 0, 0, 0, 0
     if not config_actual.empty:
         v_lun = int(config_actual.iloc[0]['Lunes'])
@@ -63,14 +61,12 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         v_jue = int(config_actual.iloc[0]['Jueves'])
         v_vie = int(config_actual.iloc[0]['Viernes'])
 
-    # Si es la primera vez, el formulario es obligatorio y bloquea la pantalla
     if config_actual.empty:
         st.info(f"⚙️ **Configuración Inicial requerida para {nombre_pestana}**")
         st.write("Antes de pasar lista, define el horario de esta materia para calcular correctamente las faltas.")
         contenedor_form = st.container()
         detener_app = True
     else:
-        # Si ya existe, lo ocultamos en un menú desplegable (expander) para no estorbar
         contenedor_form = st.expander("⚙️ Modificar Horario de esta Materia", expanded=False)
         detener_app = False
 
@@ -97,7 +93,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                             ws_conf = doc.add_worksheet(title="Configuracion", rows="100", cols="6")
                             ws_conf.append_row(["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
 
-                        # Si es nuevo, lo añadimos. Si ya existe, lo modificamos en la memoria.
                         if config_actual.empty:
                             nueva_fila = pd.DataFrame([[nombre_pestana, h_lun, h_mar, h_mie, h_jue, h_vie]], columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
                             df_actualizado = pd.concat([df_config, nueva_fila], ignore_index=True)
@@ -110,29 +105,41 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                         ws_conf.clear()
                         ws_conf.update([df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist())
                         
-                        leer_datos.clear() # Limpiamos caché
+                        leer_datos.clear() 
                         st.success("✅ Horario actualizado con éxito.")
                         time.sleep(1.5)
                         st.rerun()
                         
-    # Si la clase no estaba configurada, detenemos el pase de lista aquí
     if detener_app:
         return
-        
+
+    # Diccionario de pesos del horario (Fines de semana apagados)
+    horario_clase = {
+        0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie,
+        5: 0, # Sábado apagado
+        6: 0  # Domingo apagado
+    }
+
     # ========================================================
-    # 🧮 MOTOR MATEMÁTICO DE PESOS (SENCILLA VS DOBLE)
+    # 3. LEER EL HISTORIAL Y CALCULAR FALTAS PONDERADAS
     # ========================================================
+    try:
+        df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
+    except Exception:
+        df_historial = pd.DataFrame()
+
+    if df_historial.empty or 'Alumno' not in df_historial.columns:
+        df_historial = pd.DataFrame({"Alumno": alumnos})
+
     columnas_fechas = [c for c in df_historial.columns if c != 'Alumno']
     
     total_horas_impartidas = 0
     peso_fechas = {} 
     
-    # Analizamos qué día de la semana fue cada fecha pasada para saber si valía 1 o 2 horas
     for col_fecha in columnas_fechas:
         try:
             dia_semana = datetime.strptime(col_fecha, "%d-%m-%Y").weekday()
             horas_ese_dia = horario_clase.get(dia_semana, 1)
-            # Si el profe pasó lista un día que configuró con 0 horas, lo valemos por 1 por defecto
             if horas_ese_dia == 0: horas_ese_dia = 1 
             
             peso_fechas[col_fecha] = horas_ese_dia
@@ -148,13 +155,12 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     for al in alumnos:
         if total_horas_impartidas > 0 and al in df_historial['Alumno'].values:
             fila_alumno = df_historial[df_historial['Alumno'] == al].iloc[0]
-            
             faltas_ponderadas = 0
             retardos_ponderados = 0
             
             for col_f in columnas_fechas:
                 estado = fila_alumno[col_f]
-                peso = peso_fechas[col_f] # Aquí la magia: Si faltó y era clase doble, suma 2
+                peso = peso_fechas[col_f] 
                 
                 if estado == '🔴 Falta':
                     faltas_ponderadas += peso
@@ -162,7 +168,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                     retardos_ponderados += peso
             
             pct = (faltas_ponderadas / total_horas_impartidas) * 100
-            
             stats[al] = f"{pct:.1f}%"
             faltas_dict[al] = faltas_ponderadas
             retardos_dict[al] = retardos_ponderados
@@ -176,11 +181,9 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     # ========================================================
     if modo_vista == "📝 Pasar Lista / Editar Día":
         
-        # 1. Diccionario de traducción
         dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
-        
         fechas_validas = []
-        etiquetas_fechas = {} # Guardará el formato bonito (ej. "Jueves 27-08-2026")
+        etiquetas_fechas = {} 
         
         hoy = datetime.now(ZoneInfo("America/Mexico_City"))
         
@@ -198,14 +201,12 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             fechas_validas = [f_str]
             etiquetas_fechas[f_str] = f"{dias_espanol[hoy.weekday()]} {f_str}"
 
-        # 2. Selector con format_func (Muestra la etiqueta bonita, pero guarda la fecha real)
         fecha_str = st.selectbox(
             "📅 Selecciona la fecha de la clase:", 
             fechas_validas,
             format_func=lambda x: etiquetas_fechas[x]
         )
         
-        # 3. Avisos visuales
         fecha_sel_dt = datetime.strptime(fecha_str, "%d-%m-%Y")
         dia_semana_actual = fecha_sel_dt.weekday()
         
@@ -221,6 +222,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         else:
             st.info(f"✨ **Nuevo Registro:** Pasando lista para el **{fecha_str}**.")
             col_asistencia = ["✅ Presente"] * len(alumnos)
+
         df_view = pd.DataFrame({
             "Alumno": alumnos,
             "Asistencia": col_asistencia,
