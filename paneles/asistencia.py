@@ -100,8 +100,8 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         2: int(config_actual.iloc[0]['Miercoles']),
         3: int(config_actual.iloc[0]['Jueves']),
         4: int(config_actual.iloc[0]['Viernes']),
-        5: 1, # Sábado (Por si acaso)
-        6: 1  # Domingo (Por si acaso)
+        5: 0, # Sábado (Por si acaso)
+        6: 0  # Domingo (Por si acaso)
     }
 
     # 3. Leer el historial en formato de "Matriz"
