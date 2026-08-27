@@ -7,13 +7,13 @@ import gspread
 import time
 
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA
-from database import leer_datos, obtener_lista_alumnos
+from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignaciones
 
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     st.header(f"📅 Gestión de Asistencia")
     
     # 1. Buscar materias asignadas
-    df_asig = leer_datos(gc, FILE_ASIGNACIONES)
+    df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
     if mis_asig.empty:
         st.warning("Sin materias asignadas para pasar lista.")
