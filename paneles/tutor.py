@@ -13,8 +13,23 @@ from calculadora import format_calif, calcular_calificacion_progresiva
 def renderizar_panel_tutor(gc, usuario, nombre_prof):
     st.header(f"🧑‍🏫 Panel de Tutoría: {nombre_prof}")
     
+    # Limpieza del usuario activo
+    usuario = str(usuario).lower().strip()
+    
     # 1. Buscar los grupos donde el profesor es "Tutor"
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+    
+    if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
+        st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
+        return
+
+    # Limpieza extrema de columnas para evitar bloqueos por espacios
+    df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
+    if 'Materia' in df_asig.columns:
+        df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
+    if 'Grupo' in df_asig.columns:
+        df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
+
     mis_grupos_tutor = df_asig[(df_asig['Usuario_Profesor'] == usuario) & (df_asig['Materia'] == 'Tutor')]['Grupo'].unique().tolist()
     
     if not mis_grupos_tutor:
@@ -38,6 +53,11 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     with st.spinner("Compilando expedientes unificados..."):
         # 1. Traer datos de Conducta
         df_full = leer_todos_los_registros(gc)
+        
+        # Limpiamos la columna grupo del historial antes de filtrar
+        if not df_full.empty and 'Grupo' in df_full.columns:
+            df_full['Grupo'] = df_full['Grupo'].astype(str).str.strip()
+            
         df_grupo_conducta = df_full[df_full['Grupo'] == grupo_sel].copy() if not df_full.empty else pd.DataFrame()
         if not df_grupo_conducta.empty:
             df_grupo_conducta['Fecha_DT'] = pd.to_datetime(df_grupo_conducta['Fecha'], errors='coerce')
@@ -47,7 +67,8 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
         try:
             doc_asist = gc.open(FILE_ASISTENCIA)
             hojas = doc_asist.worksheets()
-            hojas_grupo = [h for h in hojas if h.title.endswith(f" - {grupo_sel}")]
+            # Limpiamos los títulos de las hojas al buscar para evitar errores de espacios
+            hojas_grupo = [h for h in hojas if h.title.strip().endswith(f" - {grupo_sel}")]
             
             list_melted = []
             for h in hojas_grupo:
@@ -55,7 +76,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
                 if len(datos) > 1:
                     columnas = datos[0]
                     df_temp = pd.DataFrame(datos[1:], columns=columnas)
-                    materia = h.title.split(" - ")[0]
+                    materia = h.title.split(" - ")[0].strip()
                     
                     fechas_cols = [c for c in columnas if c != 'Alumno']
                     if fechas_cols:
@@ -168,7 +189,11 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
         st.subheader(f"📄 Expediente Integral: {alumno_sel}")
         
         tipo_reporte = st.radio("Elige el rango de tiempo:", ["Mensual", "Por Periodo Lectivo"], horizontal=True)
-        df_alumno = df_unificado[df_unificado['Alumno'] == alumno_sel].copy()
+        
+        # Limpiamos los nombres antes de filtrar para mayor seguridad
+        df_unificado['Alumno'] = df_unificado['Alumno'].astype(str).str.strip()
+        alumno_sel_limpio = alumno_sel.strip()
+        df_alumno = df_unificado[df_unificado['Alumno'] == alumno_sel_limpio].copy()
         
         if df_alumno.empty:
             st.success(f"✨ ¡Excelente noticia! **{alumno_sel}** tiene un expediente impecable (Sin faltas ni reportes).")
