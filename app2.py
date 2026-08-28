@@ -22,7 +22,7 @@ import urllib.parse
 import requests
 import google.generativeai as genai
 from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_SEGURIDAD, FILE_REGISTROS, CATALOGO_SANCIONES, PERIODOS_LECTIVOS
-from database import conectar_gsheets, leer_datos, leer_todos_los_registros,leer_todas_las_asignaciones
+from database import conectar_gsheets, leer_datos, leer_todos_los_registros, leer_todas_las_asignaciones
 from paneles.tutor import renderizar_panel_tutor
 from paneles.directivo import renderizar_panel_directivo
 from paneles.coordinador import renderizar_panel_coordinador
@@ -410,20 +410,14 @@ else:
         # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
         if usuario_registrado.empty:
             es_profesor_oficial = False
-            profesores_validos = []
             
-            # Recorremos TODAS las pestañas del Excel (Prepa, Secundaria, etc.)
-            doc_asig = gc.open(FILE_ASIGNACIONES)
-            for hoja in doc_asig.worksheets():
-                datos_hoja = hoja.get_all_values()
-                if len(datos_hoja) > 1:
-                    df_temp = pd.DataFrame(datos_hoja[1:], columns=datos_hoja[0])
-                    df_temp.columns = df_temp.columns.str.strip()
-                    if 'Usuario_Profesor' in df_temp.columns:
-                        profesores_validos.extend([str(e).lower().strip() for e in df_temp['Usuario_Profesor'].dropna().unique()])
+            # Usamos la función en caché para no agotar la cuota de Google
+            df_asig_verif = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
-            if correo_google in profesores_validos or correo_google == correo_admin:
-                es_profesor_oficial = True
+            if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
+                profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
+                if correo_google in profesores_validos or correo_google == correo_admin:
+                    es_profesor_oficial = True
 
             if not es_profesor_oficial:
                 st.error("⛔ Tu correo no forma parte de la plantilla docente activa (ni en Prepa ni en Secundaria).")
@@ -473,19 +467,14 @@ else:
                 st.logout()
             st.rerun()
 
-        # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA (Buscando en todas las pestañas)
+        # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA (Optimizado con caché)
+        df_asig_check = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
         mis_materias_check = []
-        doc_asig = gc.open(FILE_ASIGNACIONES)
-        for hoja in doc_asig.worksheets():
-            datos_hoja = hoja.get_all_values()
-            if len(datos_hoja) > 1:
-                df_temp = pd.DataFrame(datos_hoja[1:], columns=datos_hoja[0])
-                df_temp.columns = df_temp.columns.str.strip()
-                if 'Usuario_Profesor' in df_temp.columns and 'Materia' in df_temp.columns:
-                    df_temp['Usuario_Profesor'] = df_temp['Usuario_Profesor'].astype(str).str.lower().str.strip()
-                    materias = df_temp[df_temp['Usuario_Profesor'] == correo_google]['Materia'].tolist()
-                    mis_materias_check.extend(materias)
         
+        if not df_asig_check.empty and 'Usuario_Profesor' in df_asig_check.columns and 'Materia' in df_asig_check.columns:
+            df_asig_check['Usuario_Profesor'] = df_asig_check['Usuario_Profesor'].astype(str).str.lower().str.strip()
+            mis_materias_check = df_asig_check[df_asig_check['Usuario_Profesor'] == correo_google]['Materia'].tolist()
+            
         es_tutor = "Tutor" in mis_materias_check
 
         # Construcción dinámica del menú lateral
