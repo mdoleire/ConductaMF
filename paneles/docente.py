@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import google.generativeai as genai
 
 from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_REGISTROS, CATALOGO_SANCIONES
-from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos,leer_todas_las_asignaciones
+from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos, leer_todas_las_asignaciones
 from paneles.analitica import mostrar_tablero_analitico
 
 def renderizar_panel_docente(gc, usuario, nombre_prof):
@@ -19,6 +19,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         st.session_state["form_reset"] = 0
     if "ia_closed_state" not in st.session_state:
         st.session_state["ia_closed_state"] = 0
+        
+    usuario = str(usuario).lower().strip()
         
     with st.expander("📝 Registro de Incidencia", expanded=True):
         reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
@@ -40,7 +42,10 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             df_asig_global = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
             if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
-                todos_los_grupos = df_asig_global['Grupo'].dropna().astype(str).unique().tolist()
+                # Limpieza de espacios invisibles en los grupos
+                df_asig_global['Grupo'] = df_asig_global['Grupo'].astype(str).str.strip()
+                todos_los_grupos = df_asig_global['Grupo'].dropna().unique().tolist()
+                
                 if grados_sel:
                     for grad_individual in grados_sel:
                         numero_grado = grad_individual.replace("°", "") 
@@ -64,8 +69,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 for idx, g_sel in enumerate(grupos_sel):
                     with pestañas[idx]:
                         try:
-                            # Usamos la nueva función inteligente aquí también
-                            lista_grupo = obtener_lista_alumnos(gc, FILE_ALUMNOS, g_sel)
+                            # Limpieza del nombre del grupo antes de buscar la pestaña
+                            lista_grupo = obtener_lista_alumnos(gc, FILE_ALUMNOS, g_sel.strip())
                             if lista_grupo:
                                 sel_alumnos = st.multiselect(
                                     f"Implicados de {g_sel}:", 
@@ -84,9 +89,20 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
         else:
             df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+            
+            if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
+                st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
+                return
+                
+            # Limpieza extrema de datos para emparejar correctamente
+            df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
+            df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
+            df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
+            
             mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
+            
             if mis_asig.empty: 
-                st.warning("Sin materias asignadas.")
+                st.warning("Sin materias asignadas para tu usuario actual.")
                 return
             
             c1, c2 = st.columns(2)
@@ -97,12 +113,13 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
             
             try:
-                opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo)
+                # Aseguramos que no haya espacios al enviar el nombre de la pestaña
+                opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo.strip())
                 if not opc:
                     st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados con el formato correcto.")
             except Exception:
                 opc = []
-                st.error(f"Falta la pestaña '{grupo}' en el archivo 1_Alumnos_por_Grupo")
+                st.error(f"Falta la pestaña '{grupo}' en el archivo de Alumnos")
             
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
@@ -124,7 +141,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         # =================================================================
         # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
         # =================================================================
-        # La llave dinámica obliga a Streamlit a cerrar la ventana al incrementar el contador
         popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
         
         with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
@@ -143,7 +159,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación.")
                 else:
                     try:
-                        # Búsqueda profunda de la API Key en los secretos
                         api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
                         if not api_key_gemini:
                             for seccion_key in st.secrets.keys():
@@ -211,14 +226,12 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         st.error(f"⚠️ El clasificador automático no se encuentra disponible.")
                         st.info(f"Detalle técnico: {e}")
 
-            # --- RENDERIZADO PERSISTENTE DEL RESULTADO Y BOTÓN DE CIERRE ---
             if st.session_state[key_fal_recomendada]:
                 cat_sug = st.session_state[key_cat_recomendada]
                 fal_sug = st.session_state[key_fal_recomendada]
                 
-                st.success(f"✅ ¡Clasificado con éxito! Sugerencia sugerida: **{cat_sug}** ➔ **{fal_sug}**.")
+                st.success(f"✅ ¡Clasificado con éxito! Sugerencia: **{cat_sug}** ➔ **{fal_sug}**.")
                 
-                # Al hacer clic, incrementamos el contador para destruir y cerrar la ventana flotante
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("❌ Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
                     st.session_state["ia_closed_state"] += 1
@@ -227,7 +240,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         # --- MENÚS EN CASCADA DE FALTAS ---
         c_cat, c_fal = st.columns(2)
         
-        # 1. Selector de Categorías con índice autoadaptable
         lista_categorias = list(CATALOGO_SANCIONES.keys())
         try:
             indice_categoria_defecto = lista_categorias.index(st.session_state[key_cat_recomendada])
@@ -242,7 +254,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 key=f"cat_{st.session_state.form_reset}"
             )
             
-        # 2. Selector de Falta cometida con índice autoadaptable
         dict_faltas = CATALOGO_SANCIONES[categoria]
         opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
         
@@ -263,7 +274,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
         falta_original = falta_seleccionada_visual.split(" (")[0]
         
-        # Verificamos si la IA pre-llenó la redacción para que el profesor no tenga que escribirla dos veces
         redaccion_inicial = st.session_state.get(f"obs_prefill_{st.session_state.form_reset}", "")
         
         obs = st.text_area(
