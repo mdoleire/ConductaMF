@@ -14,6 +14,10 @@ def renderizar_panel_directivo(gc):
     if df_full.empty:
         st.info("Base de datos de registros vacía.")
         return
+        
+    # Limpiamos la columna de materias por seguridad
+    if 'Materia' in df_full.columns:
+        df_full['Materia'] = df_full['Materia'].astype(str).str.strip()
 
     df_pasillo = df_full[df_full['Materia'] == "Pasillo / Inst. General"]
     if not df_pasillo.empty:
@@ -40,25 +44,34 @@ def renderizar_panel_directivo(gc):
         f1, f2, f3, f4 = st.columns(4)
         df_f = df_full.copy()
         
-        grados = ["Todos"] + sorted(df_f['Grado'].astype(str).unique().tolist())
-        sel_grado = f1.selectbox("Filtrar Grado:", grados)
-        if sel_grado != "Todos":
-            df_f = df_f[df_f['Grado'].astype(str) == sel_grado]
+        # Limpieza de columnas para filtros perfectos
+        for col in ['Grado', 'Grupo', 'Profesor', 'Materia']:
+            if col in df_f.columns:
+                df_f[col] = df_f[col].astype(str).str.strip()
+        
+        if 'Grado' in df_f.columns:
+            grados = ["Todos"] + sorted(df_f['Grado'].unique().tolist())
+            sel_grado = f1.selectbox("Filtrar Grado:", grados)
+            if sel_grado != "Todos":
+                df_f = df_f[df_f['Grado'] == sel_grado]
             
-        grupos = ["Todos"] + sorted(df_f['Grupo'].astype(str).unique().tolist())
-        sel_grupo = f2.selectbox("Filtrar Grupo:", grupos)
-        if sel_grupo != "Todos":
-            df_f = df_f[df_f['Grupo'].astype(str) == sel_grupo]
+        if 'Grupo' in df_f.columns:
+            grupos = ["Todos"] + sorted(df_f['Grupo'].unique().tolist())
+            sel_grupo = f2.selectbox("Filtrar Grupo:", grupos)
+            if sel_grupo != "Todos":
+                df_f = df_f[df_f['Grupo'] == sel_grupo]
             
-        profs = ["Todos"] + sorted(df_f['Profesor'].astype(str).unique().tolist())
-        sel_prof = f3.selectbox("Filtrar Profesor:", profs)
-        if sel_prof != "Todos":
-            df_f = df_f[df_f['Profesor'].astype(str) == sel_prof]
+        if 'Profesor' in df_f.columns:
+            profs = ["Todos"] + sorted(df_f['Profesor'].unique().tolist())
+            sel_prof = f3.selectbox("Filtrar Profesor:", profs)
+            if sel_prof != "Todos":
+                df_f = df_f[df_f['Profesor'] == sel_prof]
             
-        mats = ["Todos"] + sorted(df_f['Materia'].astype(str).unique().tolist())
-        idx_mat = 1 if (len(mats) == 2 and sel_prof != "Todos") else 0
-        sel_mat = f4.selectbox("Filtrar Materia:", mats, index=idx_mat)
-        if sel_mat != "Todos":
-            df_f = df_f[df_f['Materia'].astype(str) == sel_mat]
+        if 'Materia' in df_f.columns:
+            mats = ["Todos"] + sorted(df_f['Materia'].unique().tolist())
+            idx_mat = 1 if (len(mats) == 2 and sel_prof != "Todos") else 0
+            sel_mat = f4.selectbox("Filtrar Materia:", mats, index=idx_mat)
+            if sel_mat != "Todos":
+                df_f = df_f[df_f['Materia'] == sel_mat]
 
     mostrar_tablero_analitico(df_f, "Institucional")
