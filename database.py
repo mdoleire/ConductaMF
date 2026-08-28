@@ -8,8 +8,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import json
-from config import FILE_REGISTROS # Importamos desde el archivo config
-import pandas as pd 
+from config import FILE_REGISTROS
 
 @st.cache_resource
 def conectar_gsheets():
@@ -82,25 +81,25 @@ def obtener_lista_alumnos(gc, archivo, pestaña):
     except Exception as e:
         return []
 
-def leer_todas_las_asignaciones(gc, nombre_archivo):
+# ✨ VERSIÓN OPTIMIZADA, DINÁMICA Y CON CACHÉ ✨
+@st.cache_data(ttl=600)
+def leer_todas_las_asignaciones(_gc, nombre_archivo):
     """
-    Lee las pestañas de Secundaria y Preparatoria y las une en un solo DataFrame
-    para que el resto del sistema las procese como una sola lista maestra.
+    Lee y fusiona TODAS las pestañas del archivo de asignaciones dinámicamente.
     """
     try:
-        df_secundaria = leer_datos(gc, nombre_archivo, "Secundaria")
-    except Exception:
-        df_secundaria = pd.DataFrame()
+        doc = _gc.open(nombre_archivo)
+        lista_dfs = []
+        for hoja in doc.worksheets():
+            datos = hoja.get_all_values()
+            if len(datos) > 1:
+                df = pd.DataFrame(datos[1:], columns=datos[0])
+                df.columns = df.columns.str.strip()
+                lista_dfs.append(df)
         
-    try:
-        df_prepa = leer_datos(gc, nombre_archivo, "Preparatoria")
-    except Exception:
-        df_prepa = pd.DataFrame()
-        
-    # Si ambas están vacías, regresamos un DataFrame vacío para no romper el sistema
-    if df_secundaria.empty and df_prepa.empty:
+        if lista_dfs:
+            return pd.concat(lista_dfs, ignore_index=True)
         return pd.DataFrame()
-        
-    # Fusionamos ambas listas
-    df_unificado = pd.concat([df_secundaria, df_prepa], ignore_index=True)
-    return df_unificado
+    except Exception as e:
+        st.error(f"Error al leer asignaciones globales: {e}")
+        return pd.DataFrame()
