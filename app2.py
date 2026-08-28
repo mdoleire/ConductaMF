@@ -409,20 +409,25 @@ else:
         
         # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
         if usuario_registrado.empty:
-            df_asig_verif = leer_datos(gc, FILE_ASIGNACIONES)
             es_profesor_oficial = False
+            profesores_validos = []
             
-            if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
-                profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
-                if correo_google in profesores_validos:
-                    es_profesor_oficial = True
-                
-            if correo_google == correo_admin:
+            # Recorremos TODAS las pestañas del Excel (Prepa, Secundaria, etc.)
+            doc_asig = gc.open(FILE_ASIGNACIONES)
+            for hoja in doc_asig.worksheets():
+                datos_hoja = hoja.get_all_values()
+                if len(datos_hoja) > 1:
+                    df_temp = pd.DataFrame(datos_hoja[1:], columns=datos_hoja[0])
+                    df_temp.columns = df_temp.columns.str.strip()
+                    if 'Usuario_Profesor' in df_temp.columns:
+                        profesores_validos.extend([str(e).lower().strip() for e in df_temp['Usuario_Profesor'].dropna().unique()])
+            
+            if correo_google in profesores_validos or correo_google == correo_admin:
                 es_profesor_oficial = True
 
             if not es_profesor_oficial:
-                st.error("⛔ Tu correo no forma parte de la plantilla docente del ciclo escolar activo.")
-                st.info("Por favor, contacta a tu departamento de Coordinación Académica para ser dado de alta en las asignaciones.")
+                st.error("⛔ Tu correo no forma parte de la plantilla docente activa (ni en Prepa ni en Secundaria).")
+                st.warning(f"🔍 El correo detectado es: **'{correo_google}'**")
                 
                 if st.button("🔑 Intentar con otra cuenta", type="secondary"):
                     st.session_state.clear()
@@ -459,7 +464,6 @@ else:
         area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
 
         # Barra lateral y selector de vistas
-      # Barra lateral y selector de vistas
         st.sidebar.title("⚙️ Configuración de Vista")
         
         if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
@@ -469,9 +473,19 @@ else:
                 st.logout()
             st.rerun()
 
-        # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA
-        df_asig_check = leer_datos(gc, FILE_ASIGNACIONES)
-        mis_materias_check = df_asig_check[df_asig_check['Usuario_Profesor'] == correo_google]['Materia'].tolist()
+        # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA (Buscando en todas las pestañas)
+        mis_materias_check = []
+        doc_asig = gc.open(FILE_ASIGNACIONES)
+        for hoja in doc_asig.worksheets():
+            datos_hoja = hoja.get_all_values()
+            if len(datos_hoja) > 1:
+                df_temp = pd.DataFrame(datos_hoja[1:], columns=datos_hoja[0])
+                df_temp.columns = df_temp.columns.str.strip()
+                if 'Usuario_Profesor' in df_temp.columns and 'Materia' in df_temp.columns:
+                    df_temp['Usuario_Profesor'] = df_temp['Usuario_Profesor'].astype(str).str.lower().str.strip()
+                    materias = df_temp[df_temp['Usuario_Profesor'] == correo_google]['Materia'].tolist()
+                    mis_materias_check.extend(materias)
+        
         es_tutor = "Tutor" in mis_materias_check
 
         # Construcción dinámica del menú lateral
