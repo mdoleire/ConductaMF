@@ -14,10 +14,26 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     
     if "modo_edicion_horario" not in st.session_state:
         st.session_state.modo_edicion_horario = False
+        
+    # Limpieza del usuario activo
+    usuario = str(usuario).lower().strip()
     
     # 1. Buscar materias asignadas
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+    
+    if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
+        st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
+        return
+        
+    # Limpieza extrema de datos para evitar errores por espacios invisibles
+    df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
+    if 'Materia' in df_asig.columns:
+        df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
+    if 'Grupo' in df_asig.columns:
+        df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
+        
     mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
+    
     if mis_asig.empty:
         st.warning("Sin materias asignadas para pasar lista.")
         return
@@ -39,9 +55,9 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.session_state.modo_edicion_horario = True
                 st.rerun()
     
-    # 2. Obtener la lista de alumnos
+    # 2. Obtener la lista de alumnos (Asegurando que no haya espacios al buscar la pestaña)
     try:
-        alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo)
+        alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo.strip())
     except Exception:
         alumnos = []
 
