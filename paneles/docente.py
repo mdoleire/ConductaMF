@@ -90,9 +90,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         else:
             df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
-            else:
-            df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
-            
             if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
                 st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
                 return
