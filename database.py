@@ -83,9 +83,12 @@ def obtener_lista_alumnos(gc, archivo, pestaña):
 
 # ✨ VERSIÓN OPTIMIZADA, DINÁMICA Y CON CACHÉ ✨
 @st.cache_data(ttl=600)
+# ✨ VERSIÓN CON DETECCIÓN AUTOMÁTICA DE NIVEL (PREPA/SECUNDARIA) ✨
+@st.cache_data(ttl=600)
 def leer_todas_las_asignaciones(_gc, nombre_archivo):
     """
-    Lee y fusiona TODAS las pestañas del archivo de asignaciones dinámicamente.
+    Lee y fusiona TODAS las pestañas del archivo de asignaciones dinámicamente,
+    etiquetando cada registro con el nombre de su pestaña (Nivel).
     """
     try:
         doc = _gc.open(nombre_archivo)
@@ -95,6 +98,10 @@ def leer_todas_las_asignaciones(_gc, nombre_archivo):
             if len(datos) > 1:
                 df = pd.DataFrame(datos[1:], columns=datos[0])
                 df.columns = df.columns.str.strip()
+                
+                # 🚀 MAGIA: Guardamos el nombre de la pestaña como "Nivel"
+                df['Nivel'] = hoja.title.strip() 
+                
                 lista_dfs.append(df)
         
         if lista_dfs:
