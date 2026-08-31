@@ -38,6 +38,9 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
         
     grupo_sel = st.selectbox("Selecciona tu Grupo de Tutoría:", mis_grupos_tutor)
     
+    # ✨ NUEVO: Detectamos a qué nivel pertenece este grupo específico
+    nivel_grupo = df_asig[df_asig['Grupo'] == grupo_sel]['Nivel'].iloc[0] if 'Nivel' in df_asig.columns else "Preparatoria"
+    
     st.markdown("---")
     
     # --- SELECTOR DE MODO DE VISTA ---
@@ -219,11 +222,15 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             
         else:
             hoy = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
-            pers = [p for p in PERIODOS_LECTIVOS if datetime.strptime(p['inicio'], '%Y-%m-%d') <= hoy]
+            
+            # ✨ NUEVO: Extraemos solo los periodos del nivel correspondiente (Secundaria o Preparatoria)
+            periodos_del_nivel = PERIODOS_LECTIVOS.get(nivel_grupo, PERIODOS_LECTIVOS.get("Preparatoria", []))
+            
+            pers = [p for p in periodos_del_nivel if datetime.strptime(p['inicio'], '%Y-%m-%d') <= hoy]
             nombres_pers = [p['nombre'] for p in pers]
             
             if not nombres_pers:
-                st.info("Aún no hay periodos activos configurados.")
+                st.info(f"Aún no hay periodos activos configurados para el área de {nivel_grupo}.")
                 return
                 
             per_sel = st.selectbox("Selecciona el Periodo Lectivo:", nombres_pers)
