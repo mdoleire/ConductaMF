@@ -90,6 +90,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         else:
             df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
+            else:
+            df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+            
             if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
                 st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
                 return
@@ -104,6 +107,23 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             if mis_asig.empty: 
                 st.warning("Sin materias asignadas para tu usuario actual.")
                 return
+            
+            # --- ✨ NUEVO: SEPARACIÓN DE NIVELES (PREPA / SECUNDARIA) ---
+            st.markdown("##### 🏫 Selecciona tu Nivel Escolar")
+            niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
+            
+            if len(niveles_prof) > 1:
+                nivel_elegido = st.radio("Cambiar entre secciones:", niveles_prof, horizontal=True, key=f"nav_niv_{st.session_state.form_reset}")
+                mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
+            else:
+                st.info(f"Nivel detectado: **{niveles_prof[0]}**")
+                
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            c1, c2 = st.columns(2)
+            materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
+            grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique())
+            grupo_final = [grupo]
             
             c1, c2 = st.columns(2)
             materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
