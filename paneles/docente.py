@@ -116,12 +116,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.info(f"Nivel detectado: **{niveles_prof[0]}**")
                 
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            c1, c2 = st.columns(2)
-            materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
-            grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique())
-            grupo_final = [grupo]
-            
+                       
             c1, c2 = st.columns(2)
             materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key=f"mat_select_{st.session_state.form_reset}")
             grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key=f"grup_select_{st.session_state.form_reset}")
