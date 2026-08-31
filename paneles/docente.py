@@ -123,8 +123,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             grupo_final = [grupo]
             
             c1, c2 = st.columns(2)
-            materia = c1.selectbox("Materia:", mis_asig['Materia'].unique())
-            grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique())
+            materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key=f"mat_select_{st.session_state.form_reset}")
+            grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key=f"grup_select_{st.session_state.form_reset}")
             grupo_final = [grupo]
             
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
