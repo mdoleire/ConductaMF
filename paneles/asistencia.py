@@ -44,6 +44,15 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     st.markdown("---")
 
+    # --- ✨ NUEVO: SEPARACIÓN DE NIVELES (PREPA / SECUNDARIA) ---
+    niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
+    
+    if len(niveles_prof) > 1:
+        nivel_elegido = st.radio("🏫 Selecciona tu sección:", niveles_prof, horizontal=True)
+        mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
+    else:
+        st.info(f"🏫 Nivel detectado: **{niveles_prof[0]}**")
+
     c1, c2, c3 = st.columns([3, 3, 2])
     materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key="asist_mat")
     grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key="asist_grup")
