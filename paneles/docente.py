@@ -128,7 +128,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 # Aseguramos que no haya espacios al enviar el nombre de la pestaña
                 opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo.strip())
                 if not opc:
-                    st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados con el formato correcto.")
+                    st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados.")
             except Exception:
                 opc = []
                 st.error(f"Falta la pestaña '{grupo}' en el archivo de Alumnos")
