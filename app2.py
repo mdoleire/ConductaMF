@@ -518,41 +518,35 @@ else:
         # ==========================================
         # 💬 BOTÓN FLOTANTE DE AYUDA (ASISTENTE IA)
         # ==========================================
-        st.markdown("---") # Línea divisoria en el menú izquierdo
+        st.sidebar.markdown("---") 
         
-        with st.popover("💬 Ayuda / Asistente", use_container_width=True):
+        # Forzamos la creación dentro del sidebar
+        with st.sidebar.popover("💬 Ayuda / Asistente", use_container_width=True):
             st.markdown("### 🤖 Soporte Técnico")
             
-            # 1. Inicializar el historial del chat en la memoria
             if "chat_ayuda" not in st.session_state:
                 st.session_state.chat_ayuda = []
                 
-            # 2. Contenedor con altura fija para que parezca un chat real con scroll
             contenedor_chat = st.container(height=350)
             
             with contenedor_chat:
                 if not st.session_state.chat_ayuda:
-                    st.info("👋 Hola, soy el bot de soporte del Colegio Miraflores. ¿Tienes dudas sobre cómo pasar lista o usar la plataforma?")
+                    st.info("👋 Hola, soy el bot de soporte del Colegio. ¿Tienes dudas sobre cómo pasar lista o usar la plataforma?")
                 
-                # Dibujar los mensajes anteriores
                 for msg in st.session_state.chat_ayuda:
                     st.chat_message(msg["role"]).write(msg["content"])
                     
-            # 3. Caja de texto y botón para enviar
             c_input, c_btn = st.columns([4, 1])
             duda = c_input.text_input("Escribe tu duda...", label_visibility="collapsed", key="input_duda")
             
             if c_btn.button("Enviar", use_container_width=True):
                 if duda.strip():
-                    # Guardamos la pregunta del usuario
                     st.session_state.chat_ayuda.append({"role": "user", "content": duda})
                     
-                    # 4. Conectamos con Gemini
                     with st.spinner("Pensando..."):
                         try:
                             import google.generativeai as genai
                             
-                            # Buscar la API Key en los secretos (igual que en docente.py)
                             api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
                             if not api_key_gemini:
                                 for seccion_key in st.secrets.keys():
@@ -564,7 +558,6 @@ else:
                             genai.configure(api_key=api_key_gemini)
                             modelo = genai.GenerativeModel('gemini-3.5-flash')
                             
-                            # Le damos "personalidad" y contexto al bot
                             prompt_sistema = f"""
                             Eres el asistente virtual de soporte técnico para los profesores del Colegio Miraflores.
                             El sistema permite: pasar lista (3 retardos = 1 falta), registrar incidencias de conducta y ver analíticas.
@@ -574,14 +567,11 @@ else:
                             """
                             
                             respuesta = modelo.generate_content(prompt_sistema)
-                            
-                            # Guardamos la respuesta del bot
                             st.session_state.chat_ayuda.append({"role": "assistant", "content": respuesta.text})
                             
                         except Exception as e:
                             st.session_state.chat_ayuda.append({"role": "assistant", "content": "⚠️ Hubo un error de conexión. Intenta de nuevo más tarde."})
                     
-                    # Forzar recarga para mostrar la respuesta y limpiar la caja de texto
                     st.rerun()
                     
     except Exception as e:
