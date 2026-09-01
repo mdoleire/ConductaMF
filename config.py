@@ -48,12 +48,12 @@ CATALOGO_SANCIONES = {
 
 PERIODOS_LECTIVOS = {
     "Secundaria": [
-        {"nombre": "Trimestre 1", "inicio": "2026-08-24", "fin": "2026-11-27"},
-        {"nombre": "Trimestre 2", "inicio": "2026-11-30", "fin": "2027-03-12"},
-        {"nombre": "Trimestre 3", "inicio": "2027-03-15", "fin": "2027-07-09"}
+        {"nombre": "1er Trimestre", "inicio": "2026-09-01", "fin": "2026-10-29"},
+        {"nombre": "2° Trimestre", "inicio": "2026-10-30", "fin": "2027-02-12"},
+        {"nombre": "3er Trimestre", "inicio": "2027-02-13", "fin": "2027-07-09"}
     ],
     "Preparatoria": [
-        {"nombre": "Periodo 1", "inicio": "2026-08-17", "fin": "2026-10-16"},
+    {"nombre": "Periodo 1", "inicio": "2026-08-17", "fin": "2026-10-16"},
     {"nombre": "Periodo 2", "inicio": "2026-10-19", "fin": "2026-12-18"},
     {"nombre": "Periodo 3", "inicio": "2027-01-07", "fin": "2027-02-26"},
     {"nombre": "Periodo 4", "inicio": "2027-03-01", "fin": "2027-04-30"},
