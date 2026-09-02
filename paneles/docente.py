@@ -143,13 +143,35 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
             
             try:
-                # Aseguramos que no haya espacios al enviar el nombre de la pestaña
-                opc = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo.strip())
+                # 1. Obtenemos el DataFrame crudo de la pestaña
+                from database import obtener_dataframe_alumnos # Asegúrate de que esta función exista en tu database.py
+                df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo.strip())
+                
+                # 2. Lógica de Filtrado por Área
+                if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
+                    if 'Área' in df_alumnos_crudo.columns:
+                        if "Área 1" in materia:
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 1']
+                        elif "Área 2" in materia:
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 2']
+                        elif "Área 3" in materia:
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 3']
+                        elif "Área 4" in materia:
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
+                    
+                    # 3. Construimos la lista final de opciones
+                    opc = []
+                    for _, row in df_alumnos_crudo.iterrows():
+                        nombre_completo = f"{row.get('Apellido paterno', '')} {row.get('Apellido materno', '')} {row.get('Nombre(s)', '')}".strip()
+                        opc.append(nombre_completo)
+                else:
+                    opc = []
+                    
                 if not opc:
-                    st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados.")
-            except Exception:
+                    st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados para esta área/materia.")
+            except Exception as e:
                 opc = []
-                st.error(f"Falta la pestaña '{grupo}' en el archivo de Alumnos")
+                st.error(f"Falta la pestaña '{grupo}' en el archivo de Alumnos o error: {e}")
             
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
