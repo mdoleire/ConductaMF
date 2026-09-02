@@ -117,12 +117,18 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
             df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
             
-            mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
+            # 👑 MODO SUPER USUARIO (ADMINISTRADOR)
+            SUPER_USUARIOS = ["marcodoleire@google.com"]
+            
+            if usuario in SUPER_USUARIOS:
+                mis_asig = df_asig.copy()
+                st.info("👑 Modo Super Usuario: Tienes acceso a todos los grupos y materias.")
+            else:
+                mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
             
             if mis_asig.empty: 
                 st.warning("Sin materias asignadas para tu usuario actual.")
-                return
-            
+                return            
             # --- ✨ NUEVO: SEPARACIÓN DE NIVELES (PREPA / SECUNDARIA) ---
             st.markdown("##### 🏫 Selecciona tu Nivel Escolar")
             niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
