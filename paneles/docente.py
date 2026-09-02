@@ -268,7 +268,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.rerun()
         
         # --- MENÚS EN CASCADA DE FALTAS ---
-        c_cat, c_fal = st.columns(2)
+        c_cat, c_fal = st.columns([1,  2])
         
         lista_categorias = list(CATALOGO_SANCIONES.keys())
         try:
