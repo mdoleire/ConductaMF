@@ -81,6 +81,32 @@ def obtener_lista_alumnos(gc, archivo, pestaña):
     except Exception as e:
         return []
 
+def obtener_dataframe_alumnos(gc, archivo, pestaña):
+    """
+    Devuelve el DataFrame completo de una pestaña, con la estructura correcta 
+    para poder filtrar por Área en Preparatoria.
+    """
+    try:
+        df = leer_datos(gc, archivo, pestaña)
+        if df.empty: return None
+        
+        # Limpieza de espacios en los nombres de las columnas
+        df.columns = df.columns.str.strip()
+        
+        # Creamos el nombre completo de una vez (con índices o nombres de columnas)
+        if 'Nombre' in df.columns:
+            df['Nombre Completo'] = df['Nombre'].fillna('').astype(str)
+        else:
+            # Asumimos estructura: 0:ID, 1:Paterno, 2:Materno, 3:Nombre(s), 4:Correo, 5:Área (si aplica)
+            paterno = df.iloc[:, 1].fillna('').astype(str)
+            materno = df.iloc[:, 2].fillna('').astype(str)
+            nombres_pila = df.iloc[:, 3].fillna('').astype(str)
+            df['Nombre Completo'] = (paterno + " " + materno + " " + nombres_pila).str.replace(r'\s+', ' ', regex=True).str.strip()
+        
+        return df
+    except Exception as e:
+        return None
+
 # ✨ VERSIÓN OPTIMIZADA, DINÁMICA Y CON CACHÉ ✨
 @st.cache_data(ttl=600)
 # ✨ VERSIÓN CON DETECCIÓN AUTOMÁTICA DE NIVEL (PREPA/SECUNDARIA) ✨
