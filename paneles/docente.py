@@ -12,6 +12,24 @@ from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_REGISTROS, CATALOGO_SAN
 from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos, leer_todas_las_asignaciones
 from paneles.analitica import mostrar_tablero_analitico
 
+st.markdown("""
+    <style>
+    /* Fuerza a que el texto seleccionado se ajuste en varias líneas */
+    div[data-baseweb="select"] > div {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+    }
+    /* Fuerza a que las opciones del menú desplegable también bajen de línea */
+    ul[role="listbox"] li {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        height: auto !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 def renderizar_panel_docente(gc, usuario, nombre_prof):
     st.header(f"🛡️ Panel Docente: {nombre_prof}")
     
