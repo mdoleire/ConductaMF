@@ -7,32 +7,35 @@ FILE_SEGURIDAD = "3_Usuarios_Seguridad"
 FILE_REGISTROS = "4_Base_Conducta_Registros"
 FILE_ASISTENCIA = "5_Registro_Asistencia"
 
+# config.py
+
 CATALOGO_SANCIONES = {
     "Comportamiento y Disciplina": {
-        "Interrumpir la dinámica de clase": {"puntos": 0.2, "semaforo": "Leve"},
-        "Masticar chicle / Comer en el aula": {"puntos": 0.2, "semaforo": "Leve"},
-        "Juegos de manos o empujones": {"puntos": 0.2, "semaforo": "Leve"},
-        "Uso de dispositivo sin autorización": {"puntos": 0.5, "semaforo": "Medio"},
-        "Lenguaje inapropiado o groserías": {"puntos": 0.5, "semaforo": "Medio"},
-        "Falta de respeto a compañeros": {"puntos": 1.0, "semaforo": "Grave"},
-        "Actitud desafiante al personal": {"puntos": 1.0, "semaforo": "Grave"},
-        "Agresión física o bullying": {"puntos": 5.0, "semaforo": "Crítica"}
+        "Consumir alimentos y bebidas en el aula": {"puntos": 0.2, "semaforo": "Leve"},
+        "Masticar chicle": {"puntos": 0.2, "semaforo": "Leve"},
+        "Conductas afectivas inapropiadas": {"puntos": 0.5, "semaforo": "Medio"},
+        "Uso de groserías o palabras altisonantes": {"puntos": 0.5, "semaforo": "Medio"},
+        "Interrumpir o distraer el desarrollo de la clase": {"puntos": 0.5, "semaforo": "Medio"},
+        "Faltar al respeto a cualquier miembro de la comunidad": {"puntos": 1.0, "semaforo": "Grave"},
+        "Agredir física, verbal o psicológicamente": {"puntos": 5.0, "semaforo": "Crítica"},
+        "Fomentar o consumir sustancias nocivas (vapes, alcohol)": {"puntos": 5.0, "semaforo": "Crítica"},
+        "Portar armas u objetos punzocortantes": {"puntos": 5.0, "semaforo": "Crítica"}
     },
-    "Responsabilidad Académica": {
-        "No traer material de trabajo": {"puntos": 0.2, "semaforo": "Leve"},
-        "No trabajar en actividades de clase": {"puntos": 0.2, "semaforo": "Leve"},
-        "Interferencia en el trabajo de otros": {"puntos": 0.5, "semaforo": "Medio"},
-        "Plagio o deshonestidad académica": {"puntos": 5.0, "semaforo": "Crítica"}
+    "Responsabilidad y Honestidad Académica": {
+        "No traer libros de texto y/o material": {"puntos": 0.2, "semaforo": "Leve"},
+        "Copiar o plagiar total o parcialmente": {"puntos": 1.0, "semaforo": "Grave"},
+        "Falsificar firmas, justificantes o documentos": {"puntos": 1.0, "semaforo": "Grave"},
+        "Suplantar en actividades académicas": {"puntos": 5.0, "semaforo": "Crítica"}
+    },
+    "Uso de Tecnología e Instalaciones": {
+        "Uso de celulares, audífonos o relojes inteligentes": {"puntos": 0.5, "semaforo": "Medio"},
+        "Prestar Chromebook o instalar apps no autorizadas": {"puntos": 1.0, "semaforo": "Grave"},
+        "Provocar daños intencionales o vandalismo": {"puntos": 5.0, "semaforo": "Crítica"}
     },
     "Uniforme y Presentación": {
-        "Prendas no correspondientes al uniforme": {"puntos": 0.2, "semaforo": "Leve"},
-        "Presentación descuidada": {"puntos": 0.2, "semaforo": "Leve"}
-    },
-    "Instalaciones y Convivencia": {
-        "Dejar basura en su lugar de trabajo": {"puntos": 0.2, "semaforo": "Leve"},
-        "Estar en pasillos durante clase": {"puntos": 0.5, "semaforo": "Medio"},
-        "Mal uso del equipo o mobiliario": {"puntos": 0.5, "semaforo": "Medio"},
-        "Daño intencional a las instalaciones": {"puntos": 5.0, "semaforo": "Crítica"}
+        "Apariencia contraria a las normas (cabello, arreglo)": {"puntos": 0.2, "semaforo": "Leve"},
+        "No portar el uniforme correcto y completo": {"puntos": 0.2, "semaforo": "Leve"},
+        "Uso de prendas o accesorios no autorizados": {"puntos": 0.2, "semaforo": "Leve"}
     }
 }
 
