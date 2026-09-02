@@ -8,41 +8,31 @@ FILE_REGISTROS = "4_Base_Conducta_Registros"
 FILE_ASISTENCIA = "5_Registro_Asistencia"
 
 CATALOGO_SANCIONES = {
-    "Asistencia": {
-        "Llegar tarde": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Salida sin autorización": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "Inasistencia injustificada": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "Salir sin permiso / no entrar": {"puntos": -10, "semaforo": "🔴 Grave"}
+    "Comportamiento y Disciplina": {
+        "Interrumpir la dinámica de clase": {"puntos": 0.2, "semaforo": "Leve"},
+        "Masticar chicle / Comer en el aula": {"puntos": 0.2, "semaforo": "Leve"},
+        "Juegos de manos o empujones": {"puntos": 0.2, "semaforo": "Leve"},
+        "Uso de dispositivo sin autorización": {"puntos": 0.5, "semaforo": "Medio"},
+        "Lenguaje inapropiado o groserías": {"puntos": 0.5, "semaforo": "Medio"},
+        "Falta de respeto a compañeros": {"puntos": 1.0, "semaforo": "Grave"},
+        "Actitud desafiante al personal": {"puntos": 1.0, "semaforo": "Grave"},
+        "Agresión física o bullying": {"puntos": 5.0, "semaforo": "Crítica"}
     },
-    "Presentación": {
-        "Apariencia inadecuada": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Uniforme incorrecto/incompleto": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Prendas no autorizadas": {"puntos": -1, "semaforo": "🟡 Leve"}
+    "Responsabilidad Académica": {
+        "No traer material de trabajo": {"puntos": 0.2, "semaforo": "Leve"},
+        "No trabajar en actividades de clase": {"puntos": 0.2, "semaforo": "Leve"},
+        "Interferencia en el trabajo de otros": {"puntos": 0.5, "semaforo": "Medio"},
+        "Plagio o deshonestidad académica": {"puntos": 5.0, "semaforo": "Crítica"}
     },
-    "Tecnología": {
-        "Chromebook descargada/olvidada": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Uso de celular/audífonos": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "App no autorizada": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "Maltrato de equipo": {"puntos": -10, "semaforo": "🔴 Grave"}
+    "Uniforme y Presentación": {
+        "Prendas no correspondientes al uniforme": {"puntos": 0.2, "semaforo": "Leve"},
+        "Presentación descuidada": {"puntos": 0.2, "semaforo": "Leve"}
     },
-    "Integridad": {
-        "Plagio o copia": {"puntos": -10, "semaforo": "🔴 Grave"},
-        "Uso de IA no autorizado": {"puntos": -10, "semaforo": "🔴 Grave"}
-    },
-    "Comportamiento": {
-        "Consumo de alimentos": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Mascar chicle": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Distracción en clase": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Interrupción": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "Material incompleto": {"puntos": -1, "semaforo": "🟡 Leve"},
-        "No trabaja en clase": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "Groserías": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "Falta al respeto": {"puntos": -3, "semaforo": "🟡 Medio"},
-        "Daños a instalaciones": {"puntos": -10, "semaforo": "🔴 Grave"},
-        "Agresión verbal al profesor": {"puntos": -10, "semaforo": "🔴 Grave"},
-        "Agresión física (compañero/profesor)": {"puntos": -10, "semaforo": "🔴 Grave"},
-        "Señas/Acercamientos inapropiados": {"puntos": -10, "semaforo": "🔴 Grave"},
-        "Violencia de género": {"puntos": -10, "semaforo": "🟣 Crítica"}
+    "Instalaciones y Convivencia": {
+        "Dejar basura en su lugar de trabajo": {"puntos": 0.2, "semaforo": "Leve"},
+        "Estar en pasillos durante clase": {"puntos": 0.5, "semaforo": "Medio"},
+        "Mal uso del equipo o mobiliario": {"puntos": 0.5, "semaforo": "Medio"},
+        "Daño intencional a las instalaciones": {"puntos": 5.0, "semaforo": "Crítica"}
     }
 }
 
