@@ -392,7 +392,15 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             st.rerun()
 
     st.markdown("---")
-    st.subheader("📈 Mi Analítica")
+    st.subheader("📈 Analítica de Conducta")
     df_full = leer_todos_los_registros(gc)
-    df_doc = df_full[df_full['Profesor'] == nombre_prof] if not df_full.empty else df_full
-    mostrar_tablero_analitico(df_doc, "Mis Reportes", modo_descarga=False)
+    
+    # El super usuario ve la base completa, los maestros normales solo lo suyo
+    if usuario in SUPER_USUARIOS:
+        df_doc = df_full
+        titulo_tablero = "Reportes Globales (Colegio Miraflores)"
+    else:
+        df_doc = df_full[df_full['Profesor'] == nombre_prof] if not df_full.empty else df_full
+        titulo_tablero = "Mis Reportes"
+        
+    mostrar_tablero_analitico(df_doc, titulo_tablero, modo_descarga=True)
