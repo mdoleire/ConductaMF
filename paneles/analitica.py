@@ -36,17 +36,14 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
     with t_per:
         hoy = datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
         
-        # ✨ NUEVO: Extraemos y aplanamos todos los periodos del diccionario
         todos_los_periodos = []
         if isinstance(PERIODOS_LECTIVOS, dict):
             for nivel, periodos in PERIODOS_LECTIVOS.items():
                 for p in periodos:
                     p_copia = p.copy()
-                    # Le añadimos el nivel al nombre para que el director sepa cuál está viendo
                     p_copia['nombre_mostrar'] = f"{p['nombre']} ({nivel})"
                     todos_los_periodos.append(p_copia)
         else:
-            # Respaldo por si regresa a ser lista en el futuro
             for p in PERIODOS_LECTIVOS:
                 p_copia = p.copy()
                 p_copia['nombre_mostrar'] = p['nombre']
@@ -63,9 +60,46 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
             
             df_p = df[(df['Fecha'] >= p_inf['inicio']) & (df['Fecha'] <= p_inf['fin'])].copy()
             if not df_p.empty:
-                df_p['Puntos_Descontados'] = pd.to_numeric(df_p['Puntos_Descontados'], errors='coerce').fillna(0)
-                boleta = df_p.groupby(['Grupo', 'Alumno'])['Puntos_Descontados'].sum().reset_index()
-                boleta['Promedio'] = (10 + (boleta['Puntos_Descontados'] / 5)).clip(0, 10)
+                
+                # ✨ NUEVO: Función que calcula la calificación usando tu fórmula progresiva
+                def calcular_calificacion_progresiva(df_alumno):
+                    total_descuento = 0.0
+                    conteo = {"Leve": 0, "Medio": 0, "Grave": 0, "Crítica": 0}
+                    
+                    # La columna donde guardamos el nivel de falta (Semaforo) se llama "Es_Grave" en la BD
+                    col_semaforo = "Es_Grave" if "Es_Grave" in df_alumno.columns else None
+                    
+                    if col_semaforo:
+                        for semaforo in df_alumno[col_semaforo].fillna(""):
+                            if "Leve" in semaforo:
+                                conteo["Leve"] += 1
+                                if conteo["Leve"] == 1: total_descuento += 0.2
+                                elif conteo["Leve"] == 2: total_descuento += 0.4
+                                else: total_descuento += 0.5
+                            elif "Grave" in semaforo:
+                                conteo["Grave"] += 1
+                                if conteo["Grave"] == 1: total_descuento += 1.0
+                                elif conteo["Grave"] == 2: total_descuento += 1.2
+                                else: total_descuento += 1.5
+                            elif "Crítica" in semaforo:
+                                conteo["Crítica"] += 1
+                                total_descuento += 5.0
+                            elif "Medio" in semaforo:
+                                conteo["Medio"] += 1
+                                total_descuento += 0.5
+                    else:
+                        # Respaldo de seguridad si no encuentra la columna
+                        total_descuento = pd.to_numeric(df_alumno['Puntos_Descontados'], errors='coerce').fillna(0).sum()
+                        
+                    return max(0.0, 10.0 - total_descuento)
+
+                # Agrupamos y aplicamos la fórmula matemáticamente limpia, alumno por alumno
+                boleta_data = []
+                for (g, al), df_alumno in df_p.groupby(['Grupo', 'Alumno']):
+                    prom = calcular_calificacion_progresiva(df_alumno)
+                    boleta_data.append({'Grupo': g, 'Alumno': al, 'Promedio': prom})
+                
+                boleta = pd.DataFrame(boleta_data)
                 boleta['Calificación'] = boleta['Promedio'].apply(format_calif)
                 
                 st.dataframe(boleta[['Grupo', 'Alumno', 'Calificación']].sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
