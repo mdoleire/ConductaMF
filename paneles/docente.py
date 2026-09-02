@@ -118,7 +118,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
             
             # 👑 MODO SUPER USUARIO (ADMINISTRADOR)
-            SUPER_USUARIOS = ["marcodoleire@google.com"]
+            SUPER_USUARIOS = ["marcodoleire@gmail.com"]
             
             if usuario in SUPER_USUARIOS:
                 mis_asig = df_asig.copy()
