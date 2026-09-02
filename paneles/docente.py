@@ -143,35 +143,41 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
             
             try:
-                # 1. Obtenemos el DataFrame crudo de la pestaña
-                from database import obtener_dataframe_alumnos # Asegúrate de que esta función exista en tu database.py
-                df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo.strip())
+                # 1. Limpiamos el nombre del grupo (Ej: "6°B (Área IV)" se convierte solo en "6°B")
+                grupo_base = grupo.split("(")[0].strip()
                 
-                # 2. Lógica de Filtrado por Área
+                # (Opcional) Si tus pestañas de Excel tienen 'o' en lugar de '°', descomenta la siguiente línea:
+                # grupo_base = grupo_base.replace("°", "o") 
+                
+                from database import obtener_dataframe_alumnos
+                df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
+                
+                # 2. Lógica de Filtrado Todoterreno
                 if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
                     if 'Área' in df_alumnos_crudo.columns:
-                        if "Área 1" in materia:
+                        # Unimos texto de materia y grupo en mayúsculas para buscar sin importar dónde lo escribas
+                        texto_busqueda = f"{materia} {grupo}".upper()
+                        
+                        if "ÁREA 1" in texto_busqueda or "ÁREA I " in texto_busqueda or "ÁREA I)" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 1']
-                        elif "Área 2" in materia:
+                        elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 2']
-                        elif "Área 3" in materia:
+                        elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 3']
-                        elif "Área 4" in materia:
+                        elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
                     
                     # 3. Construimos la lista final de opciones
-                    opc = []
-                    for _, row in df_alumnos_crudo.iterrows():
-                        nombre_completo = f"{row.get('Apellido paterno', '')} {row.get('Apellido materno', '')} {row.get('Nombre(s)', '')}".strip()
-                        opc.append(nombre_completo)
+                    nombres = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
+                    opc = sorted(nombres.unique().tolist())
                 else:
                     opc = []
                     
                 if not opc:
-                    st.warning(f"La pestaña '{grupo}' no tiene alumnos registrados para esta área/materia.")
+                    st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
             except Exception as e:
                 opc = []
-                st.error(f"Falta la pestaña '{grupo}' en el archivo de Alumnos o error: {e}")
+                st.error(f"Falta la pestaña '{grupo_base}' en el archivo de Alumnos o error: {e}")
             
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
