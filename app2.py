@@ -28,6 +28,7 @@ from paneles.directivo import renderizar_panel_directivo
 from paneles.coordinador import renderizar_panel_coordinador
 from paneles.docente import renderizar_panel_docente
 from paneles.asistencia import renderizar_panel_asistencia
+from reglamento import TEXTO_ACUERDO
 
 # ==========================================
 # 3. DISEÑO CORPORATIVO AUTOADAPTABLE (THEME-AWARE)
