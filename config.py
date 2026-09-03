@@ -136,4 +136,26 @@ Capítulo VII. Evaluaciones y Ausencias Justificadas
 Artículo 38. Ausencias justificadas: En caso de faltas por motivos médicos o fuerza mayor, se deben entregar los justificantes ante la Coordinación de Etapa en un plazo máximo de 2 días hábiles tras la reincorporación para poder reponer trabajos o evaluaciones (máximo 2 asignaturas).
 Artículo 40. Exámenes de periodo: No se pueden reprogramar salvo autorización expresa de Coordinación por causas plenamente justificadas. Inasistencia injustificada equivale a calificación de cero (0).
 Artículo 43. Suspensión de clases (Efectos): El alumno suspendido pierde derecho a evaluación continua del periodo de suspensión (calificación cero en tareas/trabajos de aula realizados esos días). Solo se le permite entregar tareas de casa si las envía en tiempo y forma.
+
+### LÍMITES DE FALTAS PERMITIDAS (SECUNDARIA)
+La cantidad máxima de faltas permitidas para tener derecho a presentar examen de periodo varía según la frecuencia semanal de clases por asignatura:
+
+| Frecuencia Horaria | Faltas permitidas 1° Trimestre | Faltas permitidas 2° Trimestre | Faltas permitidas 3° Trimestre |
+| :--- | :--- | :--- | :--- |
+| 1 por semana | 2 | 2 | 3 |
+| 2 por semana | 3 | 4 | 5 |
+| 3 por semana | 5 | 6 | 7 |
+| 4 por semana | 6 | 8 | 10 |
+| 5 por semana | 8 | 10 | 12 |
+
+### LÍMITES DE FALTAS PERMITIDAS (BACHILLERATO / PREPARATORIA)
+La cantidad máxima de faltas permitidas para tener derecho a presentar examen de periodo varía según la frecuencia semanal de clases por asignatura:
+
+| Frecuencia | Faltas permitidas 1° Periodo | Faltas permitidas 2° Periodo | Faltas permitidas 3° Periodo | Faltas permitidas 4° Periodo |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 por semana | 2 | 2 | 2 | 2 |
+| 2 por semana | 4 | 4 | 3 | 4 |
+| 3 por semana | 5 | 5 | 4 | 5 |
+| 4 por semana | 7 | 7 | 6 | 7 |
+| 5 por semana | 9 | 9 | 7 | 9 |
 """
