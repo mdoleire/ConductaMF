@@ -384,9 +384,13 @@ else:
     correo_google = st.session_state["auth_email"].lower().strip()
     nombre_google = st.session_state["auth_name"]
     
-    # Candado estricto de dominio institucional
-    correo_admin = ["marcodoleire@gmail.com", "mhaces78@gmail.com"]
-    if not (correo_google.endswith("@miraflores.edu.mx") or correo_google == correo_admin):
+    # Candado estricto de dominio institucional y accesos especiales
+    correos_autorizados_gmail = [
+        "marcodoleire@gmail.com", 
+        "mhaces78@gmail.com" 
+    ]  
+    
+    if not (correo_google.endswith("@miraflores.edu.mx") or correo_google in correos_autorizados_gmail):
         st.error("⛔ Acceso denegado. Este sistema está restringido exclusivamente para cuentas institucionales @miraflores.edu.mx.")
         
         if st.button("🔑 Cambiar a cuenta del Colegio", type="secondary"):
