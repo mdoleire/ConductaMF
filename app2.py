@@ -422,7 +422,7 @@ if not st.session_state.get("auth_email"):
                 <p style="color: var(--texto-secundario); font-size: 0.92rem; margin-bottom: 1.2rem; line-height: 1.5;">
                     Ingresa con tu cuenta institucional para dirigirte a tu panel asignado.
                 </p>
-                <a href="{url_google_auth}" target="_self" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
+                <a href="{url_google_auth}" target="_top" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
             </div>
         </div>
         """, 
