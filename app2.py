@@ -1,6 +1,5 @@
 # app2.py
 
-from turtle import color
 
 import streamlit as st
 import pandas as pd
