@@ -54,6 +54,7 @@ def aplicar_diseno_institucional(compacto=False):
     st.markdown(
         f"""
         <style>
+            /* 1. VARIABLES GLOBALES (Modo Claro) */
             @media (prefers-color-scheme: light) {{
                 :root {{
                     --bg-principal: #F4F6F9;
@@ -68,6 +69,7 @@ def aplicar_diseno_institucional(compacto=False):
                 }}
             }}
 
+            /* 2. VARIABLES GLOBALES (Modo Oscuro) */
             @media (prefers-color-scheme: dark) {{
                 :root {{
                     --bg-principal: #0F172A;
@@ -80,20 +82,9 @@ def aplicar_diseno_institucional(compacto=False):
                     --tab-inactive: #94A3B8;
                     --dorado-miraflores: #C5A059;
                 }}
-                
-                /* MODO OSCURO: Botón del Asistente en blanco */
-                [data-testid="stSidebar"] button[kind="secondary"],
-                [data-testid="stSidebar"] button[kind="secondary"] *,
-                [data-testid="stSidebar"] [data-testid="stPopover"] button,
-                [data-testid="stSidebar"] [data-testid="stPopover"] button *,
-                [data-testid="stSidebar"] [data-testid="stExpander"] summary,
-                [data-testid="stSidebar"] [data-testid="stExpander"] summary * {{
-                    color: #FFFFFF !important;
-                    fill: #FFFFFF !important;
-                    background-color: #1E293B !important;
-                }}
             }}
 
+            /* 3. REGLAS BASE DE LA APP */
             #MainMenu {{visibility: hidden;}}
             footer {{visibility: hidden;}}
             
@@ -119,8 +110,7 @@ def aplicar_diseno_institucional(compacto=False):
                 font-weight: 500 !important;
             }}
 
-            /* EXCEPCIÓN BARRERA: Botón del Asistente (Modo Claro/Default) */
-            /* El asterisco (*) fuerza que todo el contenido interno (iconos, textos) obedezca */
+            /* 4. ESTILOS DE LOS BOTONES Y CHAT EN BARRA LATERAL (Por defecto / Modo Claro) */
             [data-testid="stSidebar"] button[kind="secondary"],
             [data-testid="stSidebar"] button[kind="secondary"] *,
             [data-testid="stSidebar"] [data-testid="stPopover"] button,
@@ -132,7 +122,6 @@ def aplicar_diseno_institucional(compacto=False):
                 font-weight: 600 !important;
             }}
 
-            /* Fondo gris claro para el contenedor del botón */
             [data-testid="stSidebar"] button[kind="secondary"],
             [data-testid="stSidebar"] [data-testid="stPopover"] button,
             [data-testid="stSidebar"] [data-testid="stExpander"] {{
@@ -141,6 +130,16 @@ def aplicar_diseno_institucional(compacto=False):
                 border-radius: 6px !important;
             }}
 
+            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {{
+                color: #001A3D !important;
+                -webkit-text-fill-color: #001A3D !important;
+            }}
+            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea::placeholder {{
+                color: #7F8C8D !important;
+                -webkit-text-fill-color: #7F8C8D !important;
+            }}
+
+            /* 5. ESTILOS DE LA PANTALLA PRINCIPAL */
             h1, h2, h3, h4, h5, h6, 
             div[data-testid="stAppViewBlockContainer"] h1,
             div[data-testid="stAppViewBlockContainer"] h2,
@@ -256,14 +255,37 @@ def aplicar_diseno_institucional(compacto=False):
                 box-shadow: 0 4px 8px rgba(0,0,0,0.25);
             }}
 
-            /* Forzar visibilidad del texto escrito en el chat de la barra lateral */
-            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {{
-                color: #0B1B3D !important;
-                -webkit-text-fill-color: #0B1B3D !important;
-            }}
-            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea::placeholder {{
-                color: #7F8C8D !important;
-                -webkit-text-fill-color: #7F8C8D !important;
+            /* =======================================================
+               6. CORRECCIONES DE MODO OSCURO (DEBE IR AL FINAL)
+               ======================================================= */
+            @media (prefers-color-scheme: dark) {{
+                /* Invertir el botón de Cerrar Sesión y el Asistente a colores claros */
+                [data-testid="stSidebar"] button[kind="secondary"],
+                [data-testid="stSidebar"] button[kind="secondary"] *,
+                [data-testid="stSidebar"] [data-testid="stPopover"] button,
+                [data-testid="stSidebar"] [data-testid="stPopover"] button *,
+                [data-testid="stSidebar"] [data-testid="stExpander"] summary,
+                [data-testid="stSidebar"] [data-testid="stExpander"] summary * {{
+                    color: #FFFFFF !important;
+                    fill: #FFFFFF !important;
+                    background-color: #1E293B !important;
+                }}
+                
+                [data-testid="stSidebar"] button[kind="secondary"],
+                [data-testid="stSidebar"] [data-testid="stPopover"] button,
+                [data-testid="stSidebar"] [data-testid="stExpander"] {{
+                    background-color: #1E293B !important; 
+                }}
+
+                /* Asegurar que el texto que escriben en el chat sea blanco sobre el fondo oscuro */
+                [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {{
+                    color: #FFFFFF !important;
+                    -webkit-text-fill-color: #FFFFFF !important;
+                }}
+                [data-testid="stSidebar"] [data-testid="stChatInput"] textarea::placeholder {{
+                    color: #94A3B8 !important;
+                    -webkit-text-fill-color: #94A3B8 !important;
+                }}
             }}
         </style>
         """,
@@ -279,7 +301,6 @@ def aplicar_diseno_institucional(compacto=False):
         """,
         unsafe_allow_html=True
     )
-
 # ==========================================
 # GESTIÓN DE SESIÓN Y OAUTH SEGURO (F5-PROOF)
 # ==========================================
