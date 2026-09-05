@@ -1,10 +1,6 @@
-"""
-Sistema Integral de Gestión Conductual - Colegio Miraflores
-----------------------------------------------------------
-Versión: 3.3 (Tema Autoadaptable Inteligente)
-Funcionalidades: RBAC, Filtros Multidimensionales, Conectividad GSheets,
-Semáforo Visual, Reportes de Pasillo Multígrado y Doble Candado de Seguridad.
-"""
+# app2.py
+
+from turtle import color
 
 import streamlit as st
 import pandas as pd
@@ -15,33 +11,50 @@ import json
 from zoneinfo import ZoneInfo
 import os  
 import time  
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import re
 import urllib.parse
 import requests
+import secrets
 import google.generativeai as genai
-from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_SEGURIDAD, FILE_REGISTROS, CATALOGO_SANCIONES, PERIODOS_LECTIVOS
-from database import conectar_gsheets, leer_datos, leer_todos_los_registros, leer_todas_las_asignaciones
+import hmac
+import hashlib
+import base64
+import json
+
+from config import (
+    FILE_ALUMNOS, 
+    FILE_ASIGNACIONES, 
+    FILE_SEGURIDAD, 
+    FILE_REGISTROS, 
+    CATALOGO_SANCIONES, 
+    PERIODOS_LECTIVOS,
+    REGEX_CORREO_ALUMNO,
+    SUPER_USUARIOS_WHITELIST
+)
+from database import (
+    conectar_gsheets, 
+    leer_datos, 
+    leer_todos_los_registros, 
+    leer_todas_las_asignaciones
+)
 from paneles.tutor import renderizar_panel_tutor
 from paneles.directivo import renderizar_panel_directivo
 from paneles.coordinador import renderizar_panel_coordinador
 from paneles.docente import renderizar_panel_docente
 from paneles.asistencia import renderizar_panel_asistencia
+from paneles.alumno import renderizar_panel_alumno
 from reglamento import TEXTO_ACUERDO
 
 # ==========================================
-# 3. DISEÑO CORPORATIVO AUTOADAPTABLE (THEME-AWARE)
+# CONFIGURACIÓN VISUAL
 # ==========================================
 def aplicar_diseno_institucional(compacto=False):
-    # Ajuste dinámico de dimensiones para evitar scroll en el login
     padding_banner = "1.1rem 1rem" if compacto else "2.2rem 1.5rem"
     margin_banner = "1rem" if compacto else "2rem"
 
     st.markdown(
         f"""
         <style>
-            /* --- DEFINICIÓN DE PALETA ADAPTABLE DE ACUERDO AL TEMA DEL NAVEGADOR --- */
             @media (prefers-color-scheme: light) {{
                 :root {{
                     --bg-principal: #F4F6F9;
@@ -68,28 +81,36 @@ def aplicar_diseno_institucional(compacto=False):
                     --tab-inactive: #94A3B8;
                     --dorado-miraflores: #C5A059;
                 }}
+                
+                /* MODO OSCURO: Botón del Asistente en blanco */
+                [data-testid="stSidebar"] button[kind="secondary"],
+                [data-testid="stSidebar"] button[kind="secondary"] *,
+                [data-testid="stSidebar"] [data-testid="stPopover"] button,
+                [data-testid="stSidebar"] [data-testid="stPopover"] button *,
+                [data-testid="stSidebar"] [data-testid="stExpander"] summary,
+                [data-testid="stSidebar"] [data-testid="stExpander"] summary * {{
+                    color: #FFFFFF !important;
+                    fill: #FFFFFF !important;
+                    background-color: #1E293B !important;
+                }}
             }}
 
             #MainMenu {{visibility: hidden;}}
             footer {{visibility: hidden;}}
             
-            /* Ajuste del canvas de la app */
             .stApp {{
                 background-color: var(--bg-principal) !important;
             }}
 
-            /* --- 🎨 BARRA LATERAL (SIDEBAR) --- */
             [data-testid="stSidebar"] {{
                 background-color: #0B1B3D !important;
                 border-right: 3px solid var(--dorado-miraflores);
             }}
             
-            [data-testid="stSidebar"] h1, 
-            [data-testid="stSidebar"] h2, 
-            [data-testid="stSidebar"] h3, 
-            [data-testid="stSidebar"] p, 
-            [data-testid="stSidebar"] label, 
-            [data-testid="stSidebar"] span,
+            /* Regla global: Textos de la barra lateral en blanco */
+            [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, 
+            [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, 
+            [data-testid="stSidebar"] label, [data-testid="stSidebar"] span,
             [data-testid="stSidebar"] div {{
                 color: #FFFFFF !important;
             }}
@@ -99,7 +120,28 @@ def aplicar_diseno_institucional(compacto=False):
                 font-weight: 500 !important;
             }}
 
-            /* --- 🛡️ TEXTOS Y ENCABEZADOS DEL CONTENEDOR CENTRAL --- */
+            /* EXCEPCIÓN BARRERA: Botón del Asistente (Modo Claro/Default) */
+            /* El asterisco (*) fuerza que todo el contenido interno (iconos, textos) obedezca */
+            [data-testid="stSidebar"] button[kind="secondary"],
+            [data-testid="stSidebar"] button[kind="secondary"] *,
+            [data-testid="stSidebar"] [data-testid="stPopover"] button,
+            [data-testid="stSidebar"] [data-testid="stPopover"] button *,
+            [data-testid="stSidebar"] [data-testid="stExpander"] summary,
+            [data-testid="stSidebar"] [data-testid="stExpander"] summary * {{
+                color: #001A3D !important;
+                fill: #001A3D !important;
+                font-weight: 600 !important;
+            }}
+
+            /* Fondo gris claro para el contenedor del botón */
+            [data-testid="stSidebar"] button[kind="secondary"],
+            [data-testid="stSidebar"] [data-testid="stPopover"] button,
+            [data-testid="stSidebar"] [data-testid="stExpander"] {{
+                background-color: #F0F4F8 !important; 
+                border: none !important;
+                border-radius: 6px !important;
+            }}
+
             h1, h2, h3, h4, h5, h6, 
             div[data-testid="stAppViewBlockContainer"] h1,
             div[data-testid="stAppViewBlockContainer"] h2,
@@ -108,11 +150,8 @@ def aplicar_diseno_institucional(compacto=False):
                 font-weight: bold !important;
             }}
 
-            /* Etiquetas generales e inputs */
-            div[data-testid="stWidgetLabel"] p, 
-            label[data-testid="stWidgetLabel"] p,
-            .stWidgetLabel p,
-            .stMarkdown p {{
+            div[data-testid="stWidgetLabel"] p, label[data-testid="stWidgetLabel"] p,
+            .stWidgetLabel p, .stMarkdown p {{
                 color: var(--texto-secundario) !important;
                 font-weight: 600 !important;
             }}
@@ -122,7 +161,6 @@ def aplicar_diseno_institucional(compacto=False):
                 font-weight: 600 !important;
             }}
 
-            /* --- 🏷️ CHIPS (MULTIPLE SELECT) --- */
             div[data-baseweb="tag"] {{
                 background-color: var(--chip-bg) !important;
                 border: 1px solid var(--dorado-miraflores) !important;
@@ -134,15 +172,9 @@ def aplicar_diseno_institucional(compacto=False):
                 color: var(--chip-text) !important;
                 font-weight: 500 !important;
             }}
-            
-            div[data-baseweb="tag"] svg {{
-                fill: var(--chip-text) !important;
-            }}
 
-            /* --- 🎓 TABS --- */
             button[data-baseweb="tab"] {{
                 color: var(--tab-inactive) !important;
-                border-bottom: 2px solid transparent !important;
                 background-color: transparent !important;
                 font-weight: 500 !important;
             }}
@@ -152,12 +184,7 @@ def aplicar_diseno_institucional(compacto=False):
                 border-bottom-color: var(--dorado-miraflores) !important;
                 font-weight: bold !important;
             }}
-            
-            button[data-baseweb="tab"][aria-selected="true"] p {{
-                color: var(--tab-active) !important;
-            }}
 
-            /* Banner Superior Institucional */
             .header-banner {{
                 background-color: #0B1B3D;
                 color: white !important;
@@ -167,10 +194,6 @@ def aplicar_diseno_institucional(compacto=False):
                 text-align: center;
                 border-bottom: 4px solid var(--dorado-miraflores);
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
-            }}
-            
-            .header-banner * {{
-                color: white !important;
             }}
             
             .banner-titulo {{
@@ -188,7 +211,6 @@ def aplicar_diseno_institucional(compacto=False):
                 letter-spacing: 1px;
             }}
 
-            /* Tarjetas de Información */
             .card-conducta {{
                 background-color: var(--card-bg) !important;
                 padding: 1.5rem;
@@ -198,7 +220,6 @@ def aplicar_diseno_institucional(compacto=False):
                 margin-bottom: 1rem;
             }}
 
-            /* Estilización de Botones de Streamlit */
             div.stButton > button:first-child {{
                 background-color: #0B1B3D;
                 color: white !important;
@@ -213,11 +234,9 @@ def aplicar_diseno_institucional(compacto=False):
             div.stButton > button:first-child:hover {{
                 background-color: var(--dorado-miraflores);
                 border-color: var(--dorado-miraflores);
-                color: white !important;
                 box-shadow: 0 4px 8px rgba(0,0,0,0.15);
             }}
 
-            /* --- 🔑 BOTÓN DE ACCESO INTEGRADO EN TARJETA --- */
             .custom-google-btn {{
                 display: inline-block;
                 background-color: #0B1B3D;
@@ -235,9 +254,17 @@ def aplicar_diseno_institucional(compacto=False):
             .custom-google-btn:hover {{
                 background-color: var(--dorado-miraflores);
                 border-color: var(--dorado-miraflores);
-                color: white !important;
                 box-shadow: 0 4px 8px rgba(0,0,0,0.25);
-                text-decoration: none !important;
+            }}
+
+            /* Forzar visibilidad del texto escrito en el chat de la barra lateral */
+            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {{
+                color: #0B1B3D !important;
+                -webkit-text-fill-color: #0B1B3D !important;
+            }}
+            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea::placeholder {{
+                color: #7F8C8D !important;
+                -webkit-text-fill-color: #7F8C8D !important;
             }}
         </style>
         """,
@@ -255,14 +282,39 @@ def aplicar_diseno_institucional(compacto=False):
     )
 
 # ==========================================
-# 6. LANZAMIENTO Y AUTENTICACIÓN (FLUJO SEGURO CON FIRMA DIGITAL)
+# GESTIÓN DE SESIÓN Y OAUTH SEGURO (F5-PROOF)
 # ==========================================
-import hmac
-import hashlib
-
 CLIENT_ID = st.secrets["auth"]["google_client_id"]
 CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
+
+def firmar_estado(timestamp_str):
+    """Firma un timestamp con el Client Secret para validar que el retorno OAuth sea legítimo."""
+    return hmac.new(CLIENT_SECRET.encode('utf-8'), timestamp_str.encode('utf-8'), hashlib.sha256).hexdigest()
+
+def crear_token_sesion(correo, nombre):
+    """Genera un token opaco y firmado para mantener la sesión viva tras F5 sin exponer datos sensibles."""
+    datos = json.dumps({"u": correo, "n": nombre, "t": time.time()})
+    payload = base64.urlsafe_b64encode(datos.encode()).decode()
+    firma = hmac.new(CLIENT_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
+    return f"{payload}.{firma}"
+
+def resolver_token_sesion(token):
+    """Verifica la integridad del token de sesión y recupera la identidad del usuario."""
+    try:
+        payload, firma = token.split(".", 1)
+        firma_esperada = hmac.new(CLIENT_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(firma, firma_esperada):
+            return None, None
+        
+        datos = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+        # El token es válido durante 12 horas consecutivas
+        if time.time() - datos.get("t", 0) > 43200:
+            return None, None
+            
+        return datos.get("u"), datos.get("n")
+    except Exception:
+        return None, None
 
 if "auth_email" not in st.session_state:
     st.session_state["auth_email"] = None
@@ -271,38 +323,35 @@ if "auth_name" not in st.session_state:
 
 parametros_url = st.query_params.to_dict()
 
-# --- FUNCIONES AUXILIARES DE SEGURIDAD (HMAC) ---
-def generar_firma_segura(correo_usuario):
-    """Genera un hash criptográfico único basado en el correo y la clave secreta del servidor."""
-    clave_privada = CLIENT_SECRET.encode('utf-8')
-    mensaje = correo_usuario.encode('utf-8')
-    return hmac.new(clave_privada, mensaje, hashlib.sha256).hexdigest()
-
-def verificar_firma_segura(correo_usuario, firma_recibida):
-    """Compara de manera segura si la firma recibida corresponde al correo proporcionado."""
-    if not correo_usuario or not firma_recibida:
-        return False
-    firma_real = generar_firma_segura(correo_usuario)
-    return hmac.compare_digest(firma_real, firma_recibida)
-
-
-# --- 🔄 VALIDACIÓN DE PERSISTENCIA (F5 RESILIENTE) ---
-# Si la sesión en memoria se borró, pero tenemos el correo firmado en la URL, restauramos con seguridad
-if not st.session_state["auth_email"] and "_p_email" in parametros_url and "_p_sig" in parametros_url:
-    correo_candidato = parametros_url["_p_email"].lower().strip()
-    firma_candidata = parametros_url["_p_sig"]
-    
-    if verificar_firma_segura(correo_candidato, firma_candidata):
-        st.session_state["auth_email"] = correo_candidato
-        st.session_state["auth_name"] = parametros_url.get("_p_name", "Docente Miraflores")
+# --- 1. RESTAURACIÓN AUTOMÁTICA TRAS F5 ---
+if not st.session_state["auth_email"] and "_s" in parametros_url:
+    u_recup, n_recup = resolver_token_sesion(parametros_url["_s"])
+    if u_recup:
+        st.session_state["auth_email"] = u_recup
+        st.session_state["auth_name"] = n_recup
     else:
         st.query_params.clear()
 
-
-# --- 🔑 PROCESAMIENTO DEL RETORNO DE GOOGLE (HANDSHAKE OAUTH) ---
+# --- 2. PROCESAMIENTO DEL RETORNO OAUTH ---
 if "code" in parametros_url and not st.session_state["auth_email"]:
-    codigo_autorizacion = parametros_url["code"]
+    state_recibido = parametros_url.get("state", "")
     
+    valido = False
+    if ":" in state_recibido:
+        ts, sig = state_recibido.split(":", 1)
+        firma_esperada = firmar_estado(ts)
+        if hmac.compare_digest(sig, firma_esperada):
+            try:
+                if time.time() - float(ts) < 600:
+                    valido = True
+            except ValueError:
+                pass
+
+    if not valido:
+        st.query_params.clear()
+        st.rerun()
+        
+    codigo_autorizacion = parametros_url["code"]
     token_url = "https://oauth2.googleapis.com/token"
     token_data = {
         "code": codigo_autorizacion,
@@ -313,96 +362,104 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
     }
     
     try:
-        response = requests.post(token_url, data=token_data).json()
+        response = requests.post(token_url, data=token_data, timeout=10).json()
         access_token = response.get("access_token")
         
         if access_token:
             userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
             headers = {"Authorization": f"Bearer {access_token}"}
-            user_info = requests.get(userinfo_url, headers=headers).json()
+            user_info = requests.get(userinfo_url, headers=headers, timeout=10).json()
             
-            email_capturado = user_info.get("email", "").lower().strip()
-            name_capturado = user_info.get("name", "Docente Miraflores")
+            email_obtenido = user_info.get("email", "").lower().strip()
+
+            ## --- SIMULACIÓN DE ALUMNO (BORRAR DESPUÉS DE LA PRUEBA) ---!!!!!!!!!!!!!
+            #email_obtenido = "acruz@miraflores.edu.mx" 
+            ## ---------------------------------------------------------!!!!!!!!!!!!!!
             
-            # Generamos la firma criptográfica para este inicio de sesión verificado por Google
-            firma_criptografica = generar_firma_segura(email_capturado)
+            name_obtenido = user_info.get("name", "Usuario Miraflores")
             
-            st.session_state["auth_email"] = email_capturado
-            st.session_state["auth_name"] = name_capturado
+            st.session_state["auth_email"] = email_obtenido
+            st.session_state["auth_name"] = name_obtenido
             
-            # Escribimos los parámetros firmados en la URL para sobrevivir a la recarga
-            st.query_params["_p_email"] = email_capturado
-            st.query_params["_p_sig"] = firma_criptografica
-            st.query_params["_p_name"] = name_capturado
-            
+            # Dejamos un token criptográfico opaco en la URL (sin exponer correos)
+            st.query_params.clear()
+            st.query_params["_s"] = crear_token_sesion(email_obtenido, name_obtenido)
             st.rerun()
             
     except Exception as e:
-        st.error(f"Error en la conexión de seguridad: {e}")
-
+        st.error(f"Error en la autenticación: {e}")
+        st.query_params.clear()
+        st.stop()
 
 # ==========================================
-# FLUJO DE RENDERIZADO DE PANTALLA
+# CONTROL DE PANTALLA PRINCIPAL
 # ==========================================
 
-# ESCENARIO A: No hay sesión activa -> Mostrar login corporativo limpio
+# ESCENARIO A: No hay sesión activa
 if not st.session_state.get("auth_email"):
-    # Activamos la vista compacta para recortar espacios verticales y evitar scroll
     aplicar_diseno_institucional(compacto=True)
     
-    # Generación segura de la URL del flujo OAuth de Google
+    # Generamos el state firmado con la marca de tiempo actual
+    ahora_ts = str(time.time())
+    state_token = f"{ahora_ts}:{firmar_estado(ahora_ts)}"
+    
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "openid email profile",
-        "access_type": "online"
+        "access_type": "online",
+        "state": state_token,
+        "prompt": "select_account"
     }
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
-    # Renderizado de la tarjeta con el botón configurado en target="_blank" para cumplir con Google
+    # IMPORTANTE: target="_self" para que navegue en la misma pestaña y no rompa la sesión
     st.markdown(
         f"""
         <div style="display: flex; justify-content: center; align-items: center; padding-top: 0.5rem;">
             <div class="card-conducta" style="text-align: center; max-width: 480px; width: 100%; padding: 2rem 1.5rem; margin: 0 auto;">
-                <h3 style="color: var(--texto-principal) !important; margin-bottom: 0.8rem; font-size: 1.5rem;">Acceso de Personal</h3>
+                <h3 style="color: var(--texto-principal) !important; margin-bottom: 0.8rem; font-size: 1.5rem;">Portal de Acceso</h3>
                 <p style="color: var(--texto-secundario); font-size: 0.92rem; margin-bottom: 1.2rem; line-height: 1.5;">
-                    Por favor, inicia sesión con tu cuenta de correo institucional para acceder al panel que te corresponde de manera automática.
+                    Ingresa con tu cuenta institucional para dirigirte a tu panel asignado.
                 </p>
-                <a href="{url_google_auth}" target="_blank" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
+                <a href="{url_google_auth}" target="_self" class="custom-google-btn">🔑 Iniciar Sesión con Google</a>
             </div>
         </div>
         """, 
         unsafe_allow_html=True
     )
     st.stop()
-    
-# ESCENARIO B: Usuario autenticado correctamente con Google
+
+# ESCENARIO B: Sesión autenticada
 else:
     aplicar_diseno_institucional()
     
     correo_google = st.session_state["auth_email"].lower().strip()
     nombre_google = st.session_state["auth_name"]
     
-    # Candado estricto de dominio institucional y accesos especiales
-    correos_autorizados_gmail = [
-        "marcodoleire@gmail.com", 
-        "mhaces78@gmail.com" 
-    ]  
+    # 1. Candado estricto de dominio institucional
+    dominio_valido = correo_google.endswith("@miraflores.edu.mx")
+    es_admin_externo = correo_google in SUPER_USUARIOS_WHITELIST
     
-    if not (correo_google.endswith("@miraflores.edu.mx") or correo_google in correos_autorizados_gmail):
-        st.error("⛔ Acceso denegado. Este sistema está restringido exclusivamente para cuentas institucionales @miraflores.edu.mx.")
-        
-        if st.button("🔑 Cambiar a cuenta del Colegio", type="secondary"):
+    if not (dominio_valido or es_admin_externo):
+        st.error("⛔ Acceso denegado. Este sistema está restringido a cuentas autorizadas del Colegio Miraflores.")
+        if st.button("🔑 Iniciar con otra cuenta", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
-            if hasattr(st, "logout"):
-                st.logout()
             st.rerun()
         st.stop()
 
+    gc = conectar_gsheets()
+
+    # 2. ENRUTAMIENTO ESTUDIANTIL
+    es_alumno = bool(re.search(REGEX_CORREO_ALUMNO, correo_google))
+    if es_alumno:
+        renderizar_panel_alumno(gc, correo_google)
+        st.stop()
+
+    # 3. ENRUTAMIENTO DE PERSONAL (DOCENTES, COORDINADORES Y DIRECTIVOS)
     try:
-        gc = conectar_gsheets()
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         
         if not df_s.empty:
@@ -412,36 +469,34 @@ else:
         else:
             usuario_registrado = pd.DataFrame()
         
-        # --- 🛑 INTERCEPCIÓN DE USUARIOS NUEVOS ---
+        # Intercepción de personal nuevo no registrado en archivo 3_Usuarios_Seguridad
         if usuario_registrado.empty:
             es_profesor_oficial = False
-            
-            # Usamos la función en caché para no agotar la cuota de Google
             df_asig_verif = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
             if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
                 profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
-                if correo_google in profesores_validos or correo_google == correo_admin:
+                if correo_google in profesores_validos or es_admin_externo:
                     es_profesor_oficial = True
 
             if not es_profesor_oficial:
-                st.error("⛔ Tu correo no forma parte de la plantilla docente activa (ni en Prepa ni en Secundaria).")
-                st.warning(f"🔍 El correo detectado es: **'{correo_google}'**")
-                
+                st.error("⛔ Tu cuenta no se encuentra en la plantilla del personal activo del Colegio.")
+                st.warning(f"🔍 Cuenta detectada: **'{correo_google}'**")
                 if st.button("🔑 Intentar con otra cuenta", type="secondary"):
                     st.session_state.clear()
                     st.query_params.clear()
-                    if hasattr(st, "logout"):
-                        st.logout()
                     st.rerun()
                 st.stop()
 
-            # Formulario de autoregistro inicial
+            # Autoregistro inicial
             st.title("👋 Registro de Perfil Docente")
             st.info(f"Hola **{nombre_google}**, detectamos tu primer ingreso. Configura tu departamento para activar tus permisos.")
             
             with st.form("form_registro_nuevo"):
-                area_seleccionada = st.selectbox("Área / Departamento:", ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"])
+                area_seleccionada = st.selectbox(
+                    "Área / Departamento:", 
+                    ["Ciencias", "Humanidades", "Matemáticas", "Idiomas", "Tecnología", "Deportes", "Artes", "Otra"]
+                )
                 
                 if st.form_submit_button("Completar Registro y Entrar", type="primary"):
                     ws_seg = gc.open(FILE_SEGURIDAD).sheet1
@@ -456,49 +511,39 @@ else:
                     st.rerun()
             st.stop()
         
-        # --- USUARIO CORRECTAMENTE VALIDADO ---
-        rol_assigned = usuario_registrado['Rol'].iloc[0]
-        
+        # Extracción de roles oficiales (Limpiando espacios y forzando mayúscula inicial)
+        rol_assigned = str(usuario_registrado['Rol'].iloc[0]).strip().capitalize()
         nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
 
-        # Barra lateral y selector de vistas
-        st.sidebar.title("⚙️ Configuración de Vista")
+        # Barra lateral de navegación
+        st.sidebar.title("⚙️ Navegación")
         
         if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
-            if hasattr(st, "logout"):
-                st.logout()
             st.rerun()
 
-        # 🔍 DETECCIÓN AUTOMÁTICA DE TUTORÍA (Optimizado con caché)
+        # Detección de tutoría
         df_asig_check = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
         mis_materias_check = []
-        
         if not df_asig_check.empty and 'Usuario_Profesor' in df_asig_check.columns and 'Materia' in df_asig_check.columns:
             df_asig_check['Usuario_Profesor'] = df_asig_check['Usuario_Profesor'].astype(str).str.lower().str.strip()
             mis_materias_check = df_asig_check[df_asig_check['Usuario_Profesor'] == correo_google]['Materia'].tolist()
             
         es_tutor = "Tutor" in mis_materias_check
 
-        # Construcción dinámica del menú lateral
-        vista_actual = rol_assigned
-        
-        # Si es docente, sus herramientas principales son Conducta y Asistencia
-        if rol_assigned == 'Docente':
+        # Validación insensible a mayúsculas
+        if rol_assigned.lower() == 'docente':
             opciones_vista = ["📝 Reportar Conducta", "📅 Pasar Lista"]
         else:
-            # Si es Director/Coordinador, ve su panel administrativo MÁS las herramientas docentes
             opciones_vista = [f"Ver como {rol_assigned}", "📝 Reportar Conducta", "📅 Pasar Lista"]
             
         if es_tutor:
             opciones_vista.append("👤 Ver como Tutor")
 
-        # Mostramos el menú siempre, ya que todos tendrán al menos 2 opciones
-        seleccion = st.sidebar.radio("Navegación del Sistema:", opciones_vista)
+        seleccion = st.sidebar.radio("Módulo:", opciones_vista)
             
-        # Mapeamos lo que el usuario eligió con el módulo que debe arrancar
         if seleccion == "📝 Reportar Conducta":
             vista_actual = 'Docente'
         elif seleccion == "📅 Pasar Lista":
@@ -508,8 +553,8 @@ else:
         else:
             vista_actual = rol_assigned
 
-        # --- RENDERIZADO DE LOS PANELES SEGÚN LA VISTA ---
-        if vista_actual == 'Director' or vista_actual == 'Directivo':
+        # Despacho de paneles
+        if vista_actual in ['Director', 'Directivo']:
             renderizar_panel_directivo(gc)
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
@@ -520,72 +565,67 @@ else:
         elif vista_actual == 'Asistencia':
             renderizar_panel_asistencia(gc, correo_google, nombre_mostrar)
 
-        # ==========================================
-        # 💬 BOTÓN FLOTANTE DE AYUDA (ASISTENTE IA)
+      # ==========================================
+        # ASISTENTE DE NORMATIVA (LLM AISLADO)
         # ==========================================
         st.sidebar.markdown("---") 
-        
-        # Forzamos la creación dentro del sidebar
-        with st.sidebar.popover("💬 Ayuda / Asistente", use_container_width=True):
-            st.markdown("### 🤖 Soporte Técnico")
+        with st.sidebar.expander("💬 Ayuda / Asistente"):
             
+            # Inicializar historial del chat si no existe
             if "chat_ayuda" not in st.session_state:
                 st.session_state.chat_ayuda = []
-                
-            contenedor_chat = st.container(height=350)
+
+            # Contenedor con altura fija para evitar desbordes
+            contenedor_chat = st.container(height=230)
             
             with contenedor_chat:
-                if not st.session_state.chat_ayuda:
-                    st.info("👋 Hola, soy el bot de soporte del Colegio. ¿Tienes dudas sobre cómo pasar lista o usar la plataforma?")
-                
                 for msg in st.session_state.chat_ayuda:
-                    st.chat_message(msg["role"]).write(msg["content"])
-                    
-            c_input, c_btn = st.columns([4, 1])
-            duda = c_input.text_input("Escribe tu duda...", label_visibility="collapsed", key="input_duda")
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
             
-            if c_btn.button("Enviar", use_container_width=True):
-                if duda.strip():
-                    st.session_state.chat_ayuda.append({"role": "user", "content": duda})
+            # Entrada de chat nativa (queda siempre fija abajo dentro del expander)
+            pregunta = st.chat_input("Escribe tu consulta...", key="sidebar_chat_input")
+            
+            if pregunta:
+                if pregunta.strip():
+                    st.session_state.chat_ayuda.append({"role": "user", "content": pregunta})
                     
-                    with st.spinner("Pensando..."):
+                    with st.spinner("Consultando acuerdo..."):
                         try:
-                            import google.generativeai as genai
-                            
                             api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
                             if not api_key_gemini:
-                                for seccion_key in st.secrets.keys():
-                                    contenido = st.secrets[seccion_key]
-                                    if isinstance(contenido, dict) or hasattr(contenido, "get"):
-                                        api_key_gemini = contenido.get("GEMINI_API_KEY") or contenido.get("gemini_api_key")
+                                for k in st.secrets.keys():
+                                    sec = st.secrets[k]
+                                    if isinstance(sec, dict):
+                                        api_key_gemini = sec.get("GEMINI_API_KEY") or sec.get("gemini_api_key")
                                         if api_key_gemini: break
                             
                             genai.configure(api_key=api_key_gemini)
-                            modelo = genai.GenerativeModel('gemini-3.5-flash')
                             
-                            prompt_sistema = f"""
-                            Eres el asistente virtual experto del Colegio Miraflores. Tu objetivo es orientar a los profesores sobre la plataforma y el Acuerdo de Convivencia Escolar.
-                            
-                            Aquí tienes el documento oficial completo del ciclo 2026-2027:
-                            
+                            instrucciones = f"""
+                            Eres el asistente normativo oficial del Colegio Miraflores.
+                            Tu única fuente de verdad es el Acuerdo de Convivencia Escolar 2026-2027:
                             {TEXTO_ACUERDO}
-                            
-                            INSTRUCCIONES DE RESPUESTA:
-                            1. Responde basándote ÚNICA Y EXCLUSIVAMENTE en el texto del acuerdo proporcionado.
-                            2. Si la respuesta requiere citar una sanción o regla, menciona el número de Artículo o el Capítulo exacto.
-                            3. Recuerda adicionalmente que en la plataforma del colegio: 3 retardos equivalen a 1 falta efectiva.
-                            4. Sé amable, directo y muy conciso. No des respuestas largas a menos que te pidan un listado.
-                            
-                            Duda del profesor: {duda}
+
+                            Reglas obligatorias:
+                            1. Cita siempre el número de Artículo, Capítulo o Tabla correspondiente.
+                            2. Considera que 3 retardos equivalen a 1 falta efectiva.
+                            3. Mantén respuestas concisas, amables y estrictamente apegadas al texto.
                             """
-                            respuesta = modelo.generate_content(prompt_sistema)
-                            st.session_state.chat_ayuda.append({"role": "assistant", "content": respuesta.text})
                             
-                        except Exception as e:
-                            st.session_state.chat_ayuda.append({"role": "assistant", "content": "⚠️ Hubo un error de conexión. Intenta de nuevo más tarde."})
+                            modelo = genai.GenerativeModel(
+                                model_name='gemini-3.6-flash',
+                                system_instruction=instrucciones
+                            )
+                            
+                            # Consulta aislada
+                            respuesta = modelo.generate_content(pregunta)
+                            st.session_state.chat_ayuda.append({"role": "assistant", "content": respuesta.text})
+                        except Exception:
+                            st.session_state.chat_ayuda.append({"role": "assistant", "content": "⚠️ El asistente no se encuentra disponible temporalmente."})
                     
                     st.rerun()
                     
     except Exception as e:
-        st.error("🚨 Ocurrió un error al cargar tus permisos del panel.")
-        st.write(f"Detalle de la anomalía técnica: {e}")
+        st.error("🚨 Ocurrió un error al cargar los permisos del panel.")
+        st.caption(f"Detalle técnico: {e}")

@@ -8,18 +8,29 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
 
-from config import FILE_ALUMNOS, FILE_ASIGNACIONES, FILE_REGISTROS, CATALOGO_SANCIONES
-from database import leer_datos, leer_todos_los_registros, obtener_lista_alumnos, leer_todas_las_asignaciones
+from config import (
+    FILE_ALUMNOS, 
+    FILE_ASIGNACIONES, 
+    FILE_REGISTROS, 
+    FILE_ASISTENCIA,
+    CATALOGO_SANCIONES, 
+    SUPER_USUARIOS_WHITELIST
+)
+from database import (
+    leer_datos, 
+    leer_todos_los_registros, 
+    obtener_lista_alumnos, 
+    obtener_dataframe_alumnos,
+    leer_todas_las_asignaciones
+)
 from paneles.analitica import mostrar_tablero_analitico
 
 st.markdown("""
     <style>
-    /* Fuerza a que el texto seleccionado se ajuste en varias líneas */
     div[data-baseweb="select"] > div {
         white-space: normal !important;
         word-wrap: break-word !important;
     }
-    /* Fuerza a que las opciones del menú desplegable también bajen de línea */
     ul[role="listbox"] li {
         white-space: normal !important;
         word-wrap: break-word !important;
@@ -39,6 +50,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         st.session_state["ia_closed_state"] = 0
         
     usuario = str(usuario).lower().strip()
+    es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
         
     with st.expander("📝 Registro de Incidencia", expanded=True):
         reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
@@ -48,7 +60,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         grupo_final = []
         alumnos_final = ["General (Ver observaciones)"] 
         
-        # --- SELECCIÓN DE ALUMNOS (PASILLO O GRUPO CLASE) ---
+        # --- CASO 1: REPORTE DE PASILLO ---
         if reporte_pasillo:
             c1, c2, c3 = st.columns(3)
             nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
@@ -60,7 +72,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             df_asig_global = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
             if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
-                # Limpieza de espacios invisibles en los grupos
                 df_asig_global['Grupo'] = df_asig_global['Grupo'].astype(str).str.strip()
                 todos_los_grupos = df_asig_global['Grupo'].dropna().unique().tolist()
                 
@@ -82,12 +93,11 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             alumnos_por_grupo_seleccionados = []
             if grupos_sel:
                 st.markdown("**Selecciona a los alumnos involucrados por salón:**")
-                pestañas = st.tabs(grupos_sel) 
+                pestanas = st.tabs(grupos_sel) 
                 
                 for idx, g_sel in enumerate(grupos_sel):
-                    with pestañas[idx]:
+                    with pestanas[idx]:
                         try:
-                            # Limpieza del nombre del grupo antes de buscar la pestaña
                             lista_grupo = obtener_lista_alumnos(gc, FILE_ALUMNOS, g_sel.strip())
                             if lista_grupo:
                                 sel_alumnos = st.multiselect(
@@ -105,6 +115,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 
                 if alumnos_por_grupo_seleccionados:
                     alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
+
+        # --- CASO 2: REPORTE EN CLASE ---
         else:
             df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
@@ -112,56 +124,63 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
                 return
                 
-            # Limpieza extrema de datos para emparejar correctamente
             df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
             df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
             df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
             
-            # 👑 MODO SUPER USUARIO (ADMINISTRADOR)
-            SUPER_USUARIOS = ["marcodoleire@gmail.com", "mhaces78@gmail.com"]
-            
-            if usuario in SUPER_USUARIOS:
+            if es_superusuario:
                 mis_asig = df_asig.copy()
-                st.info("👑 Modo Super Usuario: Tienes acceso a todos los grupos y materias.")
+                st.info("👑 Modo Super Usuario: Acceso completo a grupos y materias.")
             else:
                 mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
             
             if mis_asig.empty: 
                 st.warning("Sin materias asignadas para tu usuario actual.")
                 return            
-            # --- ✨ NUEVO: SEPARACIÓN DE NIVELES (PREPA / SECUNDARIA) ---
-            st.markdown("##### 🏫 Selecciona tu Nivel Escolar")
+
+            # Separación de Niveles
             niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
-            
             if len(niveles_prof) > 1:
-                nivel_elegido = st.radio("Cambiar entre secciones:", niveles_prof, horizontal=True, key=f"nav_niv_{st.session_state.form_reset}")
+                nivel_elegido = st.radio("Sección:", niveles_prof, horizontal=True, key=f"nav_niv_{st.session_state.form_reset}")
                 mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
-            else:
-                st.info(f"Nivel detectado: **{niveles_prof[0]}**")
-                
-            st.markdown("<br>", unsafe_allow_html=True)
+
+            # FILTRO POR DÍA EN CURSO (CON DESBLOQUEO MANUAL)
+            hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
+            dia_semana_map = {0: "Lunes", 1: "Martes", 2: "Miercoles", 3: "Jueves", 4: "Viernes"}
+            nombre_dia_hoy = dia_semana_map.get(hoy_cdmx.weekday(), "Fin de semana")
+
+            ver_todas = st.toggle("🔓 Mostrar todas las materias (Fuera del horario de hoy)", key=f"tog_mat_{st.session_state.form_reset}")
+            
+            mis_asig_filtradas = mis_asig.copy()
+            if not ver_todas and not es_superusuario and hoy_cdmx.weekday() in dia_semana_map:
+                try:
+                    df_conf = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
+                    if not df_conf.empty and 'Clase' in df_conf.columns and nombre_dia_hoy in df_conf.columns:
+                        clases_hoy = df_conf[pd.to_numeric(df_conf[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
+                        materias_validas = []
+                        for _, r in mis_asig.iterrows():
+                            tag = f"{r['Materia']} - {r['Grupo']}"
+                            if tag in clases_hoy or tag not in df_conf['Clase'].values:
+                                materias_validas.append(r['Materia'])
+                        if materias_validas:
+                            mis_asig_filtradas = mis_asig[mis_asig['Materia'].isin(materias_validas)]
+                except Exception:
+                    pass
                        
             c1, c2 = st.columns(2)
-            materia = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key=f"mat_select_{st.session_state.form_reset}")
-            grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia]['Grupo'].unique(), key=f"grup_select_{st.session_state.form_reset}")
+            materia = c1.selectbox("Materia:", mis_asig_filtradas['Materia'].unique(), key=f"mat_select_{st.session_state.form_reset}")
+            grupo = c2.selectbox("Grupo:", mis_asig_filtradas[mis_asig_filtradas['Materia'] == materia]['Grupo'].unique(), key=f"grup_select_{st.session_state.form_reset}")
             grupo_final = [grupo]
             
             captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
             
             try:
-                # 1. Limpiamos el nombre del grupo (Ej: "6°B (Área IV)" se convierte solo en "6°B")
                 grupo_base = grupo.split("(")[0].strip()
-                
-                # (Opcional) Si tus pestañas de Excel tienen 'o' en lugar de '°', descomenta la siguiente línea:
-                # grupo_base = grupo_base.replace("°", "o") 
-                
-                from database import obtener_dataframe_alumnos
                 df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
                 
-                # 2. Lógica de Filtrado Todoterreno
+                # Filtrado por Áreas (Preparatoria)
                 if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
                     if 'Área' in df_alumnos_crudo.columns:
-                        # Unimos texto de materia y grupo en mayúsculas para buscar sin importar dónde lo escribas
                         texto_busqueda = f"{materia} {grupo}".upper()
                         
                         if "ÁREA 1" in texto_busqueda or "ÁREA I " in texto_busqueda or "ÁREA I)" in texto_busqueda:
@@ -173,7 +192,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
                     
-                    # 3. Construimos la lista final de opciones
                     nombres = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
                     opc = sorted(nombres.unique().tolist())
                 else:
@@ -183,7 +201,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
             except Exception as e:
                 opc = []
-                st.error(f"Falta la pestaña '{grupo_base}' en el archivo de Alumnos o error: {e}")
+                st.error(f"Falta la pestaña '{grupo_base}' en el archivo de Alumnos: {e}")
             
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
@@ -193,7 +211,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         st.markdown("---")
         
-        # Claves de control de estado dinámico para la IA ligados al ciclo del formulario
         key_cat_recomendada = f"ia_cat_{st.session_state.form_reset}"
         key_fal_recomendada = f"ia_fal_{st.session_state.form_reset}"
 
@@ -203,107 +220,87 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             st.session_state[key_fal_recomendada] = None
 
         # =================================================================
-        # 🪄 BOTÓN FLOTANTE (POPOVER) - ASISTENTE DE CLASIFICACIÓN CON IA
+        # ASISTENTE DE CLASIFICACIÓN CON IA (GEMINI BLINDADO)
         # =================================================================
         popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
         
         with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
             st.markdown("### 🪄 Clasificación Inteligente")
-            st.write("Redacta la situación abajo. La IA configurará automáticamente la categoría y falta correspondientes en el formulario de fondo.")
+            st.caption("Escribe los hechos ocurridos. La IA seleccionará la categoría y falta correspondientes en el formulario.")
             
             relato_incidencia = st.text_area(
-                "Describe lo sucedido con tus propias palabras:",
-                placeholder="Ejemplo: El alumno llegó tarde y comenzó a distraer a sus compañeros...",
-                key=f"relato_ia_{st.session_state.form_reset}",
-                help="Describe detalladamente los hechos y haz clic en Clasificar."
+                "Descripción de los hechos:",
+                placeholder="Ejemplo: El alumno utilizó el celular durante la explicación y no atendió las indicaciones...",
+                key=f"relato_ia_{st.session_state.form_reset}"
             )
 
             if st.button("🪄 Clasificar Hechos", type="primary", key=f"btn_ia_{st.session_state.form_reset}"):
                 if not relato_incidencia.strip():
-                    st.warning("⚠️ Por favor, redacta los hechos antes de solicitar la clasificación.")
+                    st.warning("⚠️ Redacta los hechos antes de solicitar la clasificación.")
                 else:
                     try:
                         api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
                         if not api_key_gemini:
-                            for seccion_key in st.secrets.keys():
-                                contenido_seccion = st.secrets[seccion_key]
-                                if isinstance(contenido_seccion, dict) or hasattr(contenido_seccion, "get"):
-                                    api_key_gemini = contenido_seccion.get("GEMINI_API_KEY") or contenido_seccion.get("gemini_api_key")
-                                    if api_key_gemini:
-                                        break
+                            for k in st.secrets.keys():
+                                sec = st.secrets[k]
+                                if isinstance(sec, dict):
+                                    api_key_gemini = sec.get("GEMINI_API_KEY") or sec.get("gemini_api_key")
+                                    if api_key_gemini: break
                         
                         if not api_key_gemini:
-                            st.error("🔑 Error: No se localizó la llave 'GEMINI_API_KEY' en la configuración.")
+                            st.error("🔑 Llave de API no configurada en los secretos de la aplicación.")
                         else:
                             genai.configure(api_key=api_key_gemini)
-                            modelo_gemini = genai.GenerativeModel('gemini-3.5-flash')
                             
-                            prompt_sistema = f"""
-                            Eres un asistente de disciplina del Colegio Miraflores. Analiza la siguiente descripción de incidencia y clasifícala estrictamente dentro de las opciones de nuestro catálogo oficial.
-                            
-                            CATÁLOGO DE INCIDENCIAS:
+                            instrucciones_ia = f"""
+                            Eres un asistente de disciplina escolar del Colegio Miraflores.
+                            Tu función es clasificar estrictamente el relato dentro de las opciones de este catálogo oficial:
                             {json.dumps(CATALOGO_SANCIONES, ensure_ascii=False, indent=2)}
-                            
-                            INCIDENCIA REPORTADA:
-                            "{relato_incidencia}"
-                            
-                            INSTRUCCIONES:
-                            1. Identifica qué "Categoría" y qué "Falta" específica del catálogo se asocian mejor al relato.
-                            2. Debes responder EXCLUSIVAMENTE en formato JSON plano con la siguiente estructura exacta:
-                            {{
-                                "categoria": "Nombre Exacto de la Categoría",
-                                "falta": "Nombre Exacto de la Falta"
-                            }}
-                            
-                            Asegúrate de respetar de forma estricta los acentos, mayúsculas y la ortografía del catálogo oficial provisto. No agregues bloques de código como ```json ni texto adicional.
+
+                            Reglas obligatorias:
+                            1. Devuelve ÚNICA Y EXCLUSIVAMENTE un JSON plano con estas claves exactas:
+                            {{"categoria": "Nombre de la Categoría", "falta": "Nombre de la Falta"}}
+                            2. Respeta con exactitud las mayúsculas, acentos y signos del catálogo.
                             """
                             
-                            with st.spinner("🪄 Analizando hechos con Inteligencia Artificial..."):
-                                respuesta_api = modelo_gemini.generate_content(
-                                    prompt_sistema,
-                                    generation_config={"response_mime_type": "application/json"}
-                                )
-                                
+                            modelo = genai.GenerativeModel(
+                                model_name='gemini-3.6-flash',
+                                system_instruction=instrucciones_ia,
+                                generation_config={"response_mime_type": "application/json"}
+                            )
+                            
+                            with st.spinner("Analizando hechos con IA..."):
+                                respuesta_api = modelo.generate_content(relato_incidencia)
                                 datos_clasificados = json.loads(respuesta_api.text.strip())
+                                
                                 cat_ia = datos_clasificados.get("categoria")
                                 fal_ia = datos_clasificados.get("falta")
                                 
-                                if cat_ia in CATALOGO_SANCIONES:
+                                if cat_ia in CATALOGO_SANCIONES and fal_ia in CATALOGO_SANCIONES[cat_ia]:
                                     st.session_state[key_cat_recomendada] = cat_ia
-                                    if fal_ia in CATALOGO_SANCIONES[cat_ia]:
-                                        st.session_state[key_fal_recomendada] = fal_ia
-                                        
-                                        # FORZAR ACTUALIZACIÓN INMEDIATA DE LOS SELECTORES DE FONDO
-                                        st.session_state[f"cat_{st.session_state.form_reset}"] = cat_ia
-                                        
-                                        puntos_falta = CATALOGO_SANCIONES[cat_ia][fal_ia]["puntos"]
-                                        st.session_state[f"falta_{st.session_state.form_reset}"] = f"{fal_ia} ({puntos_falta} pt)"
-                                        
-                                        # Auto-actualizamos las observaciones de fondo
-                                        st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
-                                    else:
-                                        st.session_state[key_fal_recomendada] = None
+                                    st.session_state[key_fal_recomendada] = fal_ia
+                                    st.session_state[f"cat_{st.session_state.form_reset}"] = cat_ia
+                                    
+                                    puntos_falta = CATALOGO_SANCIONES[cat_ia][fal_ia]["puntos"]
+                                    st.session_state[f"falta_{st.session_state.form_reset}"] = f"{fal_ia} ({puntos_falta} pt)"
+                                    st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
                                 else:
-                                    st.warning("⚠️ La sugerencia de la IA no coincidió exactamente con el catálogo oficial.")
+                                    st.warning("⚠️ La falta sugerida no coincidió exactamente con el catálogo oficial.")
                     
                     except Exception as e:
-                        st.error(f"⚠️ El clasificador automático no se encuentra disponible.")
-                        st.info(f"Detalle técnico: {e}")
+                        st.error(f"⚠️ El clasificador no está disponible temporalmente: {e}")
 
             if st.session_state[key_fal_recomendada]:
                 cat_sug = st.session_state[key_cat_recomendada]
                 fal_sug = st.session_state[key_fal_recomendada]
+                st.success(f"✅ Sugerencia: **{cat_sug}** ➔ **{fal_sug}**.")
                 
-                st.success(f"✅ ¡Clasificado con éxito! Sugerencia: **{cat_sug}** ➔ **{fal_sug}**.")
-                
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("❌ Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
+                if st.button("Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
                     st.session_state["ia_closed_state"] += 1
                     st.rerun()
         
-        # --- MENÚS EN CASCADA DE FALTAS ---
-        c_cat, c_fal = st.columns([1,  2])
-        
+        # --- MENÚS DE SELECCIÓN DE FALTA ---
+        c_cat, c_fal = st.columns([1, 2])
         lista_categorias = list(CATALOGO_SANCIONES.keys())
         try:
             indice_categoria_defecto = lista_categorias.index(st.session_state[key_cat_recomendada])
@@ -337,22 +334,21 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             )
             
         falta_original = falta_seleccionada_visual.split(" (")[0]
-        
         redaccion_inicial = st.session_state.get(f"obs_prefill_{st.session_state.form_reset}", "")
         
         obs = st.text_area(
-            "Redacción final de lo sucedido (Observaciones):", 
+            "Observaciones y detalles de lo ocurrido:", 
             value=redaccion_inicial,
             key=f"obs_{st.session_state.form_reset}"
         )
 
-        # --- PROCESAMIENTO DEL GUARDADO ---
-        if st.button("Guardar Registro", type="primary"):
+        # --- GUARDADO EN BASE DE DATOS ---
+        if st.button("💾 Guardar Registro", type="primary"):
             if reporte_pasillo and not grupo_final:
-                st.error("⚠️ Por favor, seleccione al menos un grupo implicado en el reporte de pasillo.")
+                st.error("⚠️ Selecciona al menos un grupo implicado en el reporte.")
                 st.stop()
             elif not reporte_pasillo and not alumnos_final:
-                st.error("⚠️ Por favor, seleccione al menos un alumno.")
+                st.error("⚠️ Selecciona al menos un alumno.")
                 st.stop()
                 
             info_falta = dict_faltas.get(falta_original)
@@ -387,7 +383,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             leer_todos_los_registros.clear()
             
             st.session_state.form_reset += 1
-            st.success("✅ Incidencia registrada exitosamente en la base de datos.")
+            st.success("✅ Incidencia guardada con éxito en la base de datos.")
             time.sleep(1)
             st.rerun()
 
@@ -395,12 +391,11 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
     st.subheader("📈 Analítica de Conducta")
     df_full = leer_todos_los_registros(gc)
     
-    # El super usuario ve la base completa, los maestros normales solo lo suyo
-    if usuario in SUPER_USUARIOS:
+    if es_superusuario:
         df_doc = df_full
-        titulo_tablero = "Reportes Globales (Colegio Miraflores)"
+        titulo_tablero = "Reportes Globales Institucionales"
     else:
         df_doc = df_full[df_full['Profesor'] == nombre_prof] if not df_full.empty else df_full
-        titulo_tablero = "Mis Reportes"
+        titulo_tablero = "Mis Reportes Docentes"
         
     mostrar_tablero_analitico(df_doc, titulo_tablero, modo_descarga=True)
