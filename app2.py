@@ -544,6 +544,13 @@ else:
             st.query_params.clear()
             st.rerun()
 
+        st.sidebar.markdown("---")
+        with st.sidebar.expander("⚙️ Opciones de Sistema"):
+            st.caption("Usa esta opción solo si notas un desfase en los registros recientes.")
+            if st.button("🔄 Sincronizar Datos", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+
         # Detección de tutoría
         df_asig_check = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
         mis_materias_check = []
