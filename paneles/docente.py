@@ -179,9 +179,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
                 
                 if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
+                    # 1. Filtro de áreas
                     if 'Área' in df_alumnos_crudo.columns:
                         texto_busqueda = f"{materia} {grupo}".upper()
-                        
                         if "ÁREA 1" in texto_busqueda or "ÁREA I " in texto_busqueda or "ÁREA I)" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 1']
                         elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
@@ -191,16 +191,21 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
                     
-                    # 1. Unificar columnas si vienen separadas en la nube
+                    # 2. Búsqueda súper flexible de columnas (ignora mayúsculas y espacios extra)
                     if 'Nombre Completo' not in df_alumnos_crudo.columns:
-                        nombres_col = df_alumnos_crudo.get('Nombres', '').fillna('')
-                        ap_pat = df_alumnos_crudo.get('Apellido Patern', '').fillna('')
-                        ap_mat = df_alumnos_crudo.get('Apellido Matern', '').fillna('')
+                        cols = df_alumnos_crudo.columns.str.lower().str.strip()
                         
-                        # Ensambla el nombre y limpia espacios dobles
-                        df_alumnos_crudo['Nombre Completo'] = (nombres_col + " " + ap_pat + " " + ap_mat).str.strip().replace(r'\s+', ' ', regex=True)
+                        idx_pat = cols.str.contains('patern', na=False)
+                        idx_mat = cols.str.contains('matern', na=False)
+                        idx_nom = cols.str.contains('nombre', na=False)
+                        
+                        ap_pat = df_alumnos_crudo.loc[:, idx_pat].iloc[:, 0].astype(str).fillna('') if idx_pat.any() else ''
+                        ap_mat = df_alumnos_crudo.loc[:, idx_mat].iloc[:, 0].astype(str).fillna('') if idx_mat.any() else ''
+                        nombres_col = df_alumnos_crudo.loc[:, idx_nom].iloc[:, 0].astype(str).fillna('') if idx_nom.any() else ''
+                        
+                        # Formato: Paterno + Materno + Nombres
+                        df_alumnos_crudo['Nombre Completo'] = (ap_pat + " " + ap_mat + " " + nombres_col).str.strip().replace(r'\s+', ' ', regex=True)
 
-                    # 2. Extraer la lista final
                     nombres_finales = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
                     opc = sorted(nombres_finales.unique().tolist())
                 else:
@@ -210,7 +215,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
             except Exception as e:
                 opc = []
-                st.error(f"Falta la pestaña '{grupo_base}' en el archivo de Alumnos: {e}")
+                st.error(f"Error al procesar la pestaña '{grupo_base}': {e}")
                 
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
