@@ -8,8 +8,7 @@ import gspread
 import time
 
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA, SUPER_USUARIOS_WHITELIST
-from database import leer_datos, obtener_lista_alumnos, leer_todas_las_asignaciones
-
+from database import leer_datos, obtener_lista_alumnos, obtener_dataframe_alumnos, leer_todas_las_asignaciones
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     st.header("📅 Gestión de Asistencia")
     
@@ -108,17 +107,39 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.session_state.modo_edicion_horario = True
                 st.rerun()
 
-    # Obtener alumnos
+    # Obtener alumnos con filtro de Área
     try:
         grupo_limpio = grupo.split("(")[0].strip()
-        alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
-    except Exception:
+        df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
+        
+        if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
+            if 'Área' in df_alumnos_crudo.columns:
+                texto_busqueda = f"{materia} {grupo}".upper()
+                
+                if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 1']
+                elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 2']
+                elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 3']
+                elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
+            
+            if 'Nombre Completo' in df_alumnos_crudo.columns:
+                nombres = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
+                alumnos = sorted(nombres.unique().tolist())
+            else:
+                alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
+        else:
+            alumnos = []
+    except Exception as e:
         alumnos = []
-
+        st.error(f"Error al obtener alumnos: {e}")
     if not alumnos:
         st.warning(f"No se encontraron alumnos registrados para el grupo '{grupo_limpio}'.")
         return
 
+    # Esta es la variable que faltaba definir
     nombre_pestana = f"{materia} - {grupo}"
 
     # Horarios de la materia
