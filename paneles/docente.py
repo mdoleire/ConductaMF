@@ -178,7 +178,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 grupo_base = grupo.split("(")[0].strip()
                 df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
                 
-                # Filtrado por Áreas (Preparatoria)
                 if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
                     if 'Área' in df_alumnos_crudo.columns:
                         texto_busqueda = f"{materia} {grupo}".upper()
@@ -192,8 +191,18 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
                     
-                    nombres = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
-                    opc = sorted(nombres.unique().tolist())
+                    # 1. Unificar columnas si vienen separadas en la nube
+                    if 'Nombre Completo' not in df_alumnos_crudo.columns:
+                        nombres_col = df_alumnos_crudo.get('Nombres', '').fillna('')
+                        ap_pat = df_alumnos_crudo.get('Apellido Patern', '').fillna('')
+                        ap_mat = df_alumnos_crudo.get('Apellido Matern', '').fillna('')
+                        
+                        # Ensambla el nombre y limpia espacios dobles
+                        df_alumnos_crudo['Nombre Completo'] = (nombres_col + " " + ap_pat + " " + ap_mat).str.strip().replace(r'\s+', ' ', regex=True)
+
+                    # 2. Extraer la lista final
+                    nombres_finales = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
+                    opc = sorted(nombres_finales.unique().tolist())
                 else:
                     opc = []
                     
@@ -202,7 +211,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             except Exception as e:
                 opc = []
                 st.error(f"Falta la pestaña '{grupo_base}' en el archivo de Alumnos: {e}")
-            
+                
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
                 alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
