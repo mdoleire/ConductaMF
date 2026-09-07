@@ -191,28 +191,31 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
                     
-                    # 2. Búsqueda súper flexible de columnas (ignora mayúsculas y espacios extra)
+                    # 2. Ensamblaje seguro e inmune a columnas vacías
                     if 'Nombre Completo' not in df_alumnos_crudo.columns:
-                        cols = df_alumnos_crudo.columns.str.lower().str.strip()
+                        col_pat = next((c for c in df_alumnos_crudo.columns if 'patern' in str(c).lower()), None)
+                        col_mat = next((c for c in df_alumnos_crudo.columns if 'matern' in str(c).lower()), None)
+                        col_nom = next((c for c in df_alumnos_crudo.columns if 'nombre' in str(c).lower()), None)
                         
-                        idx_pat = cols.str.contains('patern', na=False)
-                        idx_mat = cols.str.contains('matern', na=False)
-                        idx_nom = cols.str.contains('nombre', na=False)
+                        s_pat = df_alumnos_crudo[col_pat].astype(str).fillna('') if col_pat else ''
+                        s_mat = df_alumnos_crudo[col_mat].astype(str).fillna('') if col_mat else ''
+                        s_nom = df_alumnos_crudo[col_nom].astype(str).fillna('') if col_nom else ''
                         
-                        ap_pat = df_alumnos_crudo.loc[:, idx_pat].iloc[:, 0].astype(str).fillna('') if idx_pat.any() else ''
-                        ap_mat = df_alumnos_crudo.loc[:, idx_mat].iloc[:, 0].astype(str).fillna('') if idx_mat.any() else ''
-                        nombres_col = df_alumnos_crudo.loc[:, idx_nom].iloc[:, 0].astype(str).fillna('') if idx_nom.any() else ''
-                        
-                        # Formato: Paterno + Materno + Nombres
-                        df_alumnos_crudo['Nombre Completo'] = (ap_pat + " " + ap_mat + " " + nombres_col).str.strip().replace(r'\s+', ' ', regex=True)
+                        df_alumnos_crudo['Nombre Completo'] = (s_pat + " " + s_mat + " " + s_nom).str.strip().replace(r'\s+', ' ', regex=True)
+                        df_alumnos_crudo['Nombre Completo'] = df_alumnos_crudo['Nombre Completo'].replace(r'^nan nan nan$|^nan$|^$', pd.NA, regex=True)
 
-                    nombres_finales = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
+                    nombres_finales = df_alumnos_crudo['Nombre Completo'].dropna()
                     opc = sorted(nombres_finales.unique().tolist())
                 else:
                     opc = []
                     
                 if not opc:
                     st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
+                    # Herramienta de diagnóstico
+                    with st.expander("🔍 Ver datos crudos (Solo Diagnóstico)"):
+                        st.write("Columnas que está leyendo Python:", df_alumnos_crudo.columns.tolist() if df_alumnos_crudo is not None else "Ninguna")
+                        if df_alumnos_crudo is not None:
+                            st.dataframe(df_alumnos_crudo.head(3))
             except Exception as e:
                 opc = []
                 st.error(f"Error al procesar la pestaña '{grupo_base}': {e}")
