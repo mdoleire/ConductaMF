@@ -373,7 +373,7 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
             email_obtenido = user_info.get("email", "").lower().strip()
 
             ## --- SIMULACIÓN DE ALUMNO (BORRAR DESPUÉS DE LA PRUEBA) ---!!!!!!!!!!!!!
-            #email_obtenido = "acruz@miraflores.edu.mx" 
+            #email_obtenido = "vruiz@miraflores.edu.mx" 
             ## ---------------------------------------------------------!!!!!!!!!!!!!!
             
             name_obtenido = user_info.get("name", "Usuario Miraflores")
