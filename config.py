@@ -1,7 +1,7 @@
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
 # ==========================================
-FILE_ALUMNOS = "TEST_1_Alumnos_por_Grupo"
+FILE_ALUMNOS = "1_Alumnos_por_Grupo"
 FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
 FILE_SEGURIDAD = "3_Usuarios_Seguridad"
 FILE_REGISTROS = "4_Base_Conducta_Registros"
