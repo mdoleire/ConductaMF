@@ -117,16 +117,16 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 texto_busqueda = f"{materia} {grupo}".upper()
                 
                 if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
-                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 1']
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
                 elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
-                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 2']
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('2|II', na=False)]
                 elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
-                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 3']
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
                 elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
-                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
             
             if 'Nombre Completo' in df_alumnos_crudo.columns:
-                nombres = df_alumnos_crudo['Nombre Completo'].replace('', pd.NA).dropna()
+                nombres = df_alumnos_crudo['Nombre Completo'].replace(r'^nan nan nan$|^nan$|^$', pd.NA, regex=True).dropna()
                 alumnos = sorted(nombres.unique().tolist())
             else:
                 alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
@@ -336,7 +336,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.rerun()
 
     # ========================================================
-    # MODO 2: Vista Histórica
+    # MODO 2: Vista Histórica (AHORA EDITABLE)
     # ========================================================
     else:
         st.markdown(f"### 📈 Historial de Asistencia: {grupo} ({materia})")
@@ -353,10 +353,64 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         for col in columnas_fechas:
             df_mostrar[col] = df_historial[col]
         
-        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
-        st.download_button(
-            "📥 Descargar Matriz CSV",
-            df_mostrar.to_csv(index=False).encode('utf-8-sig'),
-            f"Asistencia_{materia}_{grupo}.csv",
-            mime="text/csv"
+        st.info("💡 Ahora puedes editar la asistencia de cualquier día directamente en esta tabla. Los totales se recalcularán al guardar.")
+        
+        # 1. Configuración dinámica: Bloqueamos métricas y permitimos desplegables en fechas
+        config_cols = {
+            "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
+            "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True),
+            "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
+            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
+            "Retardos": st.column_config.NumberColumn("Retardos", disabled=True)
+        }
+        
+        for col in columnas_fechas:
+            config_cols[col] = st.column_config.SelectboxColumn(
+                col, 
+                options=["✅ Presente", "🟡 Retardo", "🔴 Falta", ""], 
+                required=False
+            )
+
+        # 2. Renderizamos la tabla editable
+        df_editado_hist = st.data_editor(
+            df_mostrar,
+            column_config=config_cols,
+            use_container_width=True,
+            hide_index=True,
+            key=f"ed_hist_{materia}_{grupo}"
         )
+        
+        col_btn1, col_btn2 = st.columns([1, 1])
+        
+        # 3. Guardado en bloque
+        with col_btn1:
+            if st.button("💾 Guardar Cambios Históricos", type="primary", use_container_width=True):
+                with st.spinner("Actualizando matriz en Google Sheets..."):
+                    doc = gc.open(FILE_ASISTENCIA)
+                    try:
+                        ws = doc.worksheet(nombre_pestana)
+                    except gspread.exceptions.WorksheetNotFound:
+                        ws = doc.add_worksheet(title=nombre_pestana, rows="100", cols="50")
+                        ws.append_row(["Alumno"])
+
+                    # Reconstruimos la hoja original filtrando solo al alumno y las fechas (sin las columnas métricas)
+                    df_a_guardar = pd.DataFrame({"Alumno": df_editado_hist["Alumno"]})
+                    for col in columnas_fechas:
+                        df_a_guardar[col] = df_editado_hist[col].fillna("")
+                    
+                    datos_matriz = [df_a_guardar.columns.values.tolist()] + df_a_guardar.values.tolist()
+                    ws.update(values=datos_matriz, range_name="A1")
+                    
+                    leer_datos.clear()
+                    st.success("✅ Historial actualizado correctamente. Recalculando...")
+                    time.sleep(1.5)
+                    st.rerun()
+        
+        with col_btn2:
+            st.download_button(
+                "📥 Descargar Matriz CSV",
+                df_mostrar.to_csv(index=False).encode('utf-8-sig'),
+                f"Asistencia_{materia}_{grupo}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )

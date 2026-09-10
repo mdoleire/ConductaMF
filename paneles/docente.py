@@ -24,6 +24,7 @@ from database import (
     leer_todas_las_asignaciones
 )
 from paneles.analitica import mostrar_tablero_analitico
+from notificaciones import procesar_notificaciones_conducta
 
 st.markdown("""
     <style>
@@ -177,30 +178,30 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             try:
                 grupo_base = grupo.split("(")[0].strip()
                 df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
-                
+
                 if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
-                    # 1. Filtro de áreas
+                    # 1. Filtro inteligente adaptado a tus columnas de Áreas (Ciencias, Humanidades, etc.)
                     if 'Área' in df_alumnos_crudo.columns:
                         texto_busqueda = f"{materia} {grupo}".upper()
-                        if "ÁREA 1" in texto_busqueda or "ÁREA I " in texto_busqueda or "ÁREA I)" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 1']
+                        if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
                         elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 2']
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('2|II', na=False)]
                         elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 3']
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
                         elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'] == 'Área 4']
-                    
-                    # 2. Ensamblaje seguro e inmune a columnas vacías
+                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
+
+                    # 2. Ensamblaje seguro
                     if 'Nombre Completo' not in df_alumnos_crudo.columns:
                         col_pat = next((c for c in df_alumnos_crudo.columns if 'patern' in str(c).lower()), None)
                         col_mat = next((c for c in df_alumnos_crudo.columns if 'matern' in str(c).lower()), None)
                         col_nom = next((c for c in df_alumnos_crudo.columns if 'nombre' in str(c).lower()), None)
-                        
+
                         s_pat = df_alumnos_crudo[col_pat].astype(str).fillna('') if col_pat else ''
                         s_mat = df_alumnos_crudo[col_mat].astype(str).fillna('') if col_mat else ''
                         s_nom = df_alumnos_crudo[col_nom].astype(str).fillna('') if col_nom else ''
-                        
+
                         df_alumnos_crudo['Nombre Completo'] = (s_pat + " " + s_mat + " " + s_nom).str.strip().replace(r'\s+', ' ', regex=True)
                         df_alumnos_crudo['Nombre Completo'] = df_alumnos_crudo['Nombre Completo'].replace(r'^nan nan nan$|^nan$|^$', pd.NA, regex=True)
 
@@ -208,17 +209,17 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     opc = sorted(nombres_finales.unique().tolist())
                 else:
                     opc = []
-                    
+
                 if not opc:
                     st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
-                    # Herramienta de diagnóstico
                     with st.expander("🔍 Ver datos crudos (Solo Diagnóstico)"):
-                        st.write("Columnas que está leyendo Python:", df_alumnos_crudo.columns.tolist() if df_alumnos_crudo is not None else "Ninguna")
+                        st.write("Columnas detectadas:", df_alumnos_crudo.columns.tolist() if df_alumnos_crudo is not None else "Ninguna")
                         if df_alumnos_crudo is not None:
                             st.dataframe(df_alumnos_crudo.head(3))
+                            
             except Exception as e:
-                opc = []
-                st.error(f"Error al procesar la pestaña '{grupo_base}': {e}")
+              opc = []
+              st.error(f"Error al procesar la pestaña '{grupo_base}': {e}")
                 
             if not captura_multiple:
                 alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
@@ -398,10 +399,30 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
             ws.append_rows(lote)
             leer_todos_los_registros.clear()
-            
+
+            # --- NUEVO: DISPARAR CORREOS AUTOMÁTICOS ---
+            if s in ["Grave", "Crítica"] or reporte_pasillo: 
+                try:
+                    grupo_para_correo = grupo_final[0].split("(")[0].strip()
+                    df_alumnos_correo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_para_correo)
+
+                    for nombre_alumno_afectado in alumnos_final:
+                        if nombre_alumno_afectado != "General (Ver observaciones)":
+                            with st.spinner(f"Enviando notificaciones a {nombre_alumno_afectado}..."):
+                                procesar_notificaciones_conducta(
+                                    df_alumnos_correo, 
+                                    reporte_pasillo, 
+                                    nombre_alumno_afectado, 
+                                    materia, 
+                                    falta_original, 
+                                    obs
+                                )
+                except Exception as e:
+                    st.error(f"El registro se guardó, pero hubo un error al enviar el correo: {e}")
+
             st.session_state.form_reset += 1
             st.success("✅ Incidencia guardada con éxito en la base de datos.")
-            time.sleep(1)
+            time.sleep(1.5)
             st.rerun()
 
     st.markdown("---")
