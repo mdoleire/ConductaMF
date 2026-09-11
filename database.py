@@ -23,35 +23,42 @@ def conectar_gsheets():
         st.error(f"🚨 Configuración de credenciales inválida: {e}")
         st.stop()
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=300)
 def leer_datos(_client, nombre_archivo, nombre_pestana=None):
+    import time
+    import pandas as pd
+    
+    for intento in range(4):
+        try:
+            doc = _client.open(nombre_archivo)
+            ws = doc.worksheet(nombre_pestana) if nombre_pestana else doc.sheet1
+            data = ws.get_all_values()
+            
+            if data and len(data) > 1:
+                df = pd.DataFrame(data[1:], columns=data[0])
+                df.columns = df.columns.astype(str).str.strip()
+                return df
+            return pd.DataFrame()
+            
+        except Exception as e:
+            if "429" in str(e):
+                # 🛡️ Google tarda hasta 60s en perdonar el límite. Esperamos 15s, luego 30s, luego 45s.
+                time.sleep(15 * (intento + 1))
+            else:
+                break
+                
     try:
         doc = _client.open(nombre_archivo)
         ws = doc.worksheet(nombre_pestana) if nombre_pestana else doc.sheet1
-        
-        # Intento 1: Extracción dinámica de toda la hoja
-        try:
-            data = ws.get_all_values()
-        except Exception:
-            # Intento 2 (Respaldo): Si Google falla con el Response 200, forzamos un rango explícito
-            data = ws.get('A1:Z1000')
-            
+        data = ws.get('A1:Z1000')
         if data and len(data) > 1:
             df = pd.DataFrame(data[1:], columns=data[0])
             df.columns = df.columns.astype(str).str.strip()
             return df
-            
-        return pd.DataFrame()
-        
     except Exception as e:
-        # Extraemos el código profundo del error para saber exactamente qué falla
-        error_detalle = repr(e)
-        if hasattr(e, 'response') and hasattr(e.response, 'text'):
-            error_detalle += f" | Detalle API: {e.response.text[:200]}"
-            
-        st.error(f"🚨 Fallo de conexión con Google Sheets en el archivo '{nombre_archivo}' (Pestaña: {nombre_pestana})")
-        st.code(error_detalle)
-        return pd.DataFrame()
+        st.error(f"🚨 Fallo de conexión en '{nombre_archivo}' (Pestaña: {nombre_pestana})")
+        
+    return pd.DataFrame()
     
 @st.cache_data(ttl=120)
 def leer_todos_los_registros(_client):
@@ -59,10 +66,21 @@ def leer_todos_los_registros(_client):
         doc = _client.open(FILE_REGISTROS)
         hojas = []
         for h in doc.worksheets():
-            data = h.get_all_values()
-            if len(data) > 1:
+            try:
+                data = h.get_all_values()
+            except Exception as e:
+                if "429" in str(e):
+                    time.sleep(8)  # Enfriamiento si hay límite de cuota
+                # Plan B: Extracción de celdas explícitas si falla la lectura dinámica
+                try:
+                    data = h.get('A1:Z1000')
+                except Exception:
+                    continue
+                    
+            if data and len(data) > 1:
                 df_h = pd.DataFrame(data[1:], columns=data[0])
                 hojas.append(df_h)
+                
         if not hojas: 
             return pd.DataFrame()
         df = pd.concat(hojas, ignore_index=True)
@@ -73,7 +91,7 @@ def leer_todos_los_registros(_client):
         return df
     except Exception:
         return pd.DataFrame()
-
+    
 def format_calif(val):
     if val >= 9.0: return f"🟢 {val:.1f}"
     if val >= 7.0: return f"🟡 {val:.1f}"
@@ -123,8 +141,17 @@ def leer_todas_las_asignaciones(_gc, nombre_archivo):
         doc = _gc.open(nombre_archivo)
         lista_dfs = []
         for hoja in doc.worksheets():
-            data = hoja.get_all_values()
-            if len(data) > 1:
+            try:
+                data = hoja.get_all_values()
+            except Exception as e:
+                if "429" in str(e):
+                    time.sleep(8)
+                try:
+                    data = hoja.get('A1:Z1000')
+                except Exception:
+                    continue
+                    
+            if data and len(data) > 1:
                 df = pd.DataFrame(data[1:], columns=data[0])
                 df.columns = df.columns.astype(str).str.strip()
                 df['Nivel'] = hoja.title.strip()
@@ -173,9 +200,11 @@ def obtener_info_alumno_por_correo(_gc, archivo_alumnos, correo_buscar):
     except Exception:
         return None
 
-def obtener_resumen_asistencia_alumno(gc, nombre_alumno, grupo_alumno):
+@st.cache_data(ttl=300) # 🛡️ ESTO ES CLAVE: Evita que lea las pestañas en cada recarga
+def obtener_resumen_asistencia_alumno(_gc, nombre_alumno, grupo_alumno):
+    import time
     try:
-        doc = gc.open(FILE_ASISTENCIA)
+        doc = _gc.open(FILE_ASISTENCIA)
         hojas = doc.worksheets()
         
         try:
@@ -196,9 +225,22 @@ def obtener_resumen_asistencia_alumno(gc, nombre_alumno, grupo_alumno):
         for h in hojas:
             if h.title.endswith(sufijo_grupo):
                 materia_nombre = h.title.replace(sufijo_grupo, "").strip()
-                data = h.get_all_values()
+                
+                # 🛡️ Mini-blindaje para las lecturas iterativas
+                data = []
+                for intento in range(3):
+                    try:
+                        data = h.get_all_values()
+                        break
+                    except Exception as e:
+                        if "429" in str(e):
+                            time.sleep(10)
+                        else:
+                            break
+                            
                 if len(data) < 2:
                     continue
+                    
                 df_m = pd.DataFrame(data[1:], columns=data[0])
                 df_m.columns = df_m.columns.astype(str).str.strip()
                 

@@ -24,7 +24,7 @@ from database import (
     leer_todas_las_asignaciones
 )
 from paneles.analitica import mostrar_tablero_analitico
-from notificaciones import procesar_notificaciones_conducta
+#from notificaciones import procesar_notificaciones_conducta
 
 st.markdown("""
     <style>
@@ -369,6 +369,11 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.error("⚠️ Selecciona al menos un alumno.")
                 st.stop()
                 
+            # 🛡️ BLINDAJE CONTRA INYECCIÓN DE FÓRMULAS
+            obs_segura = str(obs).strip()
+            if obs_segura.startswith(("=", "+", "-", "@")):
+                obs_segura = "'" + obs_segura
+                
             info_falta = dict_faltas.get(falta_original)
             p = info_falta["puntos"] if info_falta else 0
             s = info_falta["semaforo"] if info_falta else "Gris"
@@ -379,51 +384,59 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             if reporte_pasillo:
                 if alumnos_por_grupo_seleccionados:
                     for g_real, al_limpio in alumnos_por_grupo_seleccionados:
-                        lote.append([f, nombre_prof, materia, g_real, al_limpio, categoria, falta_original, obs, p, s])
+                        lote.append([f, nombre_prof, materia, g_real, al_limpio, categoria, falta_original, obs_segura, p, s])
                 else:
                     for g in grupo_final:
-                        lote.append([f, nombre_prof, materia, g, "General (Ver observaciones)", categoria, falta_original, obs, p, s])
+                        lote.append([f, nombre_prof, materia, g, "General (Ver observaciones)", categoria, falta_original, obs_segura, p, s])
             else:
                 for g in grupo_final:
                     for al in alumnos_final:
-                        lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs, p, s])
+                        lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs_segura, p, s])
             
-            doc = gc.open(FILE_REGISTROS)
-            clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia} - {grupo_final[0]}"
-            
+            # --- CONEXIÓN Y ENVÍO A GOOGLE SHEETS (CON DIAGNÓSTICO) ---
             try:
-                ws = doc.worksheet(clase_id)
-            except gspread.exceptions.WorksheetNotFound:
-                ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
-                ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Es_Grave"])
-            
-            ws.append_rows(lote)
-            leer_todos_los_registros.clear()
+                with st.spinner("Guardando en la nube..."):
+                    doc = gc.open(FILE_REGISTROS)
+                    clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia} - {grupo_final[0]}"
+                    
+                    try:
+                        ws = doc.worksheet(clase_id)
+                    except gspread.exceptions.WorksheetNotFound:
+                        ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
+                        ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Es_Grave"])
+                    
+                    ws.append_rows(lote)
+                    leer_todos_los_registros.clear()
 
-            # --- NUEVO: DISPARAR CORREOS AUTOMÁTICOS ---
-            if s in ["Grave", "Crítica"] or reporte_pasillo: 
-                try:
-                    grupo_para_correo = grupo_final[0].split("(")[0].strip()
-                    df_alumnos_correo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_para_correo)
+            # """ ws.append_rows(lote)
+            # leer_todos_los_registros.clear()
 
-                    for nombre_alumno_afectado in alumnos_final:
-                        if nombre_alumno_afectado != "General (Ver observaciones)":
-                            with st.spinner(f"Enviando notificaciones a {nombre_alumno_afectado}..."):
-                                procesar_notificaciones_conducta(
-                                    df_alumnos_correo, 
-                                    reporte_pasillo, 
-                                    nombre_alumno_afectado, 
-                                    materia, 
-                                    falta_original, 
-                                    obs
-                                )
-                except Exception as e:
-                    st.error(f"El registro se guardó, pero hubo un error al enviar el correo: {e}")
+            # # --- NUEVO: DISPARAR CORREOS AUTOMÁTICOS ---
+            # if s in ["Grave", "Crítica"] or reporte_pasillo: 
+            #     try:
+            #         grupo_para_correo = grupo_final[0].split("(")[0].strip()
+            #         df_alumnos_correo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_para_correo)
 
-            st.session_state.form_reset += 1
-            st.success("✅ Incidencia guardada con éxito en la base de datos.")
-            time.sleep(1.5)
-            st.rerun()
+            #         for nombre_alumno_afectado in alumnos_final:
+            #             if nombre_alumno_afectado != "General (Ver observaciones)":
+            #                 with st.spinner(f"Enviando notificaciones a {nombre_alumno_afectado}..."):
+            #                     procesar_notificaciones_conducta(
+            #                         df_alumnos_correo, 
+            #                         reporte_pasillo, 
+            #                         nombre_alumno_afectado, 
+            #                         materia, 
+            #                         falta_original, 
+            #                         obs
+            #                     )
+            #     except Exception as e:
+            #         st.error(f"El registro se guardó, pero hubo un error al enviar el correo: {e}") """
+
+                    st.session_state.form_reset += 1
+                    st.success("✅ Incidencia guardada con éxito en la base de datos.")
+                    time.sleep(1.5)
+                    st.rerun()
+            except Exception as e:
+                st.error(f"🚨 Error crítico al intentar guardar en Sheets: {e}")
 
     st.markdown("---")
     st.subheader("📈 Analítica de Conducta")

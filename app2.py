@@ -455,12 +455,13 @@ if not st.session_state.get("auth_email"):
 else:
     aplicar_diseno_institucional()
     
-    correo_google = st.session_state["auth_email"].lower().strip()
-    nombre_google = st.session_state["auth_name"]
+    # 1. Guardamos tu identidad original intocable
+    correo_real = st.session_state["auth_email"].lower().strip()
+    nombre_real = st.session_state["auth_name"]
     
-    # 1. Candado estricto de dominio institucional
-    dominio_valido = correo_google.endswith("@miraflores.edu.mx")
-    es_admin_externo = correo_google in SUPER_USUARIOS_WHITELIST
+    # 2. Candado estricto de dominio institucional
+    dominio_valido = correo_real.endswith("@miraflores.edu.mx")
+    es_admin_externo = correo_real in SUPER_USUARIOS_WHITELIST
     
     if not (dominio_valido or es_admin_externo):
         st.error("⛔ Acceso denegado. Este sistema está restringido a cuentas autorizadas del Colegio Miraflores.")
@@ -472,13 +473,51 @@ else:
 
     gc = conectar_gsheets()
 
-    # 2. ENRUTAMIENTO ESTUDIANTIL
+    # --- 👑 MODO SUPERUSUARIO (SIMULACIÓN DE IDENTIDAD) ---
+    correo_google = correo_real
+    nombre_google = nombre_real
+
+    if es_admin_externo:
+        # Extraemos la lista de todos los profesores registrados
+        df_s_all = leer_datos(gc, FILE_SEGURIDAD)
+        
+        if not df_s_all.empty and 'Usuario' in df_s_all.columns:
+            usuarios_bd = sorted(df_s_all['Usuario'].dropna().astype(str).str.lower().str.strip().unique().tolist())
+            lista_usuarios = ["(Mi cuenta real)"] + usuarios_bd
+            
+            if "impersonated_email" not in st.session_state:
+                st.session_state["impersonated_email"] = "(Mi cuenta real)"
+                
+            st.sidebar.markdown("### 👑 Modo Dios (Admin)")
+            usuario_simulado = st.sidebar.selectbox(
+                "Simular vista como:",
+                lista_usuarios,
+                index=lista_usuarios.index(st.session_state["impersonated_email"]) if st.session_state["impersonated_email"] in lista_usuarios else 0
+            )
+            
+            # Si cambias el selector, recargamos la app con la nueva identidad
+            if usuario_simulado != st.session_state["impersonated_email"]:
+                st.session_state["impersonated_email"] = usuario_simulado
+                st.rerun()
+                
+            # Si estás simulando, sobreescribimos las variables de trabajo
+            if st.session_state["impersonated_email"] != "(Mi cuenta real)":
+                correo_google = st.session_state["impersonated_email"]
+                try:
+                    nombre_google = df_s_all[df_s_all['Usuario'].str.lower().str.strip() == correo_google]['Nombre_Profesor'].iloc[0]
+                except:
+                    nombre_google = "Usuario Simulado"
+                
+                st.sidebar.success(f"👁️ Viendo sistema como:\n**{nombre_google}**")
+                st.sidebar.markdown("---")
+
+    # 3. ENRUTAMIENTO ESTUDIANTIL
     es_alumno = bool(re.search(REGEX_CORREO_ALUMNO, correo_google))
     if es_alumno:
         renderizar_panel_alumno(gc, correo_google)
         st.stop()
 
-    # 3. ENRUTAMIENTO DE PERSONAL (DOCENTES, COORDINADORES Y DIRECTIVOS)
+    # 4. ENRUTAMIENTO DE PERSONAL (DOCENTES, COORDINADORES Y DIRECTIVOS)
     try:
         df_s = leer_datos(gc, FILE_SEGURIDAD)
         
@@ -531,7 +570,7 @@ else:
                     st.rerun()
             st.stop()
         
-        # Extracción de roles oficiales (Limpiando espacios y forzando mayúscula inicial)
+        # Extracción de roles oficiales
         rol_assigned = str(usuario_registrado['Rol'].iloc[0]).strip().capitalize()
         nombre_mostrar = usuario_registrado['Nombre_Profesor'].iloc[0]
         area_usuario = usuario_registrado['Area'].iloc[0] if 'Area' in usuario_registrado.columns else "Ninguna"
@@ -591,6 +630,10 @@ else:
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
         elif vista_actual == 'Asistencia':
             renderizar_panel_asistencia(gc, correo_google, nombre_mostrar)
+            
+    except Exception as e:
+        st.error("🚨 Ocurrió un error al cargar los permisos del panel.")
+        st.caption(f"Detalle técnico: {e}")
 
       # ==========================================
         # ASISTENTE DE NORMATIVA (LLM AISLADO)
