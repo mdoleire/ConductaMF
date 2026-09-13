@@ -9,7 +9,36 @@ import time
 
 from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA, SUPER_USUARIOS_WHITELIST
 from database import leer_datos, obtener_lista_alumnos, obtener_dataframe_alumnos, leer_todas_las_asignaciones
+
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
+    
+    # 🛡️ TRADUCTOR BLINDADO: Ignora mayúsculas, minúsculas y espacios accidentales
+    def obtener_materia_teorica(nombre_materia):
+        diccionario_fusion = {
+            "lab física": "Física",
+            "laboratorio de química": "Química", 
+            "lab química": "Química",
+            "laboratorio de biología": "Biología 1", 
+            "lab biología": "Biología 1",
+            "laboratorio de física iii": "Física III", 
+            "lab física iii": "Física III",
+            "laboratorio de química iii": "Química III", 
+            "lab química iii": "Química III",
+            "laboratorio de biología iv": "Biología IV", 
+            "lab biología iv": "Biología IV",
+            "laboratorio de lab física iv a i": "Física IV A I", 
+            "lab física iv a i": "Física IV A I",
+            "laboratorio de lab física iv a ii": "Física IV A II", 
+            "lab física iv a ii": "Física IV A II",
+            "laboratorio de lab química iv a i": "Química IV A I", 
+            "lab química iv a i": "Química IV A I",
+            "laboratorio de lab química iv a ii": "Química IV A II", 
+            "lab química iv a ii": "Química IV A II"
+        }
+        # Limpieza extrema del texto de entrada
+        limpio = str(nombre_materia).lower().strip().replace("  ", " ")
+        return diccionario_fusion.get(limpio, str(nombre_materia).strip())
+
     st.header("📅 Gestión de Asistencia")
     
     if "modo_edicion_horario" not in st.session_state:
@@ -18,7 +47,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     usuario = str(usuario).lower().strip()
     es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
     
-    # 1. Definir el tiempo exacto HOY
     hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
     dia_num_hoy = hoy_cdmx.weekday()
     dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
@@ -33,18 +61,12 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     habilitar_historico = st.toggle("🔓 Modificar asistencia de días anteriores (Mostrar todas las materias)")
 
-    # ========================================================
-    # BARRERA INQUEBRANTABLE (FIN DE SEMANA)
-    # ========================================================
     if modo_vista == "📝 Pasar Lista / Editar Día" and not habilitar_historico:
         if dia_num_hoy in [5, 6]:
             st.warning(f"☕ **Hoy es {nombre_dia_hoy}. No hay clases programadas en fin de semana.**")
             st.info("💡 Para revisar o modificar inasistencias de días anteriores, activa el interruptor de arriba.")
-            return  # Detiene toda la ejecución de esta pantalla aquí mismo
+            return  
 
-    # ========================================================
-    # CARGA DE DATOS (Solo se ejecuta si pasó la barrera)
-    # ========================================================
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
         st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
@@ -65,13 +87,11 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         st.warning("Sin materias asignadas para pasar lista.")
         return
 
-    # Separación de Nivel
     niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
     if len(niveles_prof) > 1:
         nivel_elegido = st.radio("🏫 Nivel Escolar:", niveles_prof, horizontal=True)
         mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
 
-    # Cargar Configuración de Horarios
     try:
         df_config = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
     except Exception:
@@ -79,13 +99,15 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     materias_filtradas = mis_asig.copy()
 
-    # LOGICA DE FILTRADO DE MATERIAS PARA EL DÍA EN CURSO (Lunes a Viernes)
     if modo_vista == "📝 Pasar Lista / Editar Día" and not habilitar_historico and not es_superusuario:
         if not df_config.empty and 'Clase' in df_config.columns and nombre_dia_hoy in df_config.columns:
             clases_hoy = df_config[pd.to_numeric(df_config[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
             materias_hoy = []
             for _, r in mis_asig.iterrows():
-                tag = f"{r['Materia']} - {r['Grupo']}"
+                # 🛡️ Aplicamos la función traductora al filtro de hoy
+                mat_base = obtener_materia_teorica(r['Materia'])
+                tag = f"{mat_base} - {r['Grupo']}"
+                
                 if tag in clases_hoy or tag not in df_config['Clase'].values:
                     materias_hoy.append(r['Materia'])
             
@@ -97,8 +119,13 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 return
 
     c1, c2, c3 = st.columns([3, 3, 2])
-    materia = c1.selectbox("Materia:", materias_filtradas['Materia'].unique(), key="asist_mat")
-    grupo = c2.selectbox("Grupo:", materias_filtradas[materias_filtradas['Materia'] == materia]['Grupo'].unique(), key="asist_grup")
+    
+    materia_seleccionada = c1.selectbox("Materia:", materias_filtradas['Materia'].unique(), key="asist_mat")
+    
+    # 🛡️ Aplicamos la función traductora a la selección final
+    materia = obtener_materia_teorica(materia_seleccionada)
+    
+    grupo = c2.selectbox("Grupo:", materias_filtradas[materias_filtradas['Materia'] == materia_seleccionada]['Grupo'].unique(), key="asist_grup")
     
     with c3:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
@@ -107,7 +134,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.session_state.modo_edicion_horario = True
                 st.rerun()
 
-    # Obtener alumnos con filtro de Área
     try:
         grupo_limpio = grupo.split("(")[0].strip()
         df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
@@ -135,14 +161,14 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     except Exception as e:
         alumnos = []
         st.error(f"Error al obtener alumnos: {e}")
+        
     if not alumnos:
         st.warning(f"No se encontraron alumnos registrados para el grupo '{grupo_limpio}'.")
         return
 
-    # Esta es la variable que faltaba definir
+    # 🛡️ Pestaña unificada
     nombre_pestana = f"{materia} - {grupo}"
 
-    # Horarios de la materia
     config_actual = pd.DataFrame()
     if not df_config.empty and 'Clase' in df_config.columns:
         config_actual = df_config[df_config['Clase'] == nombre_pestana]
@@ -215,7 +241,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     limite_faltas = limite_faltas_dict.get(dias_semana_clase, 7)
     horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
 
-    # Leer historial
     try:
         df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
     except Exception:
@@ -226,9 +251,11 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
     columnas_fechas = [c for c in df_historial.columns if c != 'Alumno']
     peso_fechas = {}
+    
     for col_f in columnas_fechas:
         try:
-            d_sem = datetime.strptime(col_f, "%d-%m-%Y").weekday()
+            fecha_limpia = col_f.split(" (")[0]
+            d_sem = datetime.strptime(fecha_limpia, "%d-%m-%Y").weekday()
             peso_fechas[col_f] = horario_clase.get(d_sem, 1) or 1
         except Exception:
             peso_fechas[col_f] = 1
@@ -277,8 +304,25 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
         fecha_str = st.selectbox("📅 Fecha de clase:", fechas_validas, format_func=lambda x: etiquetas_fechas[x])
 
-        if fecha_str in df_historial.columns:
-            valores_previos = dict(zip(df_historial['Alumno'], df_historial[fecha_str]))
+        tipo_sesion = st.radio(
+            "¿Cómo está estructurada esta clase?",
+            [
+                "🕒 Sesión Única / Bloque Continuo", 
+                "1️⃣ Primer Módulo (Sesión Separada)", 
+                "2️⃣ Segundo Módulo (Sesión Separada)"
+            ],
+            horizontal=True
+        )
+        
+        if "Primer" in tipo_sesion:
+            col_fecha_final = f"{fecha_str} (S1)"
+        elif "Segundo" in tipo_sesion:
+            col_fecha_final = f"{fecha_str} (S2)"
+        else:
+            col_fecha_final = fecha_str
+
+        if col_fecha_final in df_historial.columns:
+            valores_previos = dict(zip(df_historial['Alumno'], df_historial[col_fecha_final]))
             col_asist = [valores_previos.get(al, "✅ Presente") if pd.notna(valores_previos.get(al)) and valores_previos.get(al) != "" else "✅ Presente" for al in alumnos]
         else:
             col_asist = ["✅ Presente"] * len(alumnos)
@@ -304,11 +348,11 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             },
             hide_index=True,
             use_container_width=True,
-            key=f"ed_{materia}_{grupo}_{fecha_str}"
+            key=f"ed_{materia}_{grupo}_{col_fecha_final}"
         )
 
         if st.button("💾 Guardar Asistencia", type="primary"):
-            with st.spinner(f"Guardando asistencia del {fecha_str}..."):
+            with st.spinner(f"Guardando asistencia del {col_fecha_final}..."):
                 doc = gc.open(FILE_ASISTENCIA)
                 try:
                     ws = doc.worksheet(nombre_pestana)
@@ -324,8 +368,19 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                     df_actualizado = pd.concat([df_actualizado, df_nuevos], ignore_index=True).sort_values('Alumno').reset_index(drop=True)
 
                 mapeo_asist = dict(zip(df_editado['Alumno'], df_editado['Asistencia']))
-                df_actualizado[fecha_str] = df_actualizado['Alumno'].map(mapeo_asist)
+                df_actualizado[col_fecha_final] = df_actualizado['Alumno'].map(mapeo_asist)
                 df_actualizado = df_actualizado.fillna("")
+
+                # 🛡️ FORZAR ORDEN CRONOLÓGICO DE LAS COLUMNAS
+                def ordenar_fechas(col):
+                    try:
+                        return datetime.strptime(col.split(" (")[0], "%d-%m-%Y")
+                    except Exception:
+                        return datetime.min
+
+                cols_fechas = [c for c in df_actualizado.columns if c != 'Alumno']
+                cols_fechas.sort(key=ordenar_fechas)
+                df_actualizado = df_actualizado[['Alumno'] + cols_fechas]
 
                 datos_matriz = [df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist()
                 ws.update(values=datos_matriz, range_name="A1")
@@ -336,7 +391,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.rerun()
 
     # ========================================================
-    # MODO 2: Vista Histórica (AHORA EDITABLE)
+    # MODO 2: Vista Histórica 
     # ========================================================
     else:
         st.markdown(f"### 📈 Historial de Asistencia: {grupo} ({materia})")
@@ -355,7 +410,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         
         st.info("💡 Ahora puedes editar la asistencia de cualquier día directamente en esta tabla. Los totales se recalcularán al guardar.")
         
-        # 1. Configuración dinámica: Bloqueamos métricas y permitimos desplegables en fechas
         config_cols = {
             "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
             "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True),
@@ -371,7 +425,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 required=False
             )
 
-        # 2. Renderizamos la tabla editable
         df_editado_hist = st.data_editor(
             df_mostrar,
             column_config=config_cols,
@@ -382,7 +435,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         
         col_btn1, col_btn2 = st.columns([1, 1])
         
-        # 3. Guardado en bloque
         with col_btn1:
             if st.button("💾 Guardar Cambios Históricos", type="primary", use_container_width=True):
                 with st.spinner("Actualizando matriz en Google Sheets..."):
@@ -393,11 +445,21 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                         ws = doc.add_worksheet(title=nombre_pestana, rows="100", cols="50")
                         ws.append_row(["Alumno"])
 
-                    # Reconstruimos la hoja original filtrando solo al alumno y las fechas (sin las columnas métricas)
                     df_a_guardar = pd.DataFrame({"Alumno": df_editado_hist["Alumno"]})
                     for col in columnas_fechas:
                         df_a_guardar[col] = df_editado_hist[col].fillna("")
                     
+                    # 🛡️ FORZAR ORDEN CRONOLÓGICO TAMBIÉN AL EDITAR EL HISTÓRICO
+                    def ordenar_fechas_hist(col):
+                        try:
+                            return datetime.strptime(col.split(" (")[0], "%d-%m-%Y")
+                        except Exception:
+                            return datetime.min
+
+                    cols_fechas_guardar = [c for c in df_a_guardar.columns if c != 'Alumno']
+                    cols_fechas_guardar.sort(key=ordenar_fechas_hist)
+                    df_a_guardar = df_a_guardar[['Alumno'] + cols_fechas_guardar]
+
                     datos_matriz = [df_a_guardar.columns.values.tolist()] + df_a_guardar.values.tolist()
                     ws.update(values=datos_matriz, range_name="A1")
                     

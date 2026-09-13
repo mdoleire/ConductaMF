@@ -362,6 +362,19 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
         # --- GUARDADO EN BASE DE DATOS ---
         if st.button("💾 Guardar Registro", type="primary"):
+            # 🛡️ FUSIÓN DE LABORATORIO Y TEORÍA
+            # Agrega aquí todas las materias que necesiten fusionarse (Ajusta los nombres exactos)
+            diccionario_fusion = {"Lab Física": "Física", 
+                             "Laboratorio de Química": "Química", "Lab Química": "Química",
+                             "Laboratorio de Biología": "Biología 1", "Lab Biología": "Biología 1",
+                             "Laboratorio de Física III": "Física III", "Lab Física III": "Física III",
+                             "Laboratorio de Química III": "Química III", "Lab Química III": "Química III",
+                             "Laboratorio de Biología IV": "Biología IV", "Lab Biología IV": "Biología IV",
+                             "Laboratorio de Física IV A I": "Física IV A I", "Lab Física IV A I": "Física IV A I",
+                             "Laboratorio de Física IV A II": "Física IV A II", "Lab Física IV A II": "Física IV A II",
+                             "Laboratorio de Química IV A I": "Química IV A I", "Lab Química IV A I": "Química IV A I",
+                             "Laboratorio de Química IV A II": "Química IV A II", "Lab Química IV A II": "Química IV A II"}
+            materia_final = diccionario_fusion.get(materia, materia)
             if reporte_pasillo and not grupo_final:
                 st.error("⚠️ Selecciona al menos un grupo implicado en el reporte.")
                 st.stop()
@@ -384,20 +397,20 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             if reporte_pasillo:
                 if alumnos_por_grupo_seleccionados:
                     for g_real, al_limpio in alumnos_por_grupo_seleccionados:
-                        lote.append([f, nombre_prof, materia, g_real, al_limpio, categoria, falta_original, obs_segura, p, s])
+                        lote.append([f, nombre_prof, materia_final, g_real, al_limpio, categoria, falta_original, obs_segura, p, s])
                 else:
                     for g in grupo_final:
-                        lote.append([f, nombre_prof, materia, g, "General (Ver observaciones)", categoria, falta_original, obs_segura, p, s])
+                        lote.append([f, nombre_prof, materia_final, g, "General (Ver observaciones)", categoria, falta_original, obs_segura, p, s])
             else:
                 for g in grupo_final:
                     for al in alumnos_final:
-                        lote.append([f, nombre_prof, materia, g, al, categoria, falta_original, obs_segura, p, s])
+                        lote.append([f, nombre_prof, materia_final, g, al, categoria, falta_original, obs_segura, p, s])
             
             # --- CONEXIÓN Y ENVÍO A GOOGLE SHEETS (CON DIAGNÓSTICO) ---
             try:
                 with st.spinner("Guardando en la nube..."):
                     doc = gc.open(FILE_REGISTROS)
-                    clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia} - {grupo_final[0]}"
+                    clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia_final} - {grupo_final[0]}"
                     
                     try:
                         ws = doc.worksheet(clase_id)
