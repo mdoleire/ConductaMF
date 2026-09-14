@@ -12,7 +12,6 @@ from database import leer_datos, obtener_lista_alumnos, obtener_dataframe_alumno
 
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     
-    # 🛡️ TRADUCTOR BLINDADO: Ignora mayúsculas, minúsculas y espacios accidentales
     def obtener_materia_teorica(nombre_materia):
         diccionario_fusion = {
             "lab física": "Física",
@@ -35,7 +34,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             "laboratorio de lab química iv a ii": "Química IV A II", 
             "lab química iv a ii": "Química IV A II"
         }
-        # Limpieza extrema del texto de entrada
         limpio = str(nombre_materia).lower().strip().replace("  ", " ")
         return diccionario_fusion.get(limpio, str(nombre_materia).strip())
 
@@ -104,7 +102,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             clases_hoy = df_config[pd.to_numeric(df_config[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
             materias_hoy = []
             for _, r in mis_asig.iterrows():
-                # 🛡️ Aplicamos la función traductora al filtro de hoy
                 mat_base = obtener_materia_teorica(r['Materia'])
                 tag = f"{mat_base} - {r['Grupo']}"
                 
@@ -119,12 +116,8 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 return
 
     c1, c2, c3 = st.columns([3, 3, 2])
-    
     materia_seleccionada = c1.selectbox("Materia:", materias_filtradas['Materia'].unique(), key="asist_mat")
-    
-    # 🛡️ Aplicamos la función traductora a la selección final
     materia = obtener_materia_teorica(materia_seleccionada)
-    
     grupo = c2.selectbox("Grupo:", materias_filtradas[materias_filtradas['Materia'] == materia_seleccionada]['Grupo'].unique(), key="asist_grup")
     
     with c3:
@@ -141,7 +134,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
             if 'Área' in df_alumnos_crudo.columns:
                 texto_busqueda = f"{materia} {grupo}".upper()
-                
                 if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
                     df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
                 elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
@@ -166,9 +158,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         st.warning(f"No se encontraron alumnos registrados para el grupo '{grupo_limpio}'.")
         return
 
-    # 🛡️ Pestaña unificada
     nombre_pestana = f"{materia} - {grupo}"
-
     config_actual = pd.DataFrame()
     if not df_config.empty and 'Clase' in df_config.columns:
         config_actual = df_config[df_config['Clase'] == nombre_pestana]
@@ -304,20 +294,27 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
         fecha_str = st.selectbox("📅 Fecha de clase:", fechas_validas, format_func=lambda x: etiquetas_fechas[x])
 
-        tipo_sesion = st.radio(
-            "¿Cómo está estructurada esta clase?",
-            [
-                "🕒 Sesión Única / Bloque Continuo", 
-                "1️⃣ Primer Módulo (Sesión Separada)", 
-                "2️⃣ Segundo Módulo (Sesión Separada)"
-            ],
-            horizontal=True
-        )
-        
-        if "Primer" in tipo_sesion:
-            col_fecha_final = f"{fecha_str} (S1)"
-        elif "Segundo" in tipo_sesion:
-            col_fecha_final = f"{fecha_str} (S2)"
+        # 🛡️ LÓGICA INTELIGENTE: Muestra S1/S2 SOLO si hay 2 horas o más
+        dia_seleccionado = datetime.strptime(fecha_str, "%d-%m-%Y").weekday()
+        horas_ese_dia = horario_clase.get(dia_seleccionado, 1)
+
+        if horas_ese_dia >= 2:
+            tipo_sesion = st.radio(
+                "¿Cómo está estructurada la clase de hoy?",
+                [
+                    "🕒 Sesión Única / Bloque Continuo", 
+                    "1️⃣ Primer Módulo (Sesión Separada)", 
+                    "2️⃣ Segundo Módulo (Sesión Separada)"
+                ],
+                horizontal=True
+            )
+            
+            if "Primer" in tipo_sesion:
+                col_fecha_final = f"{fecha_str} (S1)"
+            elif "Segundo" in tipo_sesion:
+                col_fecha_final = f"{fecha_str} (S2)"
+            else:
+                col_fecha_final = fecha_str
         else:
             col_fecha_final = fecha_str
 
@@ -371,7 +368,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 df_actualizado[col_fecha_final] = df_actualizado['Alumno'].map(mapeo_asist)
                 df_actualizado = df_actualizado.fillna("")
 
-                # 🛡️ FORZAR ORDEN CRONOLÓGICO DE LAS COLUMNAS
                 def ordenar_fechas(col):
                     try:
                         return datetime.strptime(col.split(" (")[0], "%d-%m-%Y")
@@ -449,7 +445,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                     for col in columnas_fechas:
                         df_a_guardar[col] = df_editado_hist[col].fillna("")
                     
-                    # 🛡️ FORZAR ORDEN CRONOLÓGICO TAMBIÉN AL EDITAR EL HISTÓRICO
                     def ordenar_fechas_hist(col):
                         try:
                             return datetime.strptime(col.split(" (")[0], "%d-%m-%Y")
