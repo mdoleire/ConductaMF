@@ -601,9 +601,9 @@ else:
 
         # Validación insensible a mayúsculas
         if rol_assigned.lower() == 'docente':
-            opciones_vista = ["📝 Reportar Conducta", "📅 Pasar Lista"]
+            opciones_vista = ["📅 Pasar Lista", "📝 Reportar Conducta"]
         else:
-            opciones_vista = [f"Ver como {rol_assigned}", "📝 Reportar Conducta", "📅 Pasar Lista"]
+            opciones_vista = [f"Ver como {rol_assigned}", "📅 Pasar Lista", "📝 Reportar Conducta"]
             
         if es_tutor:
             opciones_vista.append("👤 Ver como Tutor")
