@@ -4,7 +4,7 @@ import pandas as pd
 import json
 import time
 import gspread
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
 
@@ -24,7 +24,6 @@ from database import (
     leer_todas_las_asignaciones
 )
 from paneles.analitica import mostrar_tablero_analitico
-#from notificaciones import procesar_notificaciones_conducta
 
 st.markdown("""
     <style>
@@ -43,6 +42,33 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def renderizar_panel_docente(gc, usuario, nombre_prof):
+    
+    # 🛡️ TRADUCTOR BLINDADO (Unificado al inicio)
+    def obtener_materia_teorica(nombre_materia):
+        diccionario_fusion = {
+            "lab física": "Física",
+            "laboratorio de química": "Química", 
+            "lab química": "Química",
+            "laboratorio de biología": "Biología 1", 
+            "lab biología": "Biología 1",
+            "laboratorio de física iii": "Física III", 
+            "lab física iii": "Física III",
+            "laboratorio de química iii": "Química III", 
+            "lab química iii": "Química III",
+            "laboratorio de biología iv": "Biología IV", 
+            "lab biología iv": "Biología IV",
+            "laboratorio de lab física iv a i": "Física IV A I", 
+            "lab física iv a i": "Física IV A I",
+            "laboratorio de lab física iv a ii": "Física IV A II", 
+            "lab física iv a ii": "Física IV A II",
+            "laboratorio de lab química iv a i": "Química IV A I", 
+            "lab química iv a i": "Química IV A I",
+            "laboratorio de lab química iv a ii": "Química IV A II", 
+            "lab química iv a ii": "Química IV A II"
+        }
+        limpio = str(nombre_materia).lower().strip().replace("  ", " ")
+        return diccionario_fusion.get(limpio, str(nombre_materia).strip())
+
     st.header(f"🛡️ Panel Docente: {nombre_prof}")
     
     if "form_reset" not in st.session_state:
@@ -54,6 +80,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
     es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
         
     with st.expander("📝 Registro de Incidencia", expanded=True):
+        
         reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
         st.markdown("---")
         
@@ -139,13 +166,11 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.warning("Sin materias asignadas para tu usuario actual.")
                 return            
 
-            # Separación de Niveles
             niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
             if len(niveles_prof) > 1:
                 nivel_elegido = st.radio("Sección:", niveles_prof, horizontal=True, key=f"nav_niv_{st.session_state.form_reset}")
                 mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
 
-            # FILTRO POR DÍA EN CURSO (CON DESBLOQUEO MANUAL)
             hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
             dia_semana_map = {0: "Lunes", 1: "Martes", 2: "Miercoles", 3: "Jueves", 4: "Viernes"}
             nombre_dia_hoy = dia_semana_map.get(hoy_cdmx.weekday(), "Fin de semana")
@@ -160,7 +185,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         clases_hoy = df_conf[pd.to_numeric(df_conf[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
                         materias_validas = []
                         for _, r in mis_asig.iterrows():
-                            tag = f"{r['Materia']} - {r['Grupo']}"
+                            tag = f"{obtener_materia_teorica(r['Materia'])} - {r['Grupo']}"
                             if tag in clases_hoy or tag not in df_conf['Clase'].values:
                                 materias_validas.append(r['Materia'])
                         if materias_validas:
@@ -180,9 +205,8 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
 
                 if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
-                    # 1. Filtro inteligente adaptado a tus columnas de Áreas (Ciencias, Humanidades, etc.)
                     if 'Área' in df_alumnos_crudo.columns:
-                        texto_busqueda = f"{materia} {grupo}".upper()
+                        texto_busqueda = f"{obtener_materia_teorica(materia)} {grupo}".upper()
                         if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
                         elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
@@ -192,7 +216,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
                             df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
 
-                    # 2. Ensamblaje seguro
                     if 'Nombre Completo' not in df_alumnos_crudo.columns:
                         col_pat = next((c for c in df_alumnos_crudo.columns if 'patern' in str(c).lower()), None)
                         col_mat = next((c for c in df_alumnos_crudo.columns if 'matern' in str(c).lower()), None)
@@ -227,6 +250,67 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             else:
                 alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
 
+        # =================================================================
+        # 📅 SELECTOR DINÁMICO DE FECHA DE INCIDENCIA
+        # =================================================================
+        st.markdown("---")
+        st.markdown("### 📅 Fecha de la Incidencia")
+        
+        hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
+        dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes"}
+        
+        fechas_validas = []
+        etiquetas_fechas = {}
+
+        if reporte_pasillo:
+            # Si es pasillo: Todos los días de la semana (L-V) de los últimos 30 días
+            for i in range(30):
+                d = hoy_cdmx - timedelta(days=i)
+                if d.weekday() not in [5, 6]:
+                    f_str = d.strftime("%Y-%m-%d")
+                    fechas_validas.append(f_str)
+                    etiquetas_fechas[f_str] = f"{'Hoy' if i==0 else dias_espanol[d.weekday()]} {d.strftime('%d-%m-%Y')}"
+        else:
+            # Si es clase: Revisar el horario estricto
+            materia_teorica = obtener_materia_teorica(materia)
+            nombre_pestana = f"{materia_teorica} - {grupo_final[0]}" if grupo_final else ""
+            horario = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
+            
+            try:
+                df_conf = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
+                conf_actual = df_conf[df_conf['Clase'] == nombre_pestana]
+                if not conf_actual.empty:
+                    horario[0] = int(conf_actual.iloc[0].get('Lunes', 0))
+                    horario[1] = int(conf_actual.iloc[0].get('Martes', 0))
+                    horario[2] = int(conf_actual.iloc[0].get('Miercoles', 0))
+                    horario[3] = int(conf_actual.iloc[0].get('Jueves', 0))
+                    horario[4] = int(conf_actual.iloc[0].get('Viernes', 0))
+            except Exception:
+                pass
+            
+            suma_horas = sum(horario.values())
+            
+            for i in range(30):
+                d = hoy_cdmx - timedelta(days=i)
+                w = d.weekday()
+                # Mostrar el día si tiene clases programadas. 
+                # (El 'suma_horas == 0' es un plan de emergencia por si no han configurado su horario)
+                if w not in [5, 6] and (suma_horas == 0 or horario.get(w, 0) > 0):
+                    f_str = d.strftime("%Y-%m-%d")
+                    fechas_validas.append(f_str)
+                    etiquetas_fechas[f_str] = f"{'Hoy' if i==0 else dias_espanol[w]} {d.strftime('%d-%m-%Y')}"
+
+        if not fechas_validas:
+            st.warning("⚠️ No hay días válidos configurados. Revisa el horario de asistencia de esta materia.")
+            st.stop()
+
+        fecha_seleccionada_str = st.selectbox(
+            "Selecciona el día exacto en que ocurrió:",
+            fechas_validas,
+            format_func=lambda x: etiquetas_fechas[x],
+            key=f"fecha_inc_select_{st.session_state.form_reset}"
+        )
+
         st.markdown("---")
         
         key_cat_recomendada = f"ia_cat_{st.session_state.form_reset}"
@@ -237,9 +321,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         if key_fal_recomendada not in st.session_state:
             st.session_state[key_fal_recomendada] = None
 
-        # =================================================================
-        # ASISTENTE DE CLASIFICACIÓN CON IA (GEMINI BLINDADO)
-        # =================================================================
         popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
         
         with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
@@ -248,7 +329,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             
             relato_incidencia = st.text_area(
                 "Descripción de los hechos:",
-                placeholder="Ejemplo: El alumno utilizó el celular durante la explicación y no atendió las indicaciones...",
+                placeholder="Ejemplo: El alumno utilizó el celular durante la explicación...",
                 key=f"relato_ia_{st.session_state.form_reset}"
             )
 
@@ -266,10 +347,9 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                                     if api_key_gemini: break
                         
                         if not api_key_gemini:
-                            st.error("🔑 Llave de API no configurada en los secretos de la aplicación.")
+                            st.error("🔑 Llave de API no configurada.")
                         else:
                             genai.configure(api_key=api_key_gemini)
-                            
                             instrucciones_ia = f"""
                             Eres un asistente de disciplina escolar del Colegio Miraflores.
                             Tu función es clasificar estrictamente el relato dentro de las opciones de este catálogo oficial:
@@ -280,7 +360,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             {{"categoria": "Nombre de la Categoría", "falta": "Nombre de la Falta"}}
                             2. Respeta con exactitud las mayúsculas, acentos y signos del catálogo.
                             """
-                            
                             modelo = genai.GenerativeModel(
                                 model_name='gemini-3.6-flash',
                                 system_instruction=instrucciones_ia,
@@ -317,7 +396,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.session_state["ia_closed_state"] += 1
                     st.rerun()
         
-        # --- MENÚS DE SELECCIÓN DE FALTA ---
         c_cat, c_fal = st.columns([1, 2])
         lista_categorias = list(CATALOGO_SANCIONES.keys())
         try:
@@ -360,21 +438,10 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             key=f"obs_{st.session_state.form_reset}"
         )
 
-        # --- GUARDADO EN BASE DE DATOS ---
         if st.button("💾 Guardar Registro", type="primary"):
-            # 🛡️ FUSIÓN DE LABORATORIO Y TEORÍA
-            # Agrega aquí todas las materias que necesiten fusionarse (Ajusta los nombres exactos)
-            diccionario_fusion = {"Lab Física": "Física", 
-                             "Laboratorio de Química": "Química", "Lab Química": "Química",
-                             "Laboratorio de Biología": "Biología 1", "Lab Biología": "Biología 1",
-                             "Laboratorio de Física III": "Física III", "Lab Física III": "Física III",
-                             "Laboratorio de Química III": "Química III", "Lab Química III": "Química III",
-                             "Laboratorio de Biología IV": "Biología IV", "Lab Biología IV": "Biología IV",
-                             "Laboratorio de Física IV A I": "Física IV A I", "Lab Física IV A I": "Física IV A I",
-                             "Laboratorio de Física IV A II": "Física IV A II", "Lab Física IV A II": "Física IV A II",
-                             "Laboratorio de Química IV A I": "Química IV A I", "Lab Química IV A I": "Química IV A I",
-                             "Laboratorio de Química IV A II": "Química IV A II", "Lab Química IV A II": "Química IV A II"}
-            materia_final = diccionario_fusion.get(materia, materia)
+            
+            materia_final = obtener_materia_teorica(materia)
+            
             if reporte_pasillo and not grupo_final:
                 st.error("⚠️ Selecciona al menos un grupo implicado en el reporte.")
                 st.stop()
@@ -382,7 +449,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.error("⚠️ Selecciona al menos un alumno.")
                 st.stop()
                 
-            # 🛡️ BLINDAJE CONTRA INYECCIÓN DE FÓRMULAS
             obs_segura = str(obs).strip()
             if obs_segura.startswith(("=", "+", "-", "@")):
                 obs_segura = "'" + obs_segura
@@ -391,7 +457,10 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
             p = info_falta["puntos"] if info_falta else 0
             s = info_falta["semaforo"] if info_falta else "Gris"
             
-            f = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+            # 🛡️ Aplicar fecha seleccionada respetando la hora de registro
+            hora_actual = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%H:%M:%S")
+            f = f"{fecha_seleccionada_str} {hora_actual}"
+            
             lote = []
             
             if reporte_pasillo:
@@ -406,7 +475,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     for al in alumnos_final:
                         lote.append([f, nombre_prof, materia_final, g, al, categoria, falta_original, obs_segura, p, s])
             
-            # --- CONEXIÓN Y ENVÍO A GOOGLE SHEETS (CON DIAGNÓSTICO) ---
             try:
                 with st.spinner("Guardando en la nube..."):
                     doc = gc.open(FILE_REGISTROS)
@@ -420,29 +488,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     
                     ws.append_rows(lote)
                     leer_todos_los_registros.clear()
-
-            # """ ws.append_rows(lote)
-            # leer_todos_los_registros.clear()
-
-            # # --- NUEVO: DISPARAR CORREOS AUTOMÁTICOS ---
-            # if s in ["Grave", "Crítica"] or reporte_pasillo: 
-            #     try:
-            #         grupo_para_correo = grupo_final[0].split("(")[0].strip()
-            #         df_alumnos_correo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_para_correo)
-
-            #         for nombre_alumno_afectado in alumnos_final:
-            #             if nombre_alumno_afectado != "General (Ver observaciones)":
-            #                 with st.spinner(f"Enviando notificaciones a {nombre_alumno_afectado}..."):
-            #                     procesar_notificaciones_conducta(
-            #                         df_alumnos_correo, 
-            #                         reporte_pasillo, 
-            #                         nombre_alumno_afectado, 
-            #                         materia, 
-            #                         falta_original, 
-            #                         obs
-            #                     )
-            #     except Exception as e:
-            #         st.error(f"El registro se guardó, pero hubo un error al enviar el correo: {e}") """
 
                     st.session_state.form_reset += 1
                     st.success("✅ Incidencia guardada con éxito en la base de datos.")
