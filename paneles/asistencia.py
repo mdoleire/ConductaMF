@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 import gspread
 import time
 
-from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA, SUPER_USUARIOS_WHITELIST
+# 🛡️ Se importó PERIODOS_LECTIVOS de la configuración
+from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA, SUPER_USUARIOS_WHITELIST, PERIODOS_LECTIVOS
 from database import leer_datos, obtener_lista_alumnos, obtener_dataframe_alumnos, leer_todas_las_asignaciones
 
 def renderizar_panel_asistencia(gc, usuario, nombre_prof):
@@ -89,6 +90,10 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if len(niveles_prof) > 1:
         nivel_elegido = st.radio("🏫 Nivel Escolar:", niveles_prof, horizontal=True)
         mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
+    elif len(niveles_prof) == 1:
+        nivel_elegido = niveles_prof[0]
+    else:
+        nivel_elegido = "Preparatoria"
 
     try:
         df_config = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
@@ -227,9 +232,67 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         return
 
     dias_semana_clase = sum(1 for h in [v_lun, v_mar, v_mie, v_jue, v_vie] if h > 0)
-    limite_faltas_dict = {0: 99, 1: 2, 2: 4, 3: 5, 4: 7, 5: 9}
-    limite_faltas = limite_faltas_dict.get(dias_semana_clase, 7)
     horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
+
+    # ========================================================
+    # 🛡️ LÓGICA DE DETECCIÓN AUTOMÁTICA DE PERIODO
+    # ========================================================
+    st.markdown("---")
+    
+    nivel_key = "Secundaria" if "secundaria" in nivel_elegido.lower() else "Preparatoria"
+    periodos_nivel = PERIODOS_LECTIVOS.get(nivel_key, [])
+    
+    periodo_actual_nombre = "1° Periodo"
+    idx_periodo = 0
+    fecha_evaluacion = hoy_cdmx.date()
+
+    for i, p in enumerate(periodos_nivel):
+        inicio = datetime.strptime(p["inicio"], "%Y-%m-%d").date()
+        fin = datetime.strptime(p["fin"], "%Y-%m-%d").date()
+        if inicio <= fecha_evaluacion <= fin:
+            periodo_actual_nombre = p["nombre"]
+            idx_periodo = i
+            break
+    else:
+        # Si estamos en vacaciones, forzar el primer o último periodo según la fecha
+        if periodos_nivel:
+            primero = datetime.strptime(periodos_nivel[0]["inicio"], "%Y-%m-%d").date()
+            if fecha_evaluacion < primero:
+                periodo_actual_nombre = periodos_nivel[0]["nombre"]
+                idx_periodo = 0
+            else:
+                periodo_actual_nombre = periodos_nivel[-1]["nombre"]
+                idx_periodo = len(periodos_nivel) - 1
+                
+    if "secundaria" in nivel_elegido.lower():
+        opciones_asistencia = ["✅ Presente", "🔴 Falta"]
+        opciones_hist = ["✅ Presente", "🔴 Falta", ""]
+        limites_tabla = {
+            1: [2, 3, 2],
+            2: [3, 4, 5],
+            3: [7, 6, 5],
+            4: [10, 8, 6],
+            5: [12, 10, 8]
+        }
+    else:
+        opciones_asistencia = ["✅ Presente", "🟡 Retardo", "🔴 Falta"]
+        opciones_hist = ["✅ Presente", "🟡 Retardo", "🔴 Falta", ""]
+        limites_tabla = {
+            1: [2, 2, 2, 2, 2],
+            2: [4, 3, 4, 4, 4],
+            3: [5, 5, 4, 5, 5],
+            4: [7, 7, 6, 7, 7],
+            5: [9, 9, 7, 9, 9]
+        }
+
+    # Extraer el límite matemático asegurando que no exceda el índice del arreglo
+    limites_fila = limites_tabla.get(dias_semana_clase, [99, 99, 99, 99, 99])
+    limite_faltas = limites_fila[idx_periodo] if idx_periodo < len(limites_fila) else limites_fila[-1]
+    
+    if "secundaria" in nivel_elegido.lower():
+        st.info(f"💡 Frecuencia: **{dias_semana_clase} días/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas**).")
+    else:
+        st.info(f"💡 Frecuencia: **{dias_semana_clase} días/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas** | 3 Retardos = 1 Falta).")
 
     try:
         df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
@@ -256,7 +319,13 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             fila_al = df_historial[df_historial['Alumno'] == al].iloc[0]
             f_pond = sum(peso_fechas[c] for c in columnas_fechas if str(fila_al[c]) == '🔴 Falta')
             r_pond = sum(peso_fechas[c] for c in columnas_fechas if str(fila_al[c]) == '🟡 Retardo')
-            f_efec = f_pond + (r_pond // 3)
+            
+            if "secundaria" in nivel_elegido.lower():
+                f_efec = f_pond
+                r_pond = 0
+            else:
+                f_efec = f_pond + (r_pond // 3)
+                
             faltas_dict[al] = f_pond
             retardos_dict[al] = r_pond
             faltas_efectivas_dict[al] = f_efec
@@ -269,7 +338,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     # MODO 1: Pase de Lista
     # ========================================================
     if modo_vista == "📝 Pasar Lista / Editar Día":
-        st.info(f"💡 Frecuencia: **{dias_semana_clase} días/semana**. Límite: **{limite_faltas} faltas**. (3 Retardos = 1 Falta).")
         
         fechas_validas, etiquetas_fechas = [], {}
         
@@ -294,7 +362,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
 
         fecha_str = st.selectbox("📅 Fecha de clase:", fechas_validas, format_func=lambda x: etiquetas_fechas[x])
 
-        # 🛡️ LÓGICA INTELIGENTE: Muestra S1/S2 SOLO si hay 2 horas o más
         dia_seleccionado = datetime.strptime(fecha_str, "%d-%m-%Y").weekday()
         horas_ese_dia = horario_clase.get(dia_seleccionado, 1)
 
@@ -333,16 +400,22 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             "Derecho Examen": [derecho_examen_dict[al] for al in alumnos]
         })
 
+        col_config = {
+            "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
+            "Asistencia": st.column_config.SelectboxColumn("Asistencia", options=opciones_asistencia, required=True),
+            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
+            "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
+            "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True)
+        }
+        
+        if "secundaria" in nivel_elegido.lower():
+            col_config["Retardos"] = None
+        else:
+            col_config["Retardos"] = st.column_config.NumberColumn("Retardos", disabled=True)
+
         df_editado = st.data_editor(
             df_view,
-            column_config={
-                "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
-                "Asistencia": st.column_config.SelectboxColumn("Asistencia", options=["✅ Presente", "🟡 Retardo", "🔴 Falta"], required=True),
-                "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
-                "Retardos": st.column_config.NumberColumn("Retardos", disabled=True),
-                "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
-                "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True)
-            },
+            column_config=col_config,
             hide_index=True,
             use_container_width=True,
             key=f"ed_{materia}_{grupo}_{col_fecha_final}"
@@ -406,24 +479,28 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         
         st.info("💡 Ahora puedes editar la asistencia de cualquier día directamente en esta tabla. Los totales se recalcularán al guardar.")
         
-        config_cols = {
+        config_cols_hist = {
             "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
             "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True),
             "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
-            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
-            "Retardos": st.column_config.NumberColumn("Retardos", disabled=True)
+            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True)
         }
         
+        if "secundaria" in nivel_elegido.lower():
+            config_cols_hist["Retardos"] = None
+        else:
+            config_cols_hist["Retardos"] = st.column_config.NumberColumn("Retardos", disabled=True)
+            
         for col in columnas_fechas:
-            config_cols[col] = st.column_config.SelectboxColumn(
+            config_cols_hist[col] = st.column_config.SelectboxColumn(
                 col, 
-                options=["✅ Presente", "🟡 Retardo", "🔴 Falta", ""], 
+                options=opciones_hist, 
                 required=False
             )
 
         df_editado_hist = st.data_editor(
             df_mostrar,
-            column_config=config_cols,
+            column_config=config_cols_hist,
             use_container_width=True,
             hide_index=True,
             key=f"ed_hist_{materia}_{grupo}"
