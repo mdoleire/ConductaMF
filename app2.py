@@ -603,7 +603,7 @@ else:
         if rol_assigned.lower() == 'docente':
             opciones_vista = ["📅 Pasar Lista", "📝 Reportar Conducta"]
         else:
-            opciones_vista = [f"Ver como {rol_assigned}", "📅 Pasar Lista", "📝 Reportar Conducta"]
+            opciones_vista = ["📅 Pasar Lista", f"Ver como {rol_assigned}", "📝 Reportar Conducta"]
             
         if es_tutor:
             opciones_vista.append("👤 Ver como Tutor")
@@ -619,7 +619,7 @@ else:
         else:
             vista_actual = rol_assigned
 
-        # Despacho de paneles
+       # Despacho de paneles
         if vista_actual in ['Director', 'Directivo']:
             renderizar_panel_directivo(gc)
         elif vista_actual == 'Coordinador':
@@ -631,37 +631,32 @@ else:
         elif vista_actual == 'Asistencia':
             renderizar_panel_asistencia(gc, correo_google, nombre_mostrar)
             
-    except Exception as e:
-        st.error("🚨 Ocurrió un error al cargar los permisos del panel.")
-        st.caption(f"Detalle técnico: {e}")
-
-      # ==========================================
-        # ASISTENTE DE NORMATIVA (LLM AISLADO)
+        # ==========================================
+        # ASISTENTE DE NORMATIVA (LLM AISLADO CON CACHÉ)
         # ==========================================
         st.sidebar.markdown("---") 
-        with st.sidebar.expander("💬 Ayuda / Asistente"):
+        with st.sidebar.popover("💬 Ayuda / Asistente", use_container_width=True):
+            st.markdown("### 🤖 Soporte del Reglamento")
             
-            # Inicializar historial del chat si no existe
             if "chat_ayuda" not in st.session_state:
                 st.session_state.chat_ayuda = []
-
-            # Contenedor con altura fija para evitar desbordes
-            contenedor_chat = st.container(height=230)
-            
+                
+            contenedor_chat = st.container(height=350)
             with contenedor_chat:
+                if not st.session_state.chat_ayuda:
+                    st.info("👋 Asistente oficial del Acuerdo de Convivencia Escolar 2026-2027.")
                 for msg in st.session_state.chat_ayuda:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-            
-            # Entrada de chat nativa (queda siempre fija abajo dentro del expander)
-            pregunta = st.chat_input("Escribe tu consulta...", key="sidebar_chat_input")
-            
-            if pregunta:
-                if pregunta.strip():
-                    st.session_state.chat_ayuda.append({"role": "user", "content": pregunta})
+                    st.chat_message(msg["role"]).write(msg["content"])
                     
+            c_input, c_btn = st.columns([4, 1])
+            duda = c_input.text_input("Escribe tu duda...", label_visibility="collapsed", key="input_duda")
+            
+            if c_btn.button("Enviar", use_container_width=True):
+                if duda.strip():
+                    st.session_state.chat_ayuda.append({"role": "user", "content": duda})
                     with st.spinner("Consultando acuerdo..."):
                         try:
+                            # 🛡️ Búsqueda segura en segundo plano para la clave de API
                             api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
                             if not api_key_gemini:
                                 for k in st.secrets.keys():
@@ -684,12 +679,11 @@ else:
                             """
                             
                             modelo = genai.GenerativeModel(
-                                model_name='gemini-3.6-flash',
+                                model_name='gemini-2.5-flash',
                                 system_instruction=instrucciones
                             )
                             
-                            # Consulta aislada
-                            respuesta = modelo.generate_content(pregunta)
+                            respuesta = modelo.generate_content(duda)
                             st.session_state.chat_ayuda.append({"role": "assistant", "content": respuesta.text})
                         except Exception:
                             st.session_state.chat_ayuda.append({"role": "assistant", "content": "⚠️ El asistente no se encuentra disponible temporalmente."})

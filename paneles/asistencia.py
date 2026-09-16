@@ -267,12 +267,13 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if "secundaria" in nivel_elegido.lower():
         opciones_asistencia = ["✅ Presente", "🔴 Falta"]
         opciones_hist = ["✅ Presente", "🔴 Falta", ""]
+        # 🛡️ TABLA CORREGIDA SEGÚN REGLAMENTO OFICIAL (1er, 2do, 3er Trimestre)
         limites_tabla = {
-            1: [2, 3, 2],
+            1: [2, 2, 3],
             2: [3, 4, 5],
-            3: [7, 6, 5],
-            4: [10, 8, 6],
-            5: [12, 10, 8]
+            3: [5, 6, 7],
+            4: [6, 8, 10],
+            5: [8, 10, 12]
         }
     else:
         opciones_asistencia = ["✅ Presente", "🟡 Retardo", "🔴 Falta"]

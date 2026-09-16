@@ -43,7 +43,6 @@ st.markdown("""
 
 def renderizar_panel_docente(gc, usuario, nombre_prof):
     
-    # 🛡️ TRADUCTOR BLINDADO (Unificado al inicio)
     def obtener_materia_teorica(nombre_materia):
         diccionario_fusion = {
             "lab física": "Física",
@@ -78,424 +77,471 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
         
     usuario = str(usuario).lower().strip()
     es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
-        
-    with st.expander("📝 Registro de Incidencia", expanded=True):
-        
-        reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
-        st.markdown("---")
-        
-        materia = "Pasillo / Inst. General"
-        grupo_final = []
-        alumnos_final = ["General (Ver observaciones)"] 
-        
-        # --- CASO 1: REPORTE DE PASILLO ---
-        if reporte_pasillo:
-            c1, c2, c3 = st.columns(3)
-            nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
-            opciones_grados = ["1°", "2°", "3°"] if nivel == "Secundaria" else ["4°", "5°", "6°"]
-            
-            grados_sel = c2.multiselect("Grado(s):", opciones_grados, key=f"grad_{st.session_state.form_reset}")
-            
-            grupos_disponibles = []
-            df_asig_global = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
-            
-            if not df_asig_global.empty and 'Grupo' in df_asig_global.columns:
-                df_asig_global['Grupo'] = df_asig_global['Grupo'].astype(str).str.strip()
-                todos_los_grupos = df_asig_global['Grupo'].dropna().unique().tolist()
-                
-                if grados_sel:
-                    for grad_individual in grados_sel:
-                        numero_grado = grad_individual.replace("°", "") 
-                        grupos_del_grado = [g for g in todos_los_grupos if g.startswith(f"{numero_grado}°")]
-                        grupos_disponibles.extend(grupos_del_grado)
-                    grupos_disponibles = sorted(list(set(grupos_disponibles)))
-            else:
-                if grados_sel:
-                    for grad_individual in grados_sel:
-                        grupos_disponibles.extend([f"{grad_individual}A", f"{grad_individual}B"])
-                    grupos_disponibles = sorted(grupos_disponibles)
-            
-            grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
-            grupo_final = grupos_sel
-            
-            alumnos_por_grupo_seleccionados = []
-            if grupos_sel:
-                st.markdown("**Selecciona a los alumnos involucrados por salón:**")
-                pestanas = st.tabs(grupos_sel) 
-                
-                for idx, g_sel in enumerate(grupos_sel):
-                    with pestanas[idx]:
-                        try:
-                            lista_grupo = obtener_lista_alumnos(gc, FILE_ALUMNOS, g_sel.strip())
-                            if lista_grupo:
-                                sel_alumnos = st.multiselect(
-                                    f"Implicados de {g_sel}:", 
-                                    lista_grupo, 
-                                    key=f"al_{g_sel}_{st.session_state.form_reset}"
-                                )
-                                if sel_alumnos:
-                                    for nombre in sel_alumnos:
-                                        alumnos_por_grupo_seleccionados.append((g_sel, nombre))
-                            else:
-                                st.warning(f"⚠️ No hay alumnos listos en {g_sel}")
-                        except Exception:
-                            st.warning(f"⚠️ No se encontró la base de datos para {g_sel}")
-                
-                if alumnos_por_grupo_seleccionados:
-                    alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
 
-        # --- CASO 2: REPORTE EN CLASE ---
+    # 🛡️ CARGA GLOBAL DE ASIGNACIONES 
+    df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+    if not df_asig.empty and 'Usuario_Profesor' in df_asig.columns:
+        df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
+        df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
+        df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
+        if es_superusuario:
+            mis_asig = df_asig.copy()
+            st.info("👑 Modo Super Usuario: Acceso completo a grupos y materias.")
         else:
-            df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
-            
-            if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
-                st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
-                return
-                
-            df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
-            df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
-            df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
-            
-            if es_superusuario:
-                mis_asig = df_asig.copy()
-                st.info("👑 Modo Super Usuario: Acceso completo a grupos y materias.")
-            else:
-                mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
-            
-            if mis_asig.empty: 
-                st.warning("Sin materias asignadas para tu usuario actual.")
-                return            
-
-            niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
-            if len(niveles_prof) > 1:
-                nivel_elegido = st.radio("Sección:", niveles_prof, horizontal=True, key=f"nav_niv_{st.session_state.form_reset}")
-                mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
-
-            hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
-            dia_semana_map = {0: "Lunes", 1: "Martes", 2: "Miercoles", 3: "Jueves", 4: "Viernes"}
-            nombre_dia_hoy = dia_semana_map.get(hoy_cdmx.weekday(), "Fin de semana")
-
-            ver_todas = st.toggle("🔓 Mostrar todas las materias (Fuera del horario de hoy)", key=f"tog_mat_{st.session_state.form_reset}")
-            
-            mis_asig_filtradas = mis_asig.copy()
-            if not ver_todas and not es_superusuario and hoy_cdmx.weekday() in dia_semana_map:
-                try:
-                    df_conf = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
-                    if not df_conf.empty and 'Clase' in df_conf.columns and nombre_dia_hoy in df_conf.columns:
-                        clases_hoy = df_conf[pd.to_numeric(df_conf[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
-                        materias_validas = []
-                        for _, r in mis_asig.iterrows():
-                            tag = f"{obtener_materia_teorica(r['Materia'])} - {r['Grupo']}"
-                            if tag in clases_hoy or tag not in df_conf['Clase'].values:
-                                materias_validas.append(r['Materia'])
-                        if materias_validas:
-                            mis_asig_filtradas = mis_asig[mis_asig['Materia'].isin(materias_validas)]
-                except Exception:
-                    pass
-                       
-            c1, c2 = st.columns(2)
-            materia = c1.selectbox("Materia:", mis_asig_filtradas['Materia'].unique(), key=f"mat_select_{st.session_state.form_reset}")
-            grupo = c2.selectbox("Grupo:", mis_asig_filtradas[mis_asig_filtradas['Materia'] == materia]['Grupo'].unique(), key=f"grup_select_{st.session_state.form_reset}")
-            grupo_final = [grupo]
-            
-            captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
-            
-            try:
-                grupo_base = grupo.split("(")[0].strip()
-                df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
-
-                if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
-                    if 'Área' in df_alumnos_crudo.columns:
-                        texto_busqueda = f"{obtener_materia_teorica(materia)} {grupo}".upper()
-                        if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
-                        elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('2|II', na=False)]
-                        elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
-                        elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
-                            df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
-
-                    if 'Nombre Completo' not in df_alumnos_crudo.columns:
-                        col_pat = next((c for c in df_alumnos_crudo.columns if 'patern' in str(c).lower()), None)
-                        col_mat = next((c for c in df_alumnos_crudo.columns if 'matern' in str(c).lower()), None)
-                        col_nom = next((c for c in df_alumnos_crudo.columns if 'nombre' in str(c).lower()), None)
-
-                        s_pat = df_alumnos_crudo[col_pat].astype(str).fillna('') if col_pat else ''
-                        s_mat = df_alumnos_crudo[col_mat].astype(str).fillna('') if col_mat else ''
-                        s_nom = df_alumnos_crudo[col_nom].astype(str).fillna('') if col_nom else ''
-
-                        df_alumnos_crudo['Nombre Completo'] = (s_pat + " " + s_mat + " " + s_nom).str.strip().replace(r'\s+', ' ', regex=True)
-                        df_alumnos_crudo['Nombre Completo'] = df_alumnos_crudo['Nombre Completo'].replace(r'^nan nan nan$|^nan$|^$', pd.NA, regex=True)
-
-                    nombres_finales = df_alumnos_crudo['Nombre Completo'].dropna()
-                    opc = sorted(nombres_finales.unique().tolist())
-                else:
-                    opc = []
-
-                if not opc:
-                    st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
-                    with st.expander("🔍 Ver datos crudos (Solo Diagnóstico)"):
-                        st.write("Columnas detectadas:", df_alumnos_crudo.columns.tolist() if df_alumnos_crudo is not None else "Ninguna")
-                        if df_alumnos_crudo is not None:
-                            st.dataframe(df_alumnos_crudo.head(3))
-                            
-            except Exception as e:
-              opc = []
-              st.error(f"Error al procesar la pestaña '{grupo_base}': {e}")
-                
-            if not captura_multiple:
-                alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
-                alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
-            else:
-                alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
-
-        # =================================================================
-        # 📅 SELECTOR DINÁMICO DE FECHA DE INCIDENCIA
-        # =================================================================
-        st.markdown("---")
-        st.markdown("### 📅 Fecha de la Incidencia")
+            mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
+    else:
+        mis_asig = pd.DataFrame()
         
-        hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
-        dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes"}
+    # =================================================================
+    # 🎛️ SUB-MENÚ EN BARRA LATERAL
+    # ==========================================
+    # Al declarar esto aquí, se colocará automáticamente en el panel izquierdo
+    sub_modulo_docente = st.sidebar.radio(
+        "Acción de Conducta:",
+        ["➕ Nuevo Reporte", "✏️ Editar / Eliminar Reporte"]
+    )
+    
+    # =================================================================
+    # VISTA 1: NUEVO REPORTE
+    # =================================================================
+    if sub_modulo_docente == "➕ Nuevo Reporte":
         
-        fechas_validas = []
-        etiquetas_fechas = {}
-
-        if reporte_pasillo:
-            # Si es pasillo: Todos los días de la semana (L-V) de los últimos 30 días
-            for i in range(30):
-                d = hoy_cdmx - timedelta(days=i)
-                if d.weekday() not in [5, 6]:
-                    f_str = d.strftime("%Y-%m-%d")
-                    fechas_validas.append(f_str)
-                    etiquetas_fechas[f_str] = f"{'Hoy' if i==0 else dias_espanol[d.weekday()]} {d.strftime('%d-%m-%Y')}"
-        else:
-            # Si es clase: Revisar el horario estricto
-            materia_teorica = obtener_materia_teorica(materia)
-            nombre_pestana = f"{materia_teorica} - {grupo_final[0]}" if grupo_final else ""
-            horario = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
+        with st.container():
+            st.subheader("📝 Registrar Nueva Incidencia")
             
-            try:
-                df_conf = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
-                conf_actual = df_conf[df_conf['Clase'] == nombre_pestana]
-                if not conf_actual.empty:
-                    horario[0] = int(conf_actual.iloc[0].get('Lunes', 0))
-                    horario[1] = int(conf_actual.iloc[0].get('Martes', 0))
-                    horario[2] = int(conf_actual.iloc[0].get('Miercoles', 0))
-                    horario[3] = int(conf_actual.iloc[0].get('Jueves', 0))
-                    horario[4] = int(conf_actual.iloc[0].get('Viernes', 0))
-            except Exception:
-                pass
-            
-            suma_horas = sum(horario.values())
-            
-            for i in range(30):
-                d = hoy_cdmx - timedelta(days=i)
-                w = d.weekday()
-                # Mostrar el día si tiene clases programadas. 
-                # (El 'suma_horas == 0' es un plan de emergencia por si no han configurado su horario)
-                if w not in [5, 6] and (suma_horas == 0 or horario.get(w, 0) > 0):
-                    f_str = d.strftime("%Y-%m-%d")
-                    fechas_validas.append(f_str)
-                    etiquetas_fechas[f_str] = f"{'Hoy' if i==0 else dias_espanol[w]} {d.strftime('%d-%m-%Y')}"
-
-        if not fechas_validas:
-            st.warning("⚠️ No hay días válidos configurados. Revisa el horario de asistencia de esta materia.")
-            st.stop()
-
-        fecha_seleccionada_str = st.selectbox(
-            "Selecciona el día exacto en que ocurrió:",
-            fechas_validas,
-            format_func=lambda x: etiquetas_fechas[x],
-            key=f"fecha_inc_select_{st.session_state.form_reset}"
-        )
-
-        st.markdown("---")
-        
-        key_cat_recomendada = f"ia_cat_{st.session_state.form_reset}"
-        key_fal_recomendada = f"ia_fal_{st.session_state.form_reset}"
-
-        if key_cat_recomendada not in st.session_state:
-            st.session_state[key_cat_recomendada] = list(CATALOGO_SANCIONES.keys())[0]
-        if key_fal_recomendada not in st.session_state:
-            st.session_state[key_fal_recomendada] = None
-
-        popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
-        
-        with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
-            st.markdown("### 🪄 Clasificación Inteligente")
-            st.caption("Escribe los hechos ocurridos. La IA seleccionará la categoría y falta correspondientes en el formulario.")
-            
-            relato_incidencia = st.text_area(
-                "Descripción de los hechos:",
-                placeholder="Ejemplo: El alumno utilizó el celular durante la explicación...",
-                key=f"relato_ia_{st.session_state.form_reset}"
-            )
-
-            if st.button("🪄 Clasificar Hechos", type="primary", key=f"btn_ia_{st.session_state.form_reset}"):
-                if not relato_incidencia.strip():
-                    st.warning("⚠️ Redacta los hechos antes de solicitar la clasificación.")
-                else:
-                    try:
-                        api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
-                        if not api_key_gemini:
-                            for k in st.secrets.keys():
-                                sec = st.secrets[k]
-                                if isinstance(sec, dict):
-                                    api_key_gemini = sec.get("GEMINI_API_KEY") or sec.get("gemini_api_key")
-                                    if api_key_gemini: break
-                        
-                        if not api_key_gemini:
-                            st.error("🔑 Llave de API no configurada.")
-                        else:
-                            genai.configure(api_key=api_key_gemini)
-                            instrucciones_ia = f"""
-                            Eres un asistente de disciplina escolar del Colegio Miraflores.
-                            Tu función es clasificar estrictamente el relato dentro de las opciones de este catálogo oficial:
-                            {json.dumps(CATALOGO_SANCIONES, ensure_ascii=False, indent=2)}
-
-                            Reglas obligatorias:
-                            1. Devuelve ÚNICA Y EXCLUSIVAMENTE un JSON plano con estas claves exactas:
-                            {{"categoria": "Nombre de la Categoría", "falta": "Nombre de la Falta"}}
-                            2. Respeta con exactitud las mayúsculas, acentos y signos del catálogo.
-                            """
-                            modelo = genai.GenerativeModel(
-                                model_name='gemini-3.6-flash',
-                                system_instruction=instrucciones_ia,
-                                generation_config={"response_mime_type": "application/json"}
-                            )
-                            
-                            with st.spinner("Analizando hechos con IA..."):
-                                respuesta_api = modelo.generate_content(relato_incidencia)
-                                datos_clasificados = json.loads(respuesta_api.text.strip())
-                                
-                                cat_ia = datos_clasificados.get("categoria")
-                                fal_ia = datos_clasificados.get("falta")
-                                
-                                if cat_ia in CATALOGO_SANCIONES and fal_ia in CATALOGO_SANCIONES[cat_ia]:
-                                    st.session_state[key_cat_recomendada] = cat_ia
-                                    st.session_state[key_fal_recomendada] = fal_ia
-                                    st.session_state[f"cat_{st.session_state.form_reset}"] = cat_ia
-                                    
-                                    puntos_falta = CATALOGO_SANCIONES[cat_ia][fal_ia]["puntos"]
-                                    st.session_state[f"falta_{st.session_state.form_reset}"] = f"{fal_ia} ({puntos_falta} pt)"
-                                    st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
-                                else:
-                                    st.warning("⚠️ La falta sugerida no coincidió exactamente con el catálogo oficial.")
-                    
-                    except Exception as e:
-                        st.error(f"⚠️ El clasificador no está disponible temporalmente: {e}")
-
-            if st.session_state[key_fal_recomendada]:
-                cat_sug = st.session_state[key_cat_recomendada]
-                fal_sug = st.session_state[key_fal_recomendada]
-                st.success(f"✅ Sugerencia: **{cat_sug}** ➔ **{fal_sug}**.")
-                
-                if st.button("Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
-                    st.session_state["ia_closed_state"] += 1
-                    st.rerun()
-        
-        c_cat, c_fal = st.columns([1, 2])
-        lista_categorias = list(CATALOGO_SANCIONES.keys())
-        try:
-            indice_categoria_defecto = lista_categorias.index(st.session_state[key_cat_recomendada])
-        except ValueError:
-            indice_categoria_defecto = 0
-            
-        with c_cat:
-            categoria = st.selectbox(
-                "Categoría:", 
-                lista_categorias, 
-                index=indice_categoria_defecto, 
-                key=f"cat_{st.session_state.form_reset}"
+            fecha_incidencia = st.date_input(
+                "📅 Fecha en la que ocurrió la incidencia:", 
+                value=datetime.now(ZoneInfo("America/Mexico_City")).date(),
+                key=f"fecha_inc_{st.session_state.form_reset}"
             )
             
-        dict_faltas = CATALOGO_SANCIONES[categoria]
-        opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
-        
-        indice_falta_defecto = 0
-        if st.session_state[key_fal_recomendada]:
-            for index_opcion, texto_opcion in enumerate(opciones_visuales):
-                if texto_opcion.startswith(st.session_state[key_fal_recomendada]):
-                    indice_falta_defecto = index_opcion
-                    break
-                    
-        with c_fal:
-            falta_seleccionada_visual = st.selectbox(
-                "Falta cometida:", 
-                opciones_visuales, 
-                index=indice_falta_defecto, 
-                key=f"falta_{st.session_state.form_reset}"
-            )
+            reporte_pasillo = st.checkbox("🚨 ¿Es un reporte de pasillo / fuera de clase?", key=f"pasillo_{st.session_state.form_reset}")
+            st.markdown("---")
             
-        falta_original = falta_seleccionada_visual.split(" (")[0]
-        redaccion_inicial = st.session_state.get(f"obs_prefill_{st.session_state.form_reset}", "")
-        
-        obs = st.text_area(
-            "Observaciones y detalles de lo ocurrido:", 
-            value=redaccion_inicial,
-            key=f"obs_{st.session_state.form_reset}"
-        )
-
-        if st.button("💾 Guardar Registro", type="primary"):
-            
-            materia_final = obtener_materia_teorica(materia)
-            
-            if reporte_pasillo and not grupo_final:
-                st.error("⚠️ Selecciona al menos un grupo implicado en el reporte.")
-                st.stop()
-            elif not reporte_pasillo and not alumnos_final:
-                st.error("⚠️ Selecciona al menos un alumno.")
-                st.stop()
-                
-            obs_segura = str(obs).strip()
-            if obs_segura.startswith(("=", "+", "-", "@")):
-                obs_segura = "'" + obs_segura
-                
-            info_falta = dict_faltas.get(falta_original)
-            p = info_falta["puntos"] if info_falta else 0
-            s = info_falta["semaforo"] if info_falta else "Gris"
-            
-            # 🛡️ Aplicar fecha seleccionada respetando la hora de registro
-            hora_actual = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%H:%M:%S")
-            f = f"{fecha_seleccionada_str} {hora_actual}"
-            
-            lote = []
+            materia = "Pasillo / Inst. General"
+            grupo_final = []
+            alumnos_final = ["General (Ver observaciones)"] 
             
             if reporte_pasillo:
-                if alumnos_por_grupo_seleccionados:
-                    for g_real, al_limpio in alumnos_por_grupo_seleccionados:
-                        lote.append([f, nombre_prof, materia_final, g_real, al_limpio, categoria, falta_original, obs_segura, p, s])
+                c1, c2, c3 = st.columns(3)
+                nivel = c1.selectbox("Nivel:", ["Secundaria", "Preparatoria"], key=f"niv_{st.session_state.form_reset}")
+                opciones_grados = ["1°", "2°", "3°"] if nivel == "Secundaria" else ["4°", "5°", "6°"]
+                
+                grados_sel = c2.multiselect("Grado(s):", opciones_grados, key=f"grad_{st.session_state.form_reset}")
+                
+                grupos_disponibles = []
+                
+                if not df_asig.empty and 'Grupo' in df_asig.columns:
+                    todos_los_grupos = df_asig['Grupo'].dropna().unique().tolist()
+                    if grados_sel:
+                        for grad_individual in grados_sel:
+                            numero_grado = grad_individual.replace("°", "") 
+                            grupos_del_grado = [g for g in todos_los_grupos if g.startswith(f"{numero_grado}°")]
+                            grupos_disponibles.extend(grupos_del_grado)
+                        grupos_disponibles = sorted(list(set(grupos_disponibles)))
+                else:
+                    if grados_sel:
+                        for grad_individual in grados_sel:
+                            grupos_disponibles.extend([f"{grad_individual}A", f"{grad_individual}B"])
+                        grupos_disponibles = sorted(grupos_disponibles)
+                
+                grupos_sel = c3.multiselect("Grupo(s) implicado(s):", grupos_disponibles, key=f"grups_p_{st.session_state.form_reset}")
+                grupo_final = grupos_sel
+                
+                alumnos_por_grupo_seleccionados = []
+                if grupos_sel:
+                    st.markdown("**Selecciona a los alumnos involucrados por salón:**")
+                    pestanas = st.tabs(grupos_sel) 
+                    
+                    for idx, g_sel in enumerate(grupos_sel):
+                        with pestanas[idx]:
+                            try:
+                                lista_grupo = obtener_lista_alumnos(gc, FILE_ALUMNOS, g_sel.strip())
+                                if lista_grupo:
+                                    sel_alumnos = st.multiselect(
+                                        f"Implicados de {g_sel}:", 
+                                        lista_grupo, 
+                                        key=f"al_{g_sel}_{st.session_state.form_reset}"
+                                    )
+                                    if sel_alumnos:
+                                        for nombre in sel_alumnos:
+                                            alumnos_por_grupo_seleccionados.append((g_sel, nombre))
+                                else:
+                                    st.warning(f"⚠️ No hay alumnos listos en {g_sel}")
+                            except Exception:
+                                st.warning(f"⚠️ No se encontró la base de datos para {g_sel}")
+                    
+                    if alumnos_por_grupo_seleccionados:
+                        alumnos_final = [nombre for _, nombre in alumnos_por_grupo_seleccionados]
+    
+            else:
+                if mis_asig.empty: 
+                    st.warning("⚠️ Sin materias asignadas para tu usuario actual.")
+                    st.stop()            
+    
+                niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
+                if len(niveles_prof) > 1:
+                    nivel_elegido = st.radio("Sección:", niveles_prof, horizontal=True, key=f"nav_niv_{st.session_state.form_reset}")
+                    mis_asig_vista = mis_asig[mis_asig['Nivel'] == nivel_elegido]
+                else:
+                    mis_asig_vista = mis_asig.copy()
+    
+                hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
+                dia_semana_map = {0: "Lunes", 1: "Martes", 2: "Miercoles", 3: "Jueves", 4: "Viernes"}
+                nombre_dia_hoy = dia_semana_map.get(hoy_cdmx.weekday(), "Fin de semana")
+    
+                ver_todas = st.toggle("🔓 Mostrar todas las materias (Fuera del horario de hoy)", key=f"tog_mat_{st.session_state.form_reset}")
+                
+                mis_asig_filtradas = mis_asig_vista.copy()
+                if not ver_todas and not es_superusuario and hoy_cdmx.weekday() in dia_semana_map:
+                    try:
+                        df_conf = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
+                        if not df_conf.empty and 'Clase' in df_conf.columns and nombre_dia_hoy in df_conf.columns:
+                            clases_hoy = df_conf[pd.to_numeric(df_conf[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
+                            materias_validas = []
+                            for _, r in mis_asig_vista.iterrows():
+                                tag = f"{obtener_materia_teorica(r['Materia'])} - {r['Grupo']}"
+                                if tag in clases_hoy or tag not in df_conf['Clase'].values:
+                                    materias_validas.append(r['Materia'])
+                            if materias_validas:
+                                mis_asig_filtradas = mis_asig_vista[mis_asig_vista['Materia'].isin(materias_validas)]
+                    except Exception:
+                        pass
+                           
+                c1, c2 = st.columns(2)
+                materia = c1.selectbox("Materia:", mis_asig_filtradas['Materia'].unique(), key=f"mat_select_{st.session_state.form_reset}")
+                grupo = c2.selectbox("Grupo:", mis_asig_filtradas[mis_asig_filtradas['Materia'] == materia]['Grupo'].unique(), key=f"grup_select_{st.session_state.form_reset}")
+                grupo_final = [grupo]
+                
+                captura_multiple = st.checkbox("Habilitar registro múltiple", key=f"check_mult_{st.session_state.form_reset}")
+                
+                try:
+                    grupo_base = grupo.split("(")[0].strip()
+                    df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
+    
+                    if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
+                        if 'Área' in df_alumnos_crudo.columns:
+                            texto_busqueda = f"{obtener_materia_teorica(materia)} {grupo}".upper()
+                            if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
+                            elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('2|II', na=False)]
+                            elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
+                            elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
+    
+                        if 'Nombre Completo' not in df_alumnos_crudo.columns:
+                            col_pat = next((c for c in df_alumnos_crudo.columns if 'patern' in str(c).lower()), None)
+                            col_mat = next((c for c in df_alumnos_crudo.columns if 'matern' in str(c).lower()), None)
+                            col_nom = next((c for c in df_alumnos_crudo.columns if 'nombre' in str(c).lower()), None)
+    
+                            s_pat = df_alumnos_crudo[col_pat].astype(str).fillna('') if col_pat else ''
+                            s_mat = df_alumnos_crudo[col_mat].astype(str).fillna('') if col_mat else ''
+                            s_nom = df_alumnos_crudo[col_nom].astype(str).fillna('') if col_nom else ''
+    
+                            df_alumnos_crudo['Nombre Completo'] = (s_pat + " " + s_mat + " " + s_nom).str.strip().replace(r'\s+', ' ', regex=True)
+                            df_alumnos_crudo['Nombre Completo'] = df_alumnos_crudo['Nombre Completo'].replace(r'^nan nan nan$|^nan$|^$', pd.NA, regex=True)
+    
+                        nombres_finales = df_alumnos_crudo['Nombre Completo'].dropna()
+                        opc = sorted(nombres_finales.unique().tolist())
+                    else:
+                        opc = []
+    
+                    if not opc:
+                        st.warning(f"La pestaña '{grupo_base}' no tiene alumnos registrados para esta especialidad.")
+                        with st.expander("🔍 Ver datos crudos (Solo Diagnóstico)"):
+                            st.write("Columnas detectadas:", df_alumnos_crudo.columns.tolist() if df_alumnos_crudo is not None else "Ninguna")
+                            if df_alumnos_crudo is not None:
+                                st.dataframe(df_alumnos_crudo.head(3))
+                                
+                except Exception as e:
+                  opc = []
+                  st.error(f"Error al procesar la pestaña '{grupo_base}': {e}")
+                    
+                if not captura_multiple:
+                    alumnos_sel_raw = st.selectbox("Alumno:", ["Seleccione..."] + opc, key=f"indiv_{st.session_state.form_reset}")
+                    alumnos_final = [alumnos_sel_raw] if alumnos_sel_raw != "Seleccione..." else []
+                else:
+                    alumnos_final = st.multiselect("Alumnos:", opc, key=f"grup_{st.session_state.form_reset}")
+    
+            st.markdown("---")
+            
+            key_cat_recomendada = f"ia_cat_{st.session_state.form_reset}"
+            key_fal_recomendada = f"ia_fal_{st.session_state.form_reset}"
+    
+            if key_cat_recomendada not in st.session_state:
+                st.session_state[key_cat_recomendada] = list(CATALOGO_SANCIONES.keys())[0]
+            if key_fal_recomendada not in st.session_state:
+                st.session_state[key_fal_recomendada] = None
+    
+            popover_key = f"pop_ia_{st.session_state.form_reset}_{st.session_state.ia_closed_state}"
+            
+            with st.popover("🪄 Usar Asistente de Clasificación (IA)", use_container_width=True, key=popover_key):
+                st.markdown("### 🪄 Clasificación Inteligente")
+                st.caption("Escribe los hechos ocurridos. La IA seleccionará la categoría y falta correspondientes en el formulario.")
+                
+                relato_incidencia = st.text_area(
+                    "Descripción de los hechos:",
+                    placeholder="Ejemplo: El alumno utilizó el celular durante la explicación...",
+                    key=f"relato_ia_{st.session_state.form_reset}"
+                )
+    
+                if st.button("🪄 Clasificar Hechos", type="primary", key=f"btn_ia_{st.session_state.form_reset}"):
+                    if not relato_incidencia.strip():
+                        st.warning("⚠️ Redacta los hechos antes de solicitar la clasificación.")
+                    else:
+                        try:
+                            api_key_gemini = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key")
+                            if not api_key_gemini:
+                                for k in st.secrets.keys():
+                                    sec = st.secrets[k]
+                                    if isinstance(sec, dict):
+                                        api_key_gemini = sec.get("GEMINI_API_KEY") or sec.get("gemini_api_key")
+                                        if api_key_gemini: break
+                            
+                            if not api_key_gemini:
+                                st.error("🔑 Llave de API no configurada.")
+                            else:
+                                genai.configure(api_key=api_key_gemini)
+                                instrucciones_ia = f"""
+                                Eres un asistente de disciplina escolar del Colegio Miraflores.
+                                Tu función es clasificar estrictamente el relato dentro de las opciones de este catálogo oficial:
+                                {json.dumps(CATALOGO_SANCIONES, ensure_ascii=False, indent=2)}
+    
+                                Reglas obligatorias:
+                                1. Devuelve ÚNICA Y EXCLUSIVAMENTE un JSON plano con estas claves exactas:
+                                {{"categoria": "Nombre de la Categoría", "falta": "Nombre de la Falta"}}
+                                2. Respeta con exactitud las mayúsculas, acentos y signos del catálogo.
+                                """
+                                modelo = genai.GenerativeModel(
+                                    model_name='gemini-3.6-flash',
+                                    system_instruction=instrucciones_ia,
+                                    generation_config={"response_mime_type": "application/json"}
+                                )
+                                
+                                with st.spinner("Analizando hechos con IA..."):
+                                    respuesta_api = modelo.generate_content(relato_incidencia)
+                                    datos_clasificados = json.loads(respuesta_api.text.strip())
+                                    
+                                    cat_ia = datos_clasificados.get("categoria")
+                                    fal_ia = datos_clasificados.get("falta")
+                                    
+                                    if cat_ia in CATALOGO_SANCIONES and fal_ia in CATALOGO_SANCIONES[cat_ia]:
+                                        st.session_state[key_cat_recomendada] = cat_ia
+                                        st.session_state[key_fal_recomendada] = fal_ia
+                                        st.session_state[f"cat_{st.session_state.form_reset}"] = cat_ia
+                                        
+                                        puntos_falta = CATALOGO_SANCIONES[cat_ia][fal_ia]["puntos"]
+                                        st.session_state[f"falta_{st.session_state.form_reset}"] = f"{fal_ia} ({puntos_falta} pt)"
+                                        st.session_state[f"obs_prefill_{st.session_state.form_reset}"] = relato_incidencia
+                                    else:
+                                        st.warning("⚠️ La falta sugerida no coincidió exactamente con el catálogo oficial.")
+                        
+                        except Exception as e:
+                            st.error(f"⚠️ El clasificador no está disponible temporalmente: {e}")
+    
+                if st.session_state[key_fal_recomendada]:
+                    cat_sug = st.session_state[key_cat_recomendada]
+                    fal_sug = st.session_state[key_fal_recomendada]
+                    st.success(f"✅ Sugerencia: **{cat_sug}** ➔ **{fal_sug}**.")
+                    
+                    if st.button("Cerrar Ventana", type="secondary", key=f"close_ia_{st.session_state.form_reset}", use_container_width=True):
+                        st.session_state["ia_closed_state"] += 1
+                        st.rerun()
+            
+            c_cat, c_fal = st.columns([1, 2])
+            lista_categorias = list(CATALOGO_SANCIONES.keys())
+            try:
+                indice_categoria_defecto = lista_categorias.index(st.session_state[key_cat_recomendada])
+            except ValueError:
+                indice_categoria_defecto = 0
+                
+            with c_cat:
+                categoria = st.selectbox(
+                    "Categoría:", 
+                    lista_categorias, 
+                    index=indice_categoria_defecto, 
+                    key=f"cat_{st.session_state.form_reset}"
+                )
+                
+            dict_faltas = CATALOGO_SANCIONES[categoria]
+            opciones_visuales = [f"{nombre} ({datos['puntos']} pt)" for nombre, datos in dict_faltas.items()]
+            
+            indice_falta_defecto = 0
+            if st.session_state[key_fal_recomendada]:
+                for index_opcion, texto_opcion in enumerate(opciones_visuales):
+                    if texto_opcion.startswith(st.session_state[key_fal_recomendada]):
+                        indice_falta_defecto = index_opcion
+                        break
+                        
+            with c_fal:
+                falta_seleccionada_visual = st.selectbox(
+                    "Falta cometida:", 
+                    opciones_visuales, 
+                    index=indice_falta_defecto, 
+                    key=f"falta_{st.session_state.form_reset}"
+                )
+                
+            falta_original = falta_seleccionada_visual.rsplit(" (",1)[0]
+            redaccion_inicial = st.session_state.get(f"obs_prefill_{st.session_state.form_reset}", "")
+            
+            obs = st.text_area(
+                "Observaciones y detalles de lo ocurrido:", 
+                value=redaccion_inicial,
+                key=f"obs_{st.session_state.form_reset}"
+            )
+    
+            if st.button("💾 Guardar Registro", type="primary"):
+                materia_final = obtener_materia_teorica(materia)
+                
+                if reporte_pasillo and not grupo_final:
+                    st.error("⚠️ Selecciona al menos un grupo implicado en el reporte.")
+                    st.stop()
+                elif not reporte_pasillo and not alumnos_final:
+                    st.error("⚠️ Selecciona al menos un alumno.")
+                    st.stop()
+                    
+                obs_segura = str(obs).strip()
+                if obs_segura.startswith(("=", "+", "-", "@")):
+                    obs_segura = "'" + obs_segura
+                    
+                info_falta = dict_faltas.get(falta_original)
+                p = info_falta["puntos"] if info_falta else 0
+                s = info_falta["semaforo"] if info_falta else "Gris"
+                
+                hora_actual = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%H:%M:%S")
+                f = f"{fecha_incidencia.strftime('%Y-%m-%d')} {hora_actual}"
+                
+                lote = []
+                
+                if reporte_pasillo:
+                    if alumnos_por_grupo_seleccionados:
+                        for g_real, al_limpio in alumnos_por_grupo_seleccionados:
+                            lote.append([f, nombre_prof, materia_final, g_real, al_limpio, categoria, falta_original, obs_segura, p, s])
+                    else:
+                        for g in grupo_final:
+                            lote.append([f, nombre_prof, materia_final, g, "General (Ver observaciones)", categoria, falta_original, obs_segura, p, s])
                 else:
                     for g in grupo_final:
-                        lote.append([f, nombre_prof, materia_final, g, "General (Ver observaciones)", categoria, falta_original, obs_segura, p, s])
-            else:
-                for g in grupo_final:
-                    for al in alumnos_final:
-                        lote.append([f, nombre_prof, materia_final, g, al, categoria, falta_original, obs_segura, p, s])
+                        for al in alumnos_final:
+                            lote.append([f, nombre_prof, materia_final, g, al, categoria, falta_original, obs_segura, p, s])
+                
+                try:
+                    with st.spinner("Guardando en la nube..."):
+                        doc = gc.open(FILE_REGISTROS)
+                        clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia_final} - {grupo_final[0]}"
+                        
+                        try:
+                            ws = doc.worksheet(clase_id)
+                        except gspread.exceptions.WorksheetNotFound:
+                            ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
+                            ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Es_Grave"])
+                        
+                        ws.append_rows(lote)
+                        leer_todos_los_registros.clear()
+    
+                        st.session_state.form_reset += 1
+                        st.success("✅ Incidencia guardada con éxito en la base de datos.")
+                        time.sleep(1.5)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"🚨 Error crítico al intentar guardar en Sheets: {e}")
+
+    # =================================================================
+    # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES
+    # =================================================================
+    else:
+        with st.container():
+            st.subheader("✏️ Editar o Eliminar Reportes Anteriores")
+            st.info("💡 Selecciona la ubicación de un reporte tuyo para modificar sus observaciones o borrarlo permanentemente.")
             
-            try:
-                with st.spinner("Guardando en la nube..."):
+            es_pasillo_edit = st.checkbox("Buscar en 'Reportes de Pasillo'", key="edit_pasillo")
+            
+            ws_name = ""
+            if es_pasillo_edit:
+                ws_name = "Reportes_Pasillo"
+            else:
+                if not mis_asig.empty:
+                    c1_e, c2_e = st.columns(2)
+                    mat_edit_raw = c1_e.selectbox("Materia:", mis_asig['Materia'].unique(), key="e_mat")
+                    mat_edit_teorica = obtener_materia_teorica(mat_edit_raw)
+                    grupos_disponibles_edit = mis_asig[mis_asig['Materia'] == mat_edit_raw]['Grupo'].unique()
+                    grup_edit = c2_e.selectbox("Grupo:", grupos_disponibles_edit, key="e_grup")
+                    ws_name = f"{mat_edit_teorica} - {grup_edit}"
+                else:
+                    st.warning("No tienes materias asignadas para buscar reportes.")
+                    
+            if ws_name:
+                try:
                     doc = gc.open(FILE_REGISTROS)
-                    clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia_final} - {grupo_final[0]}"
+                    ws_edit = doc.worksheet(ws_name)
+                    todas_filas_edit = ws_edit.get_all_values()
+                except Exception:
+                    todas_filas_edit = []
                     
-                    try:
-                        ws = doc.worksheet(clase_id)
-                    except gspread.exceptions.WorksheetNotFound:
-                        ws = doc.add_worksheet(title=clase_id, rows="1000", cols="10")
-                        ws.append_row(["Fecha", "Profesor", "Materia", "Grupo", "Alumno", "Categoría", "Falta", "Observaciones", "Puntos_Descontados", "Es_Grave"])
+                if len(todas_filas_edit) > 1:
+                    headers = todas_filas_edit[0]
+                    df_edit = pd.DataFrame(todas_filas_edit[1:], columns=headers)
                     
-                    ws.append_rows(lote)
-                    leer_todos_los_registros.clear()
+                    if not es_superusuario:
+                        df_edit = df_edit[df_edit['Profesor'] == nombre_prof]
+                        
+                    if not df_edit.empty:
+                        df_edit['Label'] = df_edit['Fecha'] + " | " + df_edit['Alumno'] + " | " + df_edit['Falta']
+                        reporte_sel = st.selectbox("Selecciona el reporte a modificar:", ["Seleccione..."] + df_edit['Label'].tolist(), key="rep_sel")
+                        
+                        if reporte_sel != "Seleccione...":
+                            fila_seleccionada = df_edit[df_edit['Label'] == reporte_sel].iloc[0]
+                            fecha_exacta = fila_seleccionada['Fecha']
+                            alumno_exacto = fila_seleccionada['Alumno']
+                            obs_actual = fila_seleccionada['Observaciones']
+                            
+                            st.markdown(f"**Alumno:** {alumno_exacto} <br> **Falta:** {fila_seleccionada['Falta']}", unsafe_allow_html=True)
+                            
+                            nueva_obs = st.text_area("Observaciones / Detalles:", value=obs_actual, key="new_obs")
+                            
+                            c_btn1, c_btn2 = st.columns(2)
+                            
+                            if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
+                                with st.spinner("Actualizando en la nube..."):
+                                    doc_upd = gc.open(FILE_REGISTROS)
+                                    ws_upd = doc_upd.worksheet(ws_name)
+                                    all_vals = ws_upd.get_all_values()
+                                    
+                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and row[0] == fecha_exacta and row[4] == alumno_exacto), None)
+                                    
+                                    if row_idx:
+                                        ws_upd.update_cell(row_idx, 8, nueva_obs)
+                                        leer_todos_los_registros.clear()
+                                        st.success("✅ Observación actualizada correctamente.")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ No se encontró el registro exacto en la base.")
+                                        
+                            if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
+                                with st.spinner("Eliminando reporte..."):
+                                    doc_del = gc.open(FILE_REGISTROS)
+                                    ws_del = doc_del.worksheet(ws_name)
+                                    all_vals = ws_del.get_all_values()
+                                    
+                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and row[0] == fecha_exacta and row[4] == alumno_exacto), None)
+                                    
+                                    if row_idx:
+                                        ws_del.delete_rows(row_idx)
+                                        leer_todos_los_registros.clear()
+                                        st.success("✅ Reporte eliminado permanentemente.")
+                                        time.sleep(1)
+                                        st.rerun()
+                    else:
+                        st.info("No tienes reportes registrados en esta hoja específica.")
+                else:
+                    st.info(f"No hay registros en la pestaña '{ws_name}'.")
 
-                    st.session_state.form_reset += 1
-                    st.success("✅ Incidencia guardada con éxito en la base de datos.")
-                    time.sleep(1.5)
-                    st.rerun()
-            except Exception as e:
-                st.error(f"🚨 Error crítico al intentar guardar en Sheets: {e}")
-
+    # =================================================================
+    # ANALÍTICA (SIEMPRE VISIBLE AL FONDO)
+    # =================================================================
     st.markdown("---")
     st.subheader("📈 Analítica de Conducta")
     df_full = leer_todos_los_registros(gc)

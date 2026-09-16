@@ -8,7 +8,6 @@ import gspread
 from config import (
     FILE_ASIGNACIONES, 
     FILE_ALUMNOS, 
-    FILE_ASISTENCIA, 
     PERIODOS_LECTIVOS,
     SUPER_USUARIOS_WHITELIST
 )
@@ -16,7 +15,8 @@ from database import (
     leer_datos, 
     leer_todos_los_registros, 
     obtener_lista_alumnos, 
-    leer_todas_las_asignaciones
+    leer_todas_las_asignaciones,
+    compilar_asistencias_grupo_tutor
 )
 from calculadora import format_calif, calcular_calificacion_progresiva
 
@@ -26,7 +26,6 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     usuario = str(usuario).lower().strip()
     es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
     
-    # 1. Buscar los grupos tutelados
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     
     if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
@@ -65,7 +64,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
     st.markdown("---")
     
     # =================================================================
-    # COMPILACIÓN DE DATOS (CONDUCTA + ASISTENCIA)
+    # COMPILACIÓN DE DATOS (CON OPTIMIZACIÓN DE CACHÉ CONTRA QUOTA LIMITS)
     # =================================================================
     with st.spinner("Recuperando registros integrales..."):
         df_full = leer_todos_los_registros(gc)
@@ -77,44 +76,8 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
         if not df_grupo_conducta.empty:
             df_grupo_conducta['Fecha_DT'] = pd.to_datetime(df_grupo_conducta['Fecha'], errors='coerce')
         
-        # Lectura segura de asistencias
-        df_asist_plana = pd.DataFrame()
-        try:
-            doc_asist = gc.open(FILE_ASISTENCIA)
-            hojas = doc_asist.worksheets()
-            sufijo_grupo = f" - {grupo_sel.strip()}"
-            hojas_grupo = [h for h in hojas if h.title.strip().endswith(sufijo_grupo)]
-            
-            list_melted = []
-            for h in hojas_grupo:
-                try:
-                    datos = h.get_all_values()
-                    if len(datos) > 1:
-                        cols = datos[0]
-                        df_temp = pd.DataFrame(datos[1:], columns=cols)
-                        materia = h.title.replace(sufijo_grupo, "").strip()
-                        
-                        fechas_cols = [c for c in cols if c != 'Alumno']
-                        if fechas_cols:
-                            df_melt = df_temp.melt(id_vars=['Alumno'], value_vars=fechas_cols, var_name='Fecha', value_name='Falta')
-                            df_melt['Materia'] = materia
-                            df_melt['Categoría'] = 'Asistencia'
-                            df_melt['Profesor'] = 'Control de Asistencia'
-                            df_melt['Puntos_Descontados'] = 0
-                            df_melt['Observaciones'] = ''
-                            list_melted.append(df_melt)
-                except Exception:
-                    continue
-            
-            if list_melted:
-                df_asist_plana = pd.concat(list_melted, ignore_index=True)
-                df_asist_plana = df_asist_plana[df_asist_plana['Falta'].isin(['🔴 Falta', '🟡 Retardo'])]
-                
-                if not df_asist_plana.empty:
-                    df_asist_plana['Fecha_DT'] = pd.to_datetime(df_asist_plana['Fecha'], format='%d-%m-%Y', errors='coerce')
-                    df_asist_plana['Fecha'] = df_asist_plana['Fecha_DT'].dt.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            pass
+        # Uso seguro de nuestra nueva función con caché para optimizar las peticiones de Google
+        df_asist_plana = compilar_asistencias_grupo_tutor(gc, grupo_sel)
             
         if not df_asist_plana.empty and not df_grupo_conducta.empty:
             columnas_comunes = ['Fecha', 'Alumno', 'Profesor', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados', 'Fecha_DT']
@@ -168,7 +131,14 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             
             st.markdown(f"### Desglose Mensual: {mes_sel}")
             cols_mostrar = ['Fecha', 'Alumno', 'Materia', 'Categoría', 'Falta', 'Puntos_Descontados']
-            st.dataframe(df_mes[cols_mostrar].sort_values('Fecha', ascending=False), use_container_width=True, hide_index=True)
+            
+            # 🛡️ CONTROL DE SCROLL: Evitamos scroll infinito fijando una altura máxima
+            st.dataframe(
+                df_mes[cols_mostrar].sort_values('Fecha', ascending=False), 
+                use_container_width=True, 
+                hide_index=True,
+                height=400
+            )
             
             csv_data = df_mes[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
             st.download_button(
@@ -258,7 +228,14 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             
             st.markdown("### Expediente Detallado")
             cols_mostrar = ['Fecha', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados']
-            st.dataframe(df_filtrado[cols_mostrar].sort_values('Fecha', ascending=False), use_container_width=True, hide_index=True)
+            
+            # 🛡️ CONTROL DE SCROLL: Evitamos scroll vertical infinito
+            st.dataframe(
+                df_filtrado[cols_mostrar].sort_values('Fecha', ascending=False), 
+                use_container_width=True, 
+                hide_index=True,
+                height=400
+            )
             
             csv_data = df_filtrado[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
             st.download_button(
