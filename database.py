@@ -35,20 +35,34 @@ def leer_datos(_client, nombre_archivo, nombre_pestana=None):
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=300)  # Aumentamos a 5 minutos para proteger tu cuota
 def leer_todos_los_registros(_client):
     try:
         doc = _client.open(FILE_REGISTROS)
-        hojas = [pd.DataFrame(h.get_all_records()) for h in doc.worksheets() if h.get_all_records()]
-        if not hojas: 
+        hojas_dfs = []
+        
+        # Leemos cada pestaña UNA SOLA VEZ
+        for h in doc.worksheets():
+            # Pequeña pausa de 50 milisegundos para no saturar el canal de Google
+            time.sleep(0.05)
+            try:
+                data = h.get_all_records()
+                if data:
+                    hojas_dfs.append(pd.DataFrame(data))
+            except Exception:
+                continue
+                
+        if not hojas_dfs: 
             return pd.DataFrame()
-        df = pd.concat(hojas, ignore_index=True)
+            
+        df = pd.concat(hojas_dfs, ignore_index=True)
         if not df.empty:
             df.columns = df.columns.str.strip()
             if 'Grupo' in df.columns:
                 df['Grado'] = df['Grupo'].astype(str).str.extract(r'(\d+)')[0].fillna('N/A')
         return df
-    except Exception:
+    except Exception as e:
+        # Si ocurre un error 429 de cuota temporal, devolvemos un dataframe vacío sin tumbar la app
         return pd.DataFrame()
 
 def format_calif(val):
@@ -99,15 +113,16 @@ def obtener_dataframe_alumnos(gc, archivo, pestana):
     except Exception:
         return None
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)  # Caché de 10 minutos para la plantilla docente
 def leer_todas_las_asignaciones(_gc, nombre_archivo):
     try:
         doc = _gc.open(nombre_archivo)
         lista_dfs = []
         for hoja in doc.worksheets():
+            time.sleep(0.05)
             datos = hoja.get_all_values()
             if len(datos) > 1:
-                df = pd.DataFrame(datos[1:], columns=datos[0])
+                df = pd.DataFrame(datos[1:], columns=[str(c).strip() for c in datos[0]])
                 df.columns = df.columns.str.strip()
                 df['Nivel'] = hoja.title.strip()
                 lista_dfs.append(df)
@@ -116,7 +131,6 @@ def leer_todas_las_asignaciones(_gc, nombre_archivo):
             return pd.concat(lista_dfs, ignore_index=True)
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Error al leer asignaciones: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=600)

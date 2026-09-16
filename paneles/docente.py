@@ -430,6 +430,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 try:
                     with st.spinner("Guardando en la nube..."):
                         doc = gc.open(FILE_REGISTROS)
+                        st.warning(f"🔗 ID del archivo que está leyendo Streamlit: {doc.id}")
                         clase_id = "Reportes_Pasillo" if reporte_pasillo else f"{materia_final} - {grupo_final[0]}"
                         
                         try:
