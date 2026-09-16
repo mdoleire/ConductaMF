@@ -621,7 +621,7 @@ else:
 
        # Despacho de paneles
         if vista_actual in ['Director', 'Directivo']:
-            renderizar_panel_directivo(gc)
+            renderizar_panel_directivo(gc, area_usuario)
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
         elif vista_actual == 'Tutor':

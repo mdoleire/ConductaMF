@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from database import leer_todos_los_registros
 from paneles.analitica import mostrar_tablero_analitico
 
-def renderizar_panel_directivo(gc):
+def renderizar_panel_directivo(gc, area_director="Todas"):
     st.header("📊 Inteligencia Institucional (Directivo)")
     df_full = leer_todos_los_registros(gc)
     
@@ -15,10 +15,30 @@ def renderizar_panel_directivo(gc):
         st.info("Base de datos de registros vacía.")
         return
         
-    # Limpiamos la columna de materias por seguridad
-    if 'Materia' in df_full.columns:
-        df_full['Materia'] = df_full['Materia'].astype(str).str.strip()
+    # Limpiamos las columnas para evitar fallos por espacios accidentales
+    for col in ['Grado', 'Grupo', 'Profesor', 'Materia']:
+        if col in df_full.columns:
+            df_full[col] = df_full[col].astype(str).str.strip()
 
+    # 🏫 FILTRADO POR NIVEL / SECCIÓN INSTITUCIONAL (SECUNDARIA VS PREPARATORIA)
+    area_clean = str(area_director).strip().lower()
+    
+    if "prepa" in area_clean:
+        # Preparatoria: grados 4, 5 y 6
+        df_full = df_full[df_full['Grado'].astype(str).isin(['4', '5', '6'])]
+        st.caption("🏫 Sección activa: **Preparatoria (4°, 5° y 6° Bachillerato)**")
+    elif "secun" in area_clean:
+        # Secundaria: grados 1, 2 y 3
+        df_full = df_full[df_full['Grado'].astype(str).isin(['1', '2', '3'])]
+        st.caption("🏫 Sección activa: **Secundaria (1°, 2° y 3°)**")
+    else:
+        st.caption("🏫 Sección activa: **Dirección General (Todos los Niveles)**")
+
+    if df_full.empty:
+        st.info("No hay registros en la base de datos para esta sección escolar.")
+        return
+
+    # 🚨 ALERTAS PRIORITARIAS DE PASILLO (FILTRADAS POR SECCIÓN)
     df_pasillo = df_full[df_full['Materia'] == "Pasillo / Inst. General"]
     if not df_pasillo.empty:
         df_pasillo['Fecha_DT'] = pd.to_datetime(df_pasillo['Fecha'], errors='coerce')
@@ -40,14 +60,10 @@ def renderizar_panel_directivo(gc):
         else:
             st.session_state["memoria_alertas_pasillo"] = 0
 
+    # 🔍 FILTROS DINÁMICOS EN CASCADA (ADAPTADOS A LOS GRADOS DISPONIBLES DEL NIVEL)
     with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
         f1, f2, f3, f4 = st.columns(4)
         df_f = df_full.copy()
-        
-        # Limpieza de columnas para filtros perfectos
-        for col in ['Grado', 'Grupo', 'Profesor', 'Materia']:
-            if col in df_f.columns:
-                df_f[col] = df_f[col].astype(str).str.strip()
         
         if 'Grado' in df_f.columns:
             grados = ["Todos"] + sorted(df_f['Grado'].unique().tolist())
@@ -74,4 +90,5 @@ def renderizar_panel_directivo(gc):
             if sel_mat != "Todos":
                 df_f = df_f[df_f['Materia'] == sel_mat]
 
-    mostrar_tablero_analitico(df_f, "Institucional")
+    # Despliegue del tablero analítico con los reportes ya filtrados
+    mostrar_tablero_analitico(df_f, f"Institucional - {area_director}")
