@@ -450,18 +450,35 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.error(f"🚨 Error crítico al intentar guardar en Sheets: {e}")
 
     # =================================================================
-    # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES
+    # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES (100% AUTOMATIZADA)
     # =================================================================
     else:
         with st.container():
             st.subheader("✏️ Editar o Eliminar Reportes Anteriores")
             st.info("💡 Selecciona la ubicación de un reporte tuyo para modificar sus observaciones o borrarlo permanentemente.")
             
+            # Normalizador invisible: garantiza que 'Díaz' coincida con 'Diaz' y 'D'oleire' con 'Doleire'
+            import unicodedata
+            def normalizar(txt):
+                t = str(txt).lower().strip().replace("'", "").replace("’", "")
+                return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+
+            prof_target = normalizar(nombre_prof)
+            
+            # 🔍 Lectura dinámica de las pestañas que existen en el archivo real de Google Sheets
+            try:
+                time.sleep(0.05) # Micro-pausa preventiva contra límites de Google
+                doc_registros = gc.open(FILE_REGISTROS)
+                nombres_hojas_reales = [h.title for h in doc_registros.worksheets()]
+            except Exception as e:
+                nombres_hojas_reales = []
+
             es_pasillo_edit = st.checkbox("Buscar en 'Reportes de Pasillo'", key="edit_pasillo")
             
-            ws_name = ""
+            ws_name = None
             if es_pasillo_edit:
-                ws_name = "Reportes_Pasillo"
+                # Detecta automáticamente la pestaña de pasillo sin importar mayúsculas, espacios o guiones
+                ws_name = next((h for h in nombres_hojas_reales if "pasillo" in h.lower()), "Reportes_Pasillo")
             else:
                 if not mis_asig.empty:
                     c1_e, c2_e = st.columns(2)
@@ -469,24 +486,29 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     mat_edit_teorica = obtener_materia_teorica(mat_edit_raw)
                     grupos_disponibles_edit = mis_asig[mis_asig['Materia'] == mat_edit_raw]['Grupo'].unique()
                     grup_edit = c2_e.selectbox("Grupo:", grupos_disponibles_edit, key="e_grup")
-                    ws_name = f"{mat_edit_teorica} - {grup_edit}"
+                    
+                    nombre_buscado = f"{mat_edit_teorica} - {grup_edit}"
+                    if nombre_buscado in nombres_hojas_reales:
+                        ws_name = nombre_buscado
+                    else:
+                        st.info(f"ℹ️ La pestaña '{nombre_buscado}' aún no tiene registros guardados.")
                 else:
                     st.warning("No tienes materias asignadas para buscar reportes.")
                     
             if ws_name:
                 try:
-                    doc = gc.open(FILE_REGISTROS)
-                    ws_edit = doc.worksheet(ws_name)
+                    ws_edit = doc_registros.worksheet(ws_name)
                     todas_filas_edit = ws_edit.get_all_values()
                 except Exception:
                     todas_filas_edit = []
                     
                 if len(todas_filas_edit) > 1:
-                    headers = todas_filas_edit[0]
+                    headers = [str(h).strip() for h in todas_filas_edit[0]]
                     df_edit = pd.DataFrame(todas_filas_edit[1:], columns=headers)
                     
-                    if not es_superusuario:
-                        df_edit = df_edit[df_edit['Profesor'] == nombre_prof]
+                    # 🛡️ FILTRO AUTOMÁTICO TOLERANTE A ACENTOS
+                    if not es_superusuario and 'Profesor' in df_edit.columns:
+                        df_edit = df_edit[df_edit['Profesor'].apply(normalizar) == prof_target]
                         
                     if not df_edit.empty:
                         df_edit['Label'] = df_edit['Fecha'] + " | " + df_edit['Alumno'] + " | " + df_edit['Falta']
@@ -506,39 +528,40 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             
                             if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
                                 with st.spinner("Actualizando en la nube..."):
-                                    doc_upd = gc.open(FILE_REGISTROS)
-                                    ws_upd = doc_upd.worksheet(ws_name)
-                                    all_vals = ws_upd.get_all_values()
-                                    
-                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and row[0] == fecha_exacta and row[4] == alumno_exacto), None)
+                                    all_vals = ws_edit.get_all_values()
+                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
                                     
                                     if row_idx:
-                                        ws_upd.update_cell(row_idx, 8, nueva_obs)
+                                        # Columna 8 corresponde a Observaciones
+                                        ws_edit.update_cell(row_idx, 8, nueva_obs)
+                                        # Limpieza automática total de caché en segundo plano
                                         leer_todos_los_registros.clear()
+                                        leer_datos.clear()
                                         st.success("✅ Observación actualizada correctamente.")
                                         time.sleep(1)
                                         st.rerun()
                                     else:
-                                        st.error("❌ No se encontró el registro exacto en la base.")
+                                        st.error("❌ No se encontró el registro exacto en la base de datos.")
                                         
                             if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
                                 with st.spinner("Eliminando reporte..."):
-                                    doc_del = gc.open(FILE_REGISTROS)
-                                    ws_del = doc_del.worksheet(ws_name)
-                                    all_vals = ws_del.get_all_values()
-                                    
-                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and row[0] == fecha_exacta and row[4] == alumno_exacto), None)
+                                    all_vals = ws_edit.get_all_values()
+                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
                                     
                                     if row_idx:
-                                        ws_del.delete_rows(row_idx)
+                                        ws_edit.delete_rows(row_idx)
+                                        # Limpieza automática total de caché en segundo plano
                                         leer_todos_los_registros.clear()
+                                        leer_datos.clear()
                                         st.success("✅ Reporte eliminado permanentemente.")
                                         time.sleep(1)
                                         st.rerun()
+                                    else:
+                                        st.error("❌ No se encontró el registro exacto en la base de datos.")
                     else:
-                        st.info("No tienes reportes registrados en esta hoja específica.")
+                        st.info(f"No tienes reportes registrados en la pestaña '{ws_name}'.")
                 else:
-                    st.info(f"No hay registros en la pestaña '{ws_name}'.")
+                    st.info(f"La pestaña '{ws_name}' aún no cuenta con registros guardados.")
 
     # =================================================================
     # ANALÍTICA (SIEMPRE VISIBLE AL FONDO)
