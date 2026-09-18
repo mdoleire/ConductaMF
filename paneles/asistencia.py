@@ -231,7 +231,8 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if detener_app:
         return
 
-    dias_semana_clase = sum(1 for h in [v_lun, v_mar, v_mie, v_jue, v_vie] if h > 0)
+    # FIX: Sumar el total de horas a la semana (incluyendo clases dobles), no solo los días
+    dias_semana_clase = sum([v_lun, v_mar, v_mie, v_jue, v_vie])
     horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
 
     # ========================================================
@@ -291,9 +292,9 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     limite_faltas = limites_fila[idx_periodo] if idx_periodo < len(limites_fila) else limites_fila[-1]
     
     if "secundaria" in nivel_elegido.lower():
-        st.info(f"💡 Frecuencia: **{dias_semana_clase} días/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas**).")
+        st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas**).")
     else:
-        st.info(f"💡 Frecuencia: **{dias_semana_clase} días/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas** | 3 Retardos = 1 Falta).")
+        st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas** | 3 Retardos = 1 Falta).")
 
     try:
         df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)

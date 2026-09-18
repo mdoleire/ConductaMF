@@ -221,8 +221,8 @@ def obtener_resumen_asistencia_alumno(_gc, nombre_alumno, grupo_alumno):
                 conf_materia = df_conf[df_conf['Clase'] == h.title] if not df_conf.empty and 'Clase' in df_conf.columns else pd.DataFrame()
                 dias_semana_clase = 0
                 if not conf_materia.empty:
-                    dias_semana_clase = sum(1 for c in ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'] if int(conf_materia.iloc[0].get(c, 0)) > 0)
-                
+                    # FIX: Sumamos el valor numérico real de cada día para detectar clases dobles
+                    dias_semana_clase = sum(int(conf_materia.iloc[0].get(c, 0)) for c in ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'])
                 limite = limite_faltas_dict.get(dias_semana_clase, 7)
                 cols_fechas = [c for c in df_m.columns if c not in ['Alumno', 'Alumno_Norm']]
                 faltas_reales = 0
