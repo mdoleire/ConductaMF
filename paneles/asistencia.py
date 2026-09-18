@@ -291,11 +291,13 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     limites_fila = limites_tabla.get(dias_semana_clase, [99, 99, 99, 99, 99])
     limite_faltas = limites_fila[idx_periodo] if idx_periodo < len(limites_fila) else limites_fila[-1]
     
+    # 1. Mensaje informativo de frecuencia y periodo
     if "secundaria" in nivel_elegido.lower():
         st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas**).")
     else:
         st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas** | 3 Retardos = 1 Falta).")
 
+    # 2. Carga de datos de asistencia
     try:
         df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
     except Exception:
@@ -315,26 +317,49 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         except Exception:
             peso_fechas[col_f] = 1
 
-    faltas_dict, retardos_dict, faltas_efectivas_dict, derecho_examen_dict = {}, {}, {}, {}
+    # 3. Inicialización y cálculo de faltas por alumno
+    faltas_dict = {}
+    retardos_dict = {}
+    faltas_efectivas_dict = {}
+    derecho_examen_dict = {}
+    
     for al in alumnos:
         if al in df_historial['Alumno'].values:
             fila_al = df_historial[df_historial['Alumno'] == al].iloc[0]
-            f_pond = sum(peso_fechas[c] for c in columnas_fechas if str(fila_al[c]) == '🔴 Falta')
-            r_pond = sum(peso_fechas[c] for c in columnas_fechas if str(fila_al[c]) == '🟡 Retardo')
             
-            if "secundaria" in nivel_elegido.lower():
-                f_efec = f_pond
-                r_pond = 0
-            else:
-                f_efec = f_pond + (r_pond // 3)
-                
-            faltas_dict[al] = f_pond
-            retardos_dict[al] = r_pond
+            # ✅ FIX: Conteo real exacto de celdas (Sin multiplicaciones automáticas)
+            f_real = sum(1 for c in columnas_fechas if str(fila_al[c]) == '🔴 Falta')
+            r_real = sum(1 for c in columnas_fechas if str(fila_al[c]) == '🟡 Retardo')
+            f_efec = f_real + (r_real // 3)
+            
+            faltas_dict[al] = f_real
+            retardos_dict[al] = r_real
             faltas_efectivas_dict[al] = f_efec
-            derecho_examen_dict[al] = "✅ SÍ" if f_efec <= limite_faltas else "❌ NO"
+            
+            # 🚨 SEMÁFORO INTELIGENTE DE DERECHO A EXAMEN
+            if f_efec > limite_faltas:
+                derecho_examen_dict[al] = "❌ SIN DERECHO"
+            elif f_efec == limite_faltas:
+                derecho_examen_dict[al] = "🚨 LÍMITE ALCANZADO"
+            elif f_efec == (limite_faltas - 1) and limite_faltas > 1:
+                derecho_examen_dict[al] = "⚠️ EN RIESGO (-1 falta)"
+            else:
+                derecho_examen_dict[al] = "✅ SÍ"
         else:
-            faltas_dict[al], retardos_dict[al], faltas_efectivas_dict[al] = 0, 0, 0
+            faltas_dict[al] = 0
+            retardos_dict[al] = 0
+            faltas_efectivas_dict[al] = 0
             derecho_examen_dict[al] = "✅ SÍ"
+
+    # 4. 🔔 BANNERS VISUALES DE ALERTA TEMPRANA (Ahora sí, en el lugar correcto)
+    alumnos_sin_derecho = [al for al, est in derecho_examen_dict.items() if est == "❌ SIN DERECHO"]
+    alumnos_en_riesgo = [al for al, est in derecho_examen_dict.items() if "RIESGO" in est or "LÍMITE" in est]
+    
+    if alumnos_sin_derecho:
+        st.error(f"🚫 **ALUMNOS SIN DERECHO A EXAMEN:** {', '.join(alumnos_sin_derecho)} (Superaron el límite de {limite_faltas} faltas reglamentarias).")
+        
+    if alumnos_en_riesgo:
+        st.warning(f"⚠️ **ALERTA TEMPRANA PREPARATORIA:** Los siguientes alumnos están en riesgo inminente de perder derecho a examen: **{', '.join(alumnos_en_riesgo)}**.")
 
     # ========================================================
     # MODO 1: Pase de Lista
