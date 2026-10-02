@@ -438,14 +438,16 @@ if not st.session_state.get("auth_email"):
     ahora_ts = str(time.time())
     state_token = f"{ahora_ts}:{firmar_estado(ahora_ts)}"
     
+    if "oauth_state" not in st.session_state:
+        st.session_state["oauth_state"] = secrets.token_urlsafe(16)
+
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        # 🛡️ SCOPES AMPLIADOS PARA LEER GOOGLE CLASSROOM:
         "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly",
         "access_type": "online",
-        "state": st.session_state["oauth_state"]
+        "state": st.session_state.get("oauth_state", secrets.token_urlsafe(16))
     }
 
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
