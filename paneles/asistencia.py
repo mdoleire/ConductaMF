@@ -359,7 +359,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         st.error(f"🚫 **ALUMNOS SIN DERECHO A EXAMEN:** {', '.join(alumnos_sin_derecho)} (Superaron el límite de {limite_faltas} faltas reglamentarias).")
         
     if alumnos_en_riesgo:
-        st.warning(f"⚠️ **ALERTA TEMPRANA PREPARATORIA:** Los siguientes alumnos están en riesgo inminente de perder derecho a examen: **{', '.join(alumnos_en_riesgo)}**.")
+        st.warning(f"⚠️ **ALERTA TEMPRANA:** Los siguientes alumnos están en riesgo inminente de perder derecho a examen: **{', '.join(alumnos_en_riesgo)}**.")
 
     # ========================================================
     # MODO 1: Pase de Lista
