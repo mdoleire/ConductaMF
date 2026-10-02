@@ -362,25 +362,12 @@ if not st.session_state["auth_email"] and "_s" in parametros_url:
         st.query_params.clear()
 
 # --- 2. PROCESAMIENTO DEL RETORNO OAUTH ---
-if "code" in parametros_url and not st.session_state["auth_email"]:
-    state_recibido = parametros_url.get("state", "")
-    
-    valido = False
-    if ":" in state_recibido:
-        ts, sig = state_recibido.split(":", 1)
-        firma_esperada = firmar_estado(ts)
-        if hmac.compare_digest(sig, firma_esperada):
-            try:
-                if time.time() - float(ts) < 600:
-                    valido = True
-            except ValueError:
-                pass
+# ❌ REEMPLAZA TODO ESE BLOQUE POR ESTA VERSIÓN SIN BUCLE:
 
-    if not valido:
-        st.query_params.clear()
-        st.rerun()
-        
+# --- PROCESAMIENTO DEL RETORNO OAUTH (SIN BUCLE DE PESTAÑAS) ---
+if "code" in parametros_url and not st.session_state.get("auth_email"):
     codigo_autorizacion = parametros_url["code"]
+    
     token_url = "https://oauth2.googleapis.com/token"
     token_data = {
         "code": codigo_autorizacion,
@@ -391,38 +378,40 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
     }
     
     try:
-        response = requests.post(token_url, data=token_data, timeout=10).json()
+        res_raw = requests.post(token_url, data=token_data, timeout=10)
+        response = res_raw.json()
+        
+        # 🔍 SI GOOGLE RECHAZA EL CANJE, LO MOSTRAMOS EN PANTALLA EN LUGAR DE ENTRAR EN BUCLE
+        if "error" in response:
+            st.error(f"🚨 Error en Google OAuth: {response.get('error')} - {response.get('error_description')}")
+            st.info("💡 **Diagnóstico de Redirección:**")
+            st.write(f"- URI configurada en tus secretos: `{REDIRECT_URI}`")
+            st.write("- Asegúrate de que en Google Cloud Console esté escrita exactamente igual.")
+            st.stop()
+            
         access_token = response.get("access_token")
         
         if access_token:
             userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers, timeout=10).json()
-
-             # 🛡️ GUARDAR TOKEN DE ACCESO PARA GOOGLE CLASSROOM
-            st.session_state["access_token"] = access_token
+            
+            # Guardamos la sesión y el token de Google Classroom
             st.session_state["auth_email"] = user_info.get("email", "").lower().strip()
             st.session_state["auth_name"] = user_info.get("name", "Docente Miraflores")
-
-            ## --- SIMULACIÓN DE ALUMNO (BORRAR DESPUÉS DE LA PRUEBA) ---!!!!!!!!!!!!!
-            #email_obtenido = "igonzalez.alm10146@miraflores.edu.mx" 
-            ## ---------------------------------------------------------!!!!!!!!!!!!!!
+            st.session_state["access_token"] = access_token
             
-            name_obtenido = user_info.get("name", "Usuario Miraflores")
-            
-            st.session_state["auth_email"] = email_obtenido
-            st.session_state["auth_name"] = name_obtenido
-            
-            # Dejamos un token criptográfico opaco en la URL (sin exponer correos)
+            # Limpiamos la barra de direcciones y entramos al sistema
             st.query_params.clear()
-            st.query_params["_s"] = crear_token_sesion(email_obtenido, name_obtenido)
             st.rerun()
+        else:
+            st.error("No se pudo obtener el token de acceso de Google.")
+            st.write("Respuesta recibida:", response)
+            st.stop()
             
     except Exception as e:
-        st.error(f"Error en la autenticación: {e}")
-        st.query_params.clear()
+        st.error(f"Error en la conexión de autenticación: {e}")
         st.stop()
-
 # ==========================================
 # CONTROL DE PANTALLA PRINCIPAL
 # ==========================================
