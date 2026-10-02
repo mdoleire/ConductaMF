@@ -21,15 +21,17 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
     with t_sem:
         df_s = df[df['Fecha'] >= (datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None) - timedelta(days=7))].copy()
         if not df_s.empty:
-            st.dataframe(df_s.sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
+            # 🛡️ COLUMNAS LIMPIAS: Ocultamos campos técnicos como Origen_Pestana
+            cols_visibles = [c for c in ['Fecha', 'Alumno', 'Grupo', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados'] if c in df_s.columns]
+            st.dataframe(df_s[cols_visibles].sort_values(['Fecha'], ascending=False), use_container_width=True, hide_index=True)
         else:
             st.success("Sin reportes esta semana.")
 
     with t_mes:
         df_m = df[df['Fecha'].dt.month == datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None).month].copy()
         if not df_m.empty:
-            res = df_m.groupby(['Grupo', 'Alumno', 'Falta']).size().reset_index(name='Veces')
-            st.dataframe(res.sort_values(['Grupo', 'Alumno']), use_container_width=True, hide_index=True)
+            cols_visibles = [c for c in ['Fecha', 'Alumno', 'Grupo', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados'] if c in df_m.columns]
+            st.dataframe(df_m[cols_visibles].sort_values(['Fecha'], ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("Sin registros este mes.")
 
@@ -73,6 +75,7 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
                     })
                 
                 boleta = pd.DataFrame(boleta_data)
+                # En pantalla mantenemos el emoji verde, amarillo y rojo
                 boleta['Calificación'] = boleta['Promedio'].apply(format_calif)
                 
                 st.dataframe(
@@ -80,8 +83,24 @@ def mostrar_tablero_analitico(df, titulo_contexto, modo_descarga=True):
                     use_container_width=True, 
                     hide_index=True
                 )
+                
                 if modo_descarga:
-                    st.download_button("📥 Descargar Excel", boleta.to_csv(index=False).encode('utf-8'), f"Reporte_{sel_p}.csv")
+                    # 🛡️ EXPORTACIÓN LIMPIA PARA EXCEL (Sin emojis rayados y con números reales)
+                    def texto_semaforo_excel(val):
+                        if val >= 9.0: return "Verde (Aprobado)"
+                        if val >= 7.0: return "Amarillo (En Riesgo)"
+                        return "Rojo (Reprobado)"
+
+                    df_excel = boleta[['Grupo', 'Materia', 'Alumno', 'Promedio']].copy()
+                    df_excel['Estado'] = df_excel['Promedio'].apply(texto_semaforo_excel)
+                    df_excel = df_excel.sort_values(['Grupo', 'Materia', 'Alumno'])
+                    
+                    st.download_button(
+                        "📥 Descargar Excel", 
+                        df_excel.to_csv(index=False).encode('utf-8-sig'), 
+                        f"Reporte_{sel_p}.csv",
+                        mime="text/csv"
+                    )
             else:
                 st.success("Sin incidencias en el periodo.")
 

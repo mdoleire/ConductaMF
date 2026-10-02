@@ -220,17 +220,20 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_base)
     
                     if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
-                        if 'Área' in df_alumnos_crudo.columns:
+                        # 🛡️ SANEAMIENTO: Busca 'area_academica' con respaldo a 'Área'
+                        col_area = 'area_academica' if 'area_academica' in df_alumnos_crudo.columns else ('Área' if 'Área' in df_alumnos_crudo.columns else None)
+                        if col_area:
                             texto_busqueda = f"{obtener_materia_teorica(materia)} {grupo}".upper()
                             if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
-                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo[col_area].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
                             elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
-                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('2|II', na=False)]
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo[col_area].astype(str).str.upper().str.contains('2|II', na=False)]
                             elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
-                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo[col_area].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
                             elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
-                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
+                                df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo[col_area].astype(str).str.upper().str.contains('4|IV', na=False)]
     
+                        # Se mantiene intacto el ensamblado de Nombre Completo
                         if 'Nombre Completo' not in df_alumnos_crudo.columns:
                             col_pat = next((c for c in df_alumnos_crudo.columns if 'patern' in str(c).lower()), None)
                             col_mat = next((c for c in df_alumnos_crudo.columns if 'matern' in str(c).lower()), None)
@@ -520,44 +523,64 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                             alumno_exacto = fila_seleccionada['Alumno']
                             obs_actual = fila_seleccionada['Observaciones']
                             
-                            st.markdown(f"**Alumno:** {alumno_exacto} <br> **Falta:** {fila_seleccionada['Falta']}", unsafe_allow_html=True)
+                import html
+
+                # 1. Anti-XSS: Escapamos cualquier dato que venga de la base de datos
+                alumno_seguro = html.escape(str(alumno_exacto))
+                falta_segura = html.escape(str(fila_seleccionada['Falta']))
+                st.markdown(f"**Alumno:** {alumno_seguro} <br> **Falta:** {falta_segura}", unsafe_allow_html=True)
+
+                nueva_obs = st.text_area("Observaciones / Detalles:", value=obs_actual, key="new_obs")
+
+                c_btn1, c_btn2 = st.columns(2)
+
+                if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
+                    with st.spinner("Actualizando en base segura..."):
+                        all_vals = ws_edit.get_all_values()
+                        row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
+                        
+                        if row_idx:
+                            # 🛡️ Validación Anti-IDOR a nivel SQL: Solo el dueño o Superusuario puede alterar la celda
+                            exito = ws_edit.update_cell_seguro(
+                                row_idx=row_idx, 
+                                val=nueva_obs, 
+                                profesor_solicitante=nombre_prof, 
+                                es_admin=es_superusuario
+                            )
+                            if exito:
+                                leer_todos_los_registros.clear()
+                                leer_datos.clear()
+                                st.success("✅ Observación actualizada correctamente.")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("⛔ Acción no autorizada: No tienes permisos para modificar este reporte.")
+                        else:
+                            st.error("❌ No se encontró el registro exacto.")
                             
-                            nueva_obs = st.text_area("Observaciones / Detalles:", value=obs_actual, key="new_obs")
+                    if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
+                        with st.spinner("Eliminando de forma segura..."):
+                            all_vals = ws_edit.get_all_values()
+                            row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
                             
-                            c_btn1, c_btn2 = st.columns(2)
-                            
-                            if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
-                                with st.spinner("Actualizando en la nube..."):
-                                    all_vals = ws_edit.get_all_values()
-                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
-                                    
-                                    if row_idx:
-                                        # Columna 8 corresponde a Observaciones
-                                        ws_edit.update_cell(row_idx, 8, nueva_obs)
-                                        # Limpieza automática total de caché en segundo plano
-                                        leer_todos_los_registros.clear()
-                                        leer_datos.clear()
-                                        st.success("✅ Observación actualizada correctamente.")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ No se encontró el registro exacto en la base de datos.")
-                                        
-                            if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
-                                with st.spinner("Eliminando reporte..."):
-                                    all_vals = ws_edit.get_all_values()
-                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
-                                    
-                                    if row_idx:
-                                        ws_edit.delete_rows(row_idx)
-                                        # Limpieza automática total de caché en segundo plano
-                                        leer_todos_los_registros.clear()
-                                        leer_datos.clear()
-                                        st.success("✅ Reporte eliminado permanentemente.")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ No se encontró el registro exacto en la base de datos.")
+                            if row_idx:
+                                # 🛡️ Validación Anti-IDOR a nivel SQL
+                                exito = ws_edit.delete_rows_seguro(
+                                    row_idx=row_idx, 
+                                    profesor_solicitante=nombre_prof, 
+                                    es_admin=es_superusuario
+                                )
+                                if exito:
+                                    ws_edit.delete_rows(row_idx)
+                                    leer_todos_los_registros.clear()
+                                    leer_datos.clear()
+                                    st.success("✅ Reporte eliminado permanentemente.")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("⛔ Acción no autorizada: No tienes permisos para eliminar este reporte.")
+                            else:
+                                st.error("❌ No se encontró el registro exacto.")
                     else:
                         st.info(f"No tienes reportes registrados en la pestaña '{ws_name}'.")
                 else:

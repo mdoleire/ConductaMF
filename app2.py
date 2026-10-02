@@ -30,12 +30,20 @@ from config import (
     REGEX_CORREO_ALUMNO,
     SUPER_USUARIOS_WHITELIST
 )
+# from database import (
+#     conectar_gsheets, 
+#     leer_datos, 
+#     leer_todos_los_registros, 
+#     leer_todas_las_asignaciones
+# )
+# ✅ AHORA (SQL Instantáneo):
 from database import (
     conectar_gsheets, 
     leer_datos, 
     leer_todos_los_registros, 
     leer_todas_las_asignaciones
 )
+
 from paneles.tutor import renderizar_panel_tutor
 from paneles.directivo import renderizar_panel_directivo
 from paneles.coordinador import renderizar_panel_coordinador
@@ -43,6 +51,7 @@ from paneles.docente import renderizar_panel_docente
 from paneles.asistencia import renderizar_panel_asistencia
 from paneles.alumno import renderizar_panel_alumno
 from reglamento import TEXTO_ACUERDO
+from paneles.calificaciones import renderizar_panel_calificaciones
 
 # ==========================================
 # CONFIGURACIÓN VISUAL
@@ -393,7 +402,7 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
             email_obtenido = user_info.get("email", "").lower().strip()
 
             ## --- SIMULACIÓN DE ALUMNO (BORRAR DESPUÉS DE LA PRUEBA) ---!!!!!!!!!!!!!
-            #email_obtenido = "vruiz@miraflores.edu.mx" 
+            #email_obtenido = "igonzalez.alm10146@miraflores.edu.mx" 
             ## ---------------------------------------------------------!!!!!!!!!!!!!!
             
             name_obtenido = user_info.get("name", "Usuario Miraflores")
@@ -458,7 +467,7 @@ else:
     # 1. Guardamos tu identidad original intocable
     correo_real = st.session_state["auth_email"].lower().strip()
     nombre_real = st.session_state["auth_name"]
-    
+
     # 2. Candado estricto de dominio institucional
     dominio_valido = correo_real.endswith("@miraflores.edu.mx")
     es_admin_externo = correo_real in SUPER_USUARIOS_WHITELIST
@@ -513,6 +522,15 @@ else:
 
     # 3. ENRUTAMIENTO ESTUDIANTIL
     es_alumno = bool(re.search(REGEX_CORREO_ALUMNO, correo_google))
+    
+    # 🚨 =========================================================
+    # 🧪 INYECCIÓN DIRECTA DE ALUMNO (BYPASS TOTAL)
+    # =========================================================
+    # Para probar como alumno, descomenta estas dos líneas:
+    #correo_google = "bgonzalez.alm9170@miraflores.edu.mx"
+    #es_alumno = True
+    # ─────────────────────────────────────────────────────────
+
     if es_alumno:
         renderizar_panel_alumno(gc, correo_google)
         st.stop()
@@ -601,9 +619,9 @@ else:
 
         # Validación insensible a mayúsculas
         if rol_assigned.lower() == 'docente':
-            opciones_vista = ["📅 Pasar Lista", "📝 Reportar Conducta"]
+            opciones_vista = ["📅 Pasar Lista", "📝 Reportar Conducta", "📊 Calificaciones"]
         else:
-            opciones_vista = ["📅 Pasar Lista", f"Ver como {rol_assigned}", "📝 Reportar Conducta"]
+            opciones_vista = ["📅 Pasar Lista", f"Ver como {rol_assigned}", "📝 Reportar Conducta", "📊 Calificaciones"]
             
         if es_tutor:
             opciones_vista.append("👤 Ver como Tutor")
@@ -616,6 +634,8 @@ else:
             vista_actual = 'Asistencia'
         elif seleccion == "👤 Ver como Tutor":
             vista_actual = 'Tutor'
+        elif seleccion == "📊 Calificaciones":
+            vista_actual = 'Calificaciones'
         else:
             vista_actual = rol_assigned
 
@@ -630,6 +650,8 @@ else:
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
         elif vista_actual == 'Asistencia':
             renderizar_panel_asistencia(gc, correo_google, nombre_mostrar)
+        elif vista_actual == 'Calificaciones':
+            renderizar_panel_calificaciones(gc, correo_google, nombre_mostrar)
             
         # ==========================================
         # ASISTENTE DE NORMATIVA (LLM AISLADO CON CACHÉ)
@@ -679,7 +701,7 @@ else:
                             """
                             
                             modelo = genai.GenerativeModel(
-                                model_name='gemini-2.5-flash',
+                                model_name='gemini-3.6-flash',
                                 system_instruction=instrucciones
                             )
                             

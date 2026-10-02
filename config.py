@@ -1,11 +1,19 @@
 # ==========================================
 # 1. CONFIGURACIÓN Y CATÁLOGO
 # ==========================================
+# FILE_ALUMNOS = "TEST_1_Alumnos_por_Grupo"
+# FILE_ASIGNACIONES = "TEST_2_Asignaciones_Profesores"
+# FILE_SEGURIDAD = "TEST_3_Usuarios_Seguridad"
+# FILE_REGISTROS = "TEST_4_Base_Conducta_Registros"
+# FILE_ASISTENCIA = "TEST_5_Registro_Asistencia"
+# FILE_CALIFICACIONES = "6_Calificaciones_Academicas"
+
 FILE_ALUMNOS = "1_Alumnos_por_Grupo"
 FILE_ASIGNACIONES = "2_Asignaciones_Profesores"
 FILE_SEGURIDAD = "3_Usuarios_Seguridad"
 FILE_REGISTROS = "4_Base_Conducta_Registros"
 FILE_ASISTENCIA = "5_Registro_Asistencia"
+FILE_CALIFICACIONES = "6_Calificaciones_Academicas"
 
 # config.py
 

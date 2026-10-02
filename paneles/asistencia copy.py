@@ -1,0 +1,577 @@
+# paneles/asistencia.py
+
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import gspread
+import time
+
+# 🛡️ Se importó PERIODOS_LECTIVOS de la configuración
+from config import FILE_ASIGNACIONES, FILE_ALUMNOS, FILE_ASISTENCIA, SUPER_USUARIOS_WHITELIST, PERIODOS_LECTIVOS
+from database import leer_datos, obtener_lista_alumnos, obtener_dataframe_alumnos, leer_todas_las_asignaciones
+
+def renderizar_panel_asistencia(gc, usuario, nombre_prof):
+    
+    def obtener_materia_teorica(nombre_materia):
+        diccionario_fusion = {
+            "lab física": "Física",
+            "laboratorio de química": "Química", 
+            "lab química": "Química",
+            "laboratorio de biología": "Biología 1", 
+            "lab biología": "Biología 1",
+            "laboratorio de física iii": "Física III", 
+            "lab física iii": "Física III",
+            "laboratorio de química iii": "Química III", 
+            "lab química iii": "Química III",
+            "laboratorio de biología iv": "Biología IV", 
+            "lab biología iv": "Biología IV",
+            "laboratorio de lab física iv a i": "Física IV A I", 
+            "lab física iv a i": "Física IV A I",
+            "laboratorio de lab física iv a ii": "Física IV A II", 
+            "lab física iv a ii": "Física IV A II",
+            "laboratorio de lab química iv a i": "Química IV A I", 
+            "lab química iv a i": "Química IV A I",
+            "laboratorio de lab química iv a ii": "Química IV A II", 
+            "lab química iv a ii": "Química IV A II"
+        }
+        limpio = str(nombre_materia).lower().strip().replace("  ", " ")
+        return diccionario_fusion.get(limpio, str(nombre_materia).strip())
+
+    st.header("📅 Gestión de Asistencia")
+    
+    if "modo_edicion_horario" not in st.session_state:
+        st.session_state.modo_edicion_horario = False
+        
+    usuario = str(usuario).lower().strip()
+    es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
+    
+    hoy_cdmx = datetime.now(ZoneInfo("America/Mexico_City"))
+    dia_num_hoy = hoy_cdmx.weekday()
+    dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
+    nombre_dia_hoy = dias_espanol.get(dia_num_hoy)
+
+    modo_vista = st.radio(
+        "Acción:", 
+        ["📝 Pasar Lista / Editar Día", "📊 Vista Histórica del Grupo"], 
+        horizontal=True
+    )
+    st.markdown("---")
+
+    habilitar_historico = st.toggle("🔓 Modificar asistencia de días anteriores (Mostrar todas las materias)")
+
+    if modo_vista == "📝 Pasar Lista / Editar Día" and not habilitar_historico:
+        if dia_num_hoy in [5, 6]:
+            st.warning(f"☕ **Hoy es {nombre_dia_hoy}. No hay clases programadas en fin de semana.**")
+            st.info("💡 Para revisar o modificar inasistencias de días anteriores, activa el interruptor de arriba.")
+            return  
+
+    df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+    if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
+        st.warning("⚠️ No se encontró la estructura correcta en el archivo de asignaciones.")
+        return
+        
+    df_asig['Usuario_Profesor'] = df_asig['Usuario_Profesor'].astype(str).str.lower().str.strip()
+    if 'Materia' in df_asig.columns:
+        df_asig['Materia'] = df_asig['Materia'].astype(str).str.strip()
+    if 'Grupo' in df_asig.columns:
+        df_asig['Grupo'] = df_asig['Grupo'].astype(str).str.strip()
+        
+    if es_superusuario:
+        mis_asig = df_asig.copy()
+    else:
+        mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
+    
+    if mis_asig.empty:
+        st.warning("Sin materias asignadas para pasar lista.")
+        return
+
+    niveles_prof = sorted(mis_asig['Nivel'].unique().tolist())
+    if len(niveles_prof) > 1:
+        nivel_elegido = st.radio("🏫 Nivel Escolar:", niveles_prof, horizontal=True)
+        mis_asig = mis_asig[mis_asig['Nivel'] == nivel_elegido]
+    elif len(niveles_prof) == 1:
+        nivel_elegido = niveles_prof[0]
+    else:
+        nivel_elegido = "Preparatoria"
+
+    try:
+        df_config = leer_datos(gc, FILE_ASISTENCIA, "Configuracion")
+    except Exception:
+        df_config = pd.DataFrame(columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
+
+    materias_filtradas = mis_asig.copy()
+
+    if modo_vista == "📝 Pasar Lista / Editar Día" and not habilitar_historico and not es_superusuario:
+        if not df_config.empty and 'Clase' in df_config.columns and nombre_dia_hoy in df_config.columns:
+            clases_hoy = df_config[pd.to_numeric(df_config[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
+            materias_hoy = []
+            for _, r in mis_asig.iterrows():
+                mat_base = obtener_materia_teorica(r['Materia'])
+                tag = f"{mat_base} - {r['Grupo']}"
+                
+                if tag in clases_hoy or tag not in df_config['Clase'].values:
+                    materias_hoy.append(r['Materia'])
+            
+            if materias_hoy:
+                materias_filtradas = mis_asig[mis_asig['Materia'].isin(materias_hoy)]
+            else:
+                st.success(f"☕ **Hoy {nombre_dia_hoy} no tienes ninguna clase asignada en tu horario.**")
+                st.info("💡 Activa el interruptor arriba para modificar días anteriores.")
+                return
+
+    c1, c2, c3 = st.columns([3, 3, 2])
+    materia_seleccionada = c1.selectbox("Materia:", materias_filtradas['Materia'].unique(), key="asist_mat")
+    materia = obtener_materia_teorica(materia_seleccionada)
+    grupo = c2.selectbox("Grupo:", materias_filtradas[materias_filtradas['Materia'] == materia_seleccionada]['Grupo'].unique(), key="asist_grup")
+    
+    with c3:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if not st.session_state.modo_edicion_horario:
+            if st.button("⚙️ Modificar horario", use_container_width=True):
+                st.session_state.modo_edicion_horario = True
+                st.rerun()
+
+    try:
+        grupo_limpio = grupo.split("(")[0].strip()
+        df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
+        
+        if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
+            if 'Área' in df_alumnos_crudo.columns:
+                texto_busqueda = f"{materia} {grupo}".upper()
+                if "ÁREA 1" in texto_busqueda or "ÁREA I" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('1|I|CIENCIAS', na=False)]
+                elif "ÁREA 2" in texto_busqueda or "ÁREA II" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('2|II', na=False)]
+                elif "ÁREA 3" in texto_busqueda or "ÁREA III" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('3|III|HUMANIDADES', na=False)]
+                elif "ÁREA 4" in texto_busqueda or "ÁREA IV" in texto_busqueda:
+                    df_alumnos_crudo = df_alumnos_crudo[df_alumnos_crudo['Área'].astype(str).str.upper().str.contains('4|IV', na=False)]
+            
+            if 'Nombre Completo' in df_alumnos_crudo.columns:
+                nombres = df_alumnos_crudo['Nombre Completo'].replace(r'^nan nan nan$|^nan$|^$', pd.NA, regex=True).dropna()
+                alumnos = sorted(nombres.unique().tolist())
+            else:
+                alumnos = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
+        else:
+            alumnos = []
+    except Exception as e:
+        alumnos = []
+        st.error(f"Error al obtener alumnos: {e}")
+        
+    if not alumnos:
+        st.warning(f"No se encontraron alumnos registrados para el grupo '{grupo_limpio}'.")
+        return
+
+    nombre_pestana = f"{materia} - {grupo}"
+    config_actual = pd.DataFrame()
+    if not df_config.empty and 'Clase' in df_config.columns:
+        config_actual = df_config[df_config['Clase'] == nombre_pestana]
+
+    v_lun, v_mar, v_mie, v_jue, v_vie = 0, 0, 0, 0, 0
+    if not config_actual.empty:
+        v_lun = int(config_actual.iloc[0].get('Lunes', 0))
+        v_mar = int(config_actual.iloc[0].get('Martes', 0))
+        v_mie = int(config_actual.iloc[0].get('Miercoles', 0))
+        v_jue = int(config_actual.iloc[0].get('Jueves', 0))
+        v_vie = int(config_actual.iloc[0].get('Viernes', 0))
+
+    if config_actual.empty:
+        st.info(f"⚙️ Configuración requerida para {nombre_pestana}")
+        mostrar_formulario = True
+        detener_app = True
+    else:
+        mostrar_formulario = st.session_state.modo_edicion_horario
+        detener_app = False
+
+    if mostrar_formulario:
+        with st.container():
+            if not config_actual.empty:
+                _, c_cerrar = st.columns([8, 2])
+                with c_cerrar:
+                    if st.button("❌ Cerrar", use_container_width=True):
+                        st.session_state.modo_edicion_horario = False
+                        st.rerun()
+
+            with st.form(f"form_horario_{nombre_pestana}"):
+                st.write("Horas de clase por día (0 = Sin clase, 1 = Sencilla, 2 = Doble):")
+                c_lun, c_mar, c_mie, c_jue, c_vie = st.columns(5)
+                h_lun = c_lun.number_input("Lunes", 0, 4, v_lun)
+                h_mar = c_mar.number_input("Martes", 0, 4, v_mar)
+                h_mie = c_mie.number_input("Miérc.", 0, 4, v_mie)
+                h_jue = c_jue.number_input("Jueves", 0, 4, v_jue)
+                h_vie = c_vie.number_input("Viernes", 0, 4, v_vie)
+
+                if st.form_submit_button("💾 Guardar Horario", type="primary"):
+                    if sum([h_lun, h_mar, h_mie, h_jue, h_vie]) == 0:
+                        st.error("⚠️ Asigna al menos 1 hora de clase a la semana.")
+                    else:
+                        doc = gc.open(FILE_ASISTENCIA)
+                        try:
+                            ws_conf = doc.worksheet("Configuracion")
+                        except gspread.exceptions.WorksheetNotFound:
+                            ws_conf = doc.add_worksheet("Configuracion", rows="100", cols="6")
+                            ws_conf.append_row(["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
+
+                        nueva_fila = [nombre_pestana, h_lun, h_mar, h_mie, h_jue, h_vie]
+                        if config_actual.empty:
+                            ws_conf.append_row(nueva_fila)
+                        else:
+                            todas_filas = ws_conf.get_all_values()
+                            for i, f in enumerate(todas_filas[1:], start=2):
+                                if f and f[0] == nombre_pestana:
+                                    ws_conf.update(values=[nueva_fila], range_name=f"A{i}:F{i}")
+                                    break
+                                    
+                        st.session_state.modo_edicion_horario = False
+                        leer_datos.clear() 
+                        st.success("✅ Horario guardado.")
+                        time.sleep(1)
+                        st.rerun()
+    if detener_app:
+        return
+
+    # FIX: Sumar el total de horas a la semana (incluyendo clases dobles), no solo los días
+    dias_semana_clase = sum([v_lun, v_mar, v_mie, v_jue, v_vie])
+    horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
+
+    # ========================================================
+    # 🛡️ LÓGICA DE DETECCIÓN AUTOMÁTICA DE PERIODO
+    # ========================================================
+    st.markdown("---")
+    
+    nivel_key = "Secundaria" if "secundaria" in nivel_elegido.lower() else "Preparatoria"
+    periodos_nivel = PERIODOS_LECTIVOS.get(nivel_key, [])
+    
+    periodo_actual_nombre = "1° Periodo"
+    idx_periodo = 0
+    fecha_evaluacion = hoy_cdmx.date()
+
+    for i, p in enumerate(periodos_nivel):
+        inicio = datetime.strptime(p["inicio"], "%Y-%m-%d").date()
+        fin = datetime.strptime(p["fin"], "%Y-%m-%d").date()
+        if inicio <= fecha_evaluacion <= fin:
+            periodo_actual_nombre = p["nombre"]
+            idx_periodo = i
+            break
+    else:
+        # Si estamos en vacaciones, forzar el primer o último periodo según la fecha
+        if periodos_nivel:
+            primero = datetime.strptime(periodos_nivel[0]["inicio"], "%Y-%m-%d").date()
+            if fecha_evaluacion < primero:
+                periodo_actual_nombre = periodos_nivel[0]["nombre"]
+                idx_periodo = 0
+            else:
+                periodo_actual_nombre = periodos_nivel[-1]["nombre"]
+                idx_periodo = len(periodos_nivel) - 1
+                
+    if "secundaria" in nivel_elegido.lower():
+        opciones_asistencia = ["✅ Presente", "🔴 Falta"]
+        opciones_hist = ["✅ Presente", "🔴 Falta", ""]
+        # 🛡️ TABLA CORREGIDA SEGÚN REGLAMENTO OFICIAL (1er, 2do, 3er Trimestre)
+        limites_tabla = {
+            1: [2, 2, 3],
+            2: [3, 4, 5],
+            3: [5, 6, 7],
+            4: [6, 8, 10],
+            5: [8, 10, 12]
+        }
+    else:
+        opciones_asistencia = ["✅ Presente", "🟡 Retardo", "🔴 Falta"]
+        opciones_hist = ["✅ Presente", "🟡 Retardo", "🔴 Falta", ""]
+        limites_tabla = {
+            1: [2, 2, 2, 2, 2],
+            2: [4, 3, 4, 4, 4],
+            3: [5, 5, 4, 5, 5],
+            4: [7, 7, 6, 7, 7],
+            5: [9, 9, 7, 9, 9]
+        }
+
+    # Extraer el límite matemático asegurando que no exceda el índice del arreglo
+    limites_fila = limites_tabla.get(dias_semana_clase, [99, 99, 99, 99, 99])
+    limite_faltas = limites_fila[idx_periodo] if idx_periodo < len(limites_fila) else limites_fila[-1]
+    
+    # 1. Mensaje informativo de frecuencia y periodo
+    if "secundaria" in nivel_elegido.lower():
+        st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas**).")
+    else:
+        st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando el **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas** | 3 Retardos = 1 Falta).")
+
+    # 2. Carga de datos de asistencia
+    try:
+        df_historial = leer_datos(gc, FILE_ASISTENCIA, nombre_pestana)
+    except Exception:
+        df_historial = pd.DataFrame()
+
+    if df_historial.empty or 'Alumno' not in df_historial.columns:
+        df_historial = pd.DataFrame({"Alumno": alumnos})
+
+    columnas_fechas = [c for c in df_historial.columns if c != 'Alumno']
+    peso_fechas = {}
+    
+    for col_f in columnas_fechas:
+        try:
+            fecha_limpia = col_f.split(" (")[0]
+            d_sem = datetime.strptime(fecha_limpia, "%d-%m-%Y").weekday()
+            peso_fechas[col_f] = horario_clase.get(d_sem, 1) or 1
+        except Exception:
+            peso_fechas[col_f] = 1
+
+    # 3. Inicialización y cálculo de faltas por alumno
+    faltas_dict = {}
+    retardos_dict = {}
+    faltas_efectivas_dict = {}
+    derecho_examen_dict = {}
+    
+    for al in alumnos:
+        if al in df_historial['Alumno'].values:
+            fila_al = df_historial[df_historial['Alumno'] == al].iloc[0]
+            
+            # ✅ FIX: Conteo real exacto de celdas (Sin multiplicaciones automáticas)
+            f_real = sum(1 for c in columnas_fechas if str(fila_al[c]) == '🔴 Falta')
+            r_real = sum(1 for c in columnas_fechas if str(fila_al[c]) == '🟡 Retardo')
+            f_efec = f_real + (r_real // 3)
+            
+            faltas_dict[al] = f_real
+            retardos_dict[al] = r_real
+            faltas_efectivas_dict[al] = f_efec
+            
+            # 🚨 SEMÁFORO INTELIGENTE DE DERECHO A EXAMEN
+            if f_efec > limite_faltas:
+                derecho_examen_dict[al] = "❌ SIN DERECHO"
+            elif f_efec == limite_faltas:
+                derecho_examen_dict[al] = "🚨 LÍMITE ALCANZADO"
+            elif f_efec == (limite_faltas - 1) and limite_faltas > 1:
+                derecho_examen_dict[al] = "⚠️ EN RIESGO (-1 falta)"
+            else:
+                derecho_examen_dict[al] = "✅ SÍ"
+        else:
+            faltas_dict[al] = 0
+            retardos_dict[al] = 0
+            faltas_efectivas_dict[al] = 0
+            derecho_examen_dict[al] = "✅ SÍ"
+
+    # 4. 🔔 BANNERS VISUALES DE ALERTA TEMPRANA (Ahora sí, en el lugar correcto)
+    alumnos_sin_derecho = [al for al, est in derecho_examen_dict.items() if est == "❌ SIN DERECHO"]
+    alumnos_en_riesgo = [al for al, est in derecho_examen_dict.items() if "RIESGO" in est or "LÍMITE" in est]
+    
+    if alumnos_sin_derecho:
+        st.error(f"🚫 **ALUMNOS SIN DERECHO A EXAMEN:** {', '.join(alumnos_sin_derecho)} (Superaron el límite de {limite_faltas} faltas reglamentarias).")
+        
+    if alumnos_en_riesgo:
+        st.warning(f"⚠️ **ALERTA TEMPRANA PREPARATORIA:** Los siguientes alumnos están en riesgo inminente de perder derecho a examen: **{', '.join(alumnos_en_riesgo)}**.")
+
+    # ========================================================
+    # MODO 1: Pase de Lista
+    # ========================================================
+    if modo_vista == "📝 Pasar Lista / Editar Día":
+        
+        fechas_validas, etiquetas_fechas = [], {}
+        
+        if habilitar_historico:
+            for i in range(1, 45):
+                fecha_eval = hoy_cdmx - timedelta(days=i)
+                dia_sem = fecha_eval.weekday()
+                if dia_sem in [5, 6]: continue
+                if dias_semana_clase > 0 and horario_clase.get(dia_sem, 0) == 0: continue
+                
+                f_str = fecha_eval.strftime("%d-%m-%Y")
+                fechas_validas.append(f_str)
+                etiquetas_fechas[f_str] = f"{dias_espanol[dia_sem]} {f_str}"
+        else:
+            f_str = hoy_cdmx.strftime("%d-%m-%Y")
+            fechas_validas.append(f_str)
+            etiquetas_fechas[f_str] = f"Hoy ({dias_espanol[dia_num_hoy]}) {f_str}"
+
+        if not fechas_validas:
+            st.warning("No se encontraron fechas de clase anteriores para esta materia.")
+            return
+
+        fecha_str = st.selectbox("📅 Fecha de clase:", fechas_validas, format_func=lambda x: etiquetas_fechas[x])
+
+        dia_seleccionado = datetime.strptime(fecha_str, "%d-%m-%Y").weekday()
+        horas_ese_dia = horario_clase.get(dia_seleccionado, 1)
+
+        if horas_ese_dia >= 2:
+            tipo_sesion = st.radio(
+                "¿Cómo está estructurada la clase de hoy?",
+                [
+                    "🕒 Sesión Única / Bloque Continuo", 
+                    "1️⃣ Primer Módulo (Sesión Separada)", 
+                    "2️⃣ Segundo Módulo (Sesión Separada)"
+                ],
+                horizontal=True
+            )
+            
+            if "Primer" in tipo_sesion:
+                col_fecha_final = f"{fecha_str} (S1)"
+            elif "Segundo" in tipo_sesion:
+                col_fecha_final = f"{fecha_str} (S2)"
+            else:
+                col_fecha_final = fecha_str
+        else:
+            col_fecha_final = fecha_str
+
+        if col_fecha_final in df_historial.columns:
+            valores_previos = dict(zip(df_historial['Alumno'], df_historial[col_fecha_final]))
+            col_asist = [valores_previos.get(al, "✅ Presente") if pd.notna(valores_previos.get(al)) and valores_previos.get(al) != "" else "✅ Presente" for al in alumnos]
+        else:
+            col_asist = ["✅ Presente"] * len(alumnos)
+
+        df_view = pd.DataFrame({
+            "Alumno": alumnos,
+            "Asistencia": col_asist,
+            "Faltas Reales": [faltas_dict[al] for al in alumnos],
+            "Retardos": [retardos_dict[al] for al in alumnos],
+            "Faltas Efectivas": [faltas_efectivas_dict[al] for al in alumnos],
+            "Derecho Examen": [derecho_examen_dict[al] for al in alumnos]
+        })
+
+        col_config = {
+            "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
+            "Asistencia": st.column_config.SelectboxColumn("Asistencia", options=opciones_asistencia, required=True),
+            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
+            "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
+            "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True)
+        }
+        
+        if "secundaria" in nivel_elegido.lower():
+            col_config["Retardos"] = None
+        else:
+            col_config["Retardos"] = st.column_config.NumberColumn("Retardos", disabled=True)
+
+        df_editado = st.data_editor(
+            df_view,
+            column_config=col_config,
+            hide_index=True,
+            use_container_width=True,
+            key=f"ed_{materia}_{grupo}_{col_fecha_final}"
+        )
+
+        if st.button("💾 Guardar Asistencia", type="primary"):
+            with st.spinner(f"Guardando asistencia del {col_fecha_final}..."):
+                doc = gc.open(FILE_ASISTENCIA)
+                try:
+                    ws = doc.worksheet(nombre_pestana)
+                except gspread.exceptions.WorksheetNotFound:
+                    ws = doc.add_worksheet(title=nombre_pestana, rows="100", cols="50")
+                    ws.append_row(["Alumno"])
+
+                df_actualizado = df_historial.copy()
+                al_existentes = df_actualizado['Alumno'].tolist() if 'Alumno' in df_actualizado.columns else []
+                nuevos = [a for a in alumnos if a not in al_existentes]
+                if nuevos:
+                    df_nuevos = pd.DataFrame({"Alumno": nuevos})
+                    df_actualizado = pd.concat([df_actualizado, df_nuevos], ignore_index=True).sort_values('Alumno').reset_index(drop=True)
+
+                mapeo_asist = dict(zip(df_editado['Alumno'], df_editado['Asistencia']))
+                df_actualizado[col_fecha_final] = df_actualizado['Alumno'].map(mapeo_asist)
+                df_actualizado = df_actualizado.fillna("")
+
+                def ordenar_fechas(col):
+                    try:
+                        return datetime.strptime(col.split(" (")[0], "%d-%m-%Y")
+                    except Exception:
+                        return datetime.min
+
+                cols_fechas = [c for c in df_actualizado.columns if c != 'Alumno']
+                cols_fechas.sort(key=ordenar_fechas)
+                df_actualizado = df_actualizado[['Alumno'] + cols_fechas]
+
+                datos_matriz = [df_actualizado.columns.values.tolist()] + df_actualizado.values.tolist()
+                ws.update(values=datos_matriz, range_name="A1")
+                
+                leer_datos.clear()
+                st.success(f"✅ Asistencia registrada correctamente.")
+                time.sleep(1)
+                st.rerun()
+
+    # ========================================================
+    # MODO 2: Vista Histórica 
+    # ========================================================
+    else:
+        st.markdown(f"### 📈 Historial de Asistencia: {grupo} ({materia})")
+        if df_historial.empty or len(columnas_fechas) == 0:
+            st.info("Sin registros de asistencia acumulados.")
+            return
+
+        df_mostrar = pd.DataFrame({"Alumno": df_historial["Alumno"]})
+        df_mostrar["Derecho Examen"] = df_mostrar["Alumno"].map(derecho_examen_dict)
+        df_mostrar["Faltas Efectivas"] = df_mostrar["Alumno"].map(faltas_efectivas_dict)
+        df_mostrar["Faltas Reales"] = df_mostrar["Alumno"].map(faltas_dict)
+        df_mostrar["Retardos"] = df_mostrar["Alumno"].map(retardos_dict)
+        
+        for col in columnas_fechas:
+            df_mostrar[col] = df_historial[col]
+        
+        st.info("💡 Ahora puedes editar la asistencia de cualquier día directamente en esta tabla. Los totales se recalcularán al guardar.")
+        
+        config_cols_hist = {
+            "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
+            "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True),
+            "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
+            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True)
+        }
+        
+        if "secundaria" in nivel_elegido.lower():
+            config_cols_hist["Retardos"] = None
+        else:
+            config_cols_hist["Retardos"] = st.column_config.NumberColumn("Retardos", disabled=True)
+            
+        for col in columnas_fechas:
+            config_cols_hist[col] = st.column_config.SelectboxColumn(
+                col, 
+                options=opciones_hist, 
+                required=False
+            )
+
+        df_editado_hist = st.data_editor(
+            df_mostrar,
+            column_config=config_cols_hist,
+            use_container_width=True,
+            hide_index=True,
+            key=f"ed_hist_{materia}_{grupo}"
+        )
+        
+        col_btn1, col_btn2 = st.columns([1, 1])
+        
+        with col_btn1:
+            if st.button("💾 Guardar Cambios Históricos", type="primary", use_container_width=True):
+                with st.spinner("Actualizando matriz en Google Sheets..."):
+                    doc = gc.open(FILE_ASISTENCIA)
+                    try:
+                        ws = doc.worksheet(nombre_pestana)
+                    except gspread.exceptions.WorksheetNotFound:
+                        ws = doc.add_worksheet(title=nombre_pestana, rows="100", cols="50")
+                        ws.append_row(["Alumno"])
+
+                    df_a_guardar = pd.DataFrame({"Alumno": df_editado_hist["Alumno"]})
+                    for col in columnas_fechas:
+                        df_a_guardar[col] = df_editado_hist[col].fillna("")
+                    
+                    def ordenar_fechas_hist(col):
+                        try:
+                            return datetime.strptime(col.split(" (")[0], "%d-%m-%Y")
+                        except Exception:
+                            return datetime.min
+
+                    cols_fechas_guardar = [c for c in df_a_guardar.columns if c != 'Alumno']
+                    cols_fechas_guardar.sort(key=ordenar_fechas_hist)
+                    df_a_guardar = df_a_guardar[['Alumno'] + cols_fechas_guardar]
+
+                    datos_matriz = [df_a_guardar.columns.values.tolist()] + df_a_guardar.values.tolist()
+                    ws.update(values=datos_matriz, range_name="A1")
+                    
+                    leer_datos.clear()
+                    st.success("✅ Historial actualizado correctamente. Recalculando...")
+                    time.sleep(1.5)
+                    st.rerun()
+        
+        with col_btn2:
+            st.download_button(
+                "📥 Descargar Matriz CSV",
+                df_mostrar.to_csv(index=False).encode('utf-8-sig'),
+                f"Asistencia_{materia}_{grupo}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )

@@ -140,7 +140,17 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
                 height=400
             )
             
-            csv_data = df_mes[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
+            df_export_mes = df_mes[cols_mostrar].copy()
+            remplazos_excel_tutor = {
+                "🔴 Falta": "Falta",
+                "🟡 Retardo": "Retardo",
+                "✅ Presente": "Presente",
+                "⚪ Sin Clase": "Sin Clase"
+            }
+            for col in df_export_mes.columns:
+                df_export_mes[col] = df_export_mes[col].replace(remplazos_excel_tutor)
+
+            csv_data = df_export_mes.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 "📥 Descargar Reporte Grupal (CSV)",
                 data=csv_data,
@@ -237,7 +247,17 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
                 height=400
             )
             
-            csv_data = df_filtrado[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
+            df_export_alumno = df_filtrado[cols_mostrar].copy()
+            remplazos_excel_tutor = {
+                "🔴 Falta": "Falta",
+                "🟡 Retardo": "Retardo",
+                "✅ Presente": "Presente",
+                "⚪ Sin Clase": "Sin Clase"
+            }
+            for col in df_export_alumno.columns:
+                df_export_alumno[col] = df_export_alumno[col].replace(remplazos_excel_tutor)
+
+            csv_data = df_export_alumno.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 "📥 Descargar Expediente (CSV)",
                 data=csv_data,
