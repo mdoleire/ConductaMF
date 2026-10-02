@@ -412,6 +412,7 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
     except Exception as e:
         st.error(f"Error en la conexión de autenticación: {e}")
         st.stop()
+        
 # ==========================================
 # CONTROL DE PANTALLA PRINCIPAL
 # ==========================================
