@@ -453,14 +453,13 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     st.error(f"🚨 Error crítico al intentar guardar en Sheets: {e}")
 
     # =================================================================
-    # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES (100% AUTOMATIZADA)
+    # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES (INDENTACIÓN BLINDADA)
     # =================================================================
     else:
         with st.container():
             st.subheader("✏️ Editar o Eliminar Reportes Anteriores")
             st.info("💡 Selecciona la ubicación de un reporte tuyo para modificar sus observaciones o borrarlo permanentemente.")
             
-            # Normalizador invisible: garantiza que 'Díaz' coincida con 'Diaz' y 'D'oleire' con 'Doleire'
             import unicodedata
             def normalizar(txt):
                 t = str(txt).lower().strip().replace("'", "").replace("’", "")
@@ -468,19 +467,17 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
 
             prof_target = normalizar(nombre_prof)
             
-            # 🔍 Lectura dinámica de las pestañas que existen en el archivo real de Google Sheets
             try:
-                time.sleep(0.05) # Micro-pausa preventiva contra límites de Google
+                time.sleep(0.05)
                 doc_registros = gc.open(FILE_REGISTROS)
                 nombres_hojas_reales = [h.title for h in doc_registros.worksheets()]
-            except Exception as e:
+            except Exception:
                 nombres_hojas_reales = []
 
             es_pasillo_edit = st.checkbox("Buscar en 'Reportes de Pasillo'", key="edit_pasillo")
             
             ws_name = None
             if es_pasillo_edit:
-                # Detecta automáticamente la pestaña de pasillo sin importar mayúsculas, espacios o guiones
                 ws_name = next((h for h in nombres_hojas_reales if "pasillo" in h.lower()), "Reportes_Pasillo")
             else:
                 if not mis_asig.empty:
@@ -509,7 +506,7 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     headers = [str(h).strip() for h in todas_filas_edit[0]]
                     df_edit = pd.DataFrame(todas_filas_edit[1:], columns=headers)
                     
-                    # 🛡️ FILTRO AUTOMÁTICO TOLERANTE A ACENTOS
+                    # Filtro por profesor
                     if not es_superusuario and 'Profesor' in df_edit.columns:
                         df_edit = df_edit[df_edit['Profesor'].apply(normalizar) == prof_target]
                         
@@ -517,75 +514,71 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                         df_edit['Label'] = df_edit['Fecha'] + " | " + df_edit['Alumno'] + " | " + df_edit['Falta']
                         reporte_sel = st.selectbox("Selecciona el reporte a modificar:", ["Seleccione..."] + df_edit['Label'].tolist(), key="rep_sel")
                         
+                        # 🛡️ FIX INDENTACIÓN: Todo este bloque solo se ejecuta SI YA SELECCIONARON un reporte
                         if reporte_sel != "Seleccione...":
                             fila_seleccionada = df_edit[df_edit['Label'] == reporte_sel].iloc[0]
                             fecha_exacta = fila_seleccionada['Fecha']
                             alumno_exacto = fila_seleccionada['Alumno']
                             obs_actual = fila_seleccionada['Observaciones']
                             
-                import html
-
-                # 1. Anti-XSS: Escapamos cualquier dato que venga de la base de datos
-                alumno_seguro = html.escape(str(alumno_exacto))
-                falta_segura = html.escape(str(fila_seleccionada['Falta']))
-                st.markdown(f"**Alumno:** {alumno_seguro} <br> **Falta:** {falta_segura}", unsafe_allow_html=True)
-
-                nueva_obs = st.text_area("Observaciones / Detalles:", value=obs_actual, key="new_obs")
-
-                c_btn1, c_btn2 = st.columns(2)
-
-                if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
-                    with st.spinner("Actualizando en base segura..."):
-                        all_vals = ws_edit.get_all_values()
-                        row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
-                        
-                        if row_idx:
-                            # 🛡️ Validación Anti-IDOR a nivel SQL: Solo el dueño o Superusuario puede alterar la celda
-                            exito = ws_edit.update_cell_seguro(
-                                row_idx=row_idx, 
-                                val=nueva_obs, 
-                                profesor_solicitante=nombre_prof, 
-                                es_admin=es_superusuario
-                            )
-                            if exito:
-                                leer_todos_los_registros.clear()
-                                leer_datos.clear()
-                                st.success("✅ Observación actualizada correctamente.")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error("⛔ Acción no autorizada: No tienes permisos para modificar este reporte.")
-                        else:
-                            st.error("❌ No se encontró el registro exacto.")
+                            import html
+                            alumno_seguro = html.escape(str(alumno_exacto))
+                            falta_segura = html.escape(str(fila_seleccionada['Falta']))
+                            st.markdown(f"**Alumno:** {alumno_seguro} <br> **Falta:** {falta_segura}", unsafe_allow_html=True)
                             
-                    if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
-                        with st.spinner("Eliminando de forma segura..."):
-                            all_vals = ws_edit.get_all_values()
-                            row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
+                            nueva_obs = st.text_area("Observaciones / Detalles:", value=obs_actual, key="new_obs")
                             
-                            if row_idx:
-                                # 🛡️ Validación Anti-IDOR a nivel SQL
-                                exito = ws_edit.delete_rows_seguro(
-                                    row_idx=row_idx, 
-                                    profesor_solicitante=nombre_prof, 
-                                    es_admin=es_superusuario
-                                )
-                                if exito:
-                                    ws_edit.delete_rows(row_idx)
-                                    leer_todos_los_registros.clear()
-                                    leer_datos.clear()
-                                    st.success("✅ Reporte eliminado permanentemente.")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error("⛔ Acción no autorizada: No tienes permisos para eliminar este reporte.")
-                            else:
-                                st.error("❌ No se encontró el registro exacto.")
+                            c_btn1, c_btn2 = st.columns(2)
+                            
+                            if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
+                                with st.spinner("Actualizando en base segura..."):
+                                    all_vals = ws_edit.get_all_values()
+                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
+                                    
+                                    if row_idx:
+                                        exito = ws_edit.update_cell_seguro(
+                                            row_idx=row_idx, 
+                                            val=nueva_obs, 
+                                            profesor_solicitante=nombre_prof, 
+                                            es_admin=es_superusuario
+                                        )
+                                        if exito:
+                                            leer_todos_los_registros.clear()
+                                            leer_datos.clear()
+                                            st.success("✅ Observación actualizada correctamente.")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("⛔ Acción no autorizada: No tienes permisos para modificar este reporte.")
+                                    else:
+                                        st.error("❌ No se encontró el registro exacto.")
+                                        
+                            if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
+                                with st.spinner("Eliminando de forma segura..."):
+                                    all_vals = ws_edit.get_all_values()
+                                    row_idx = next((i + 1 for i, row in enumerate(all_vals) if len(row) > 4 and str(row[0]).strip() == str(fecha_exacta).strip() and str(row[4]).strip() == str(alumno_exacto).strip()), None)
+                                    
+                                    if row_idx:
+                                        exito = ws_edit.delete_rows_seguro(
+                                            row_idx=row_idx, 
+                                            profesor_solicitante=nombre_prof, 
+                                            es_admin=es_superusuario
+                                        )
+                                        if exito:
+                                            leer_todos_los_registros.clear()
+                                            leer_datos.clear()
+                                            st.success("✅ Reporte eliminado permanentemente.")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("⛔ Acción no autorizada: No tienes permisos para eliminar este reporte.")
+                                    else:
+                                        st.error("❌ No se encontró el registro exacto.")
                     else:
                         st.info(f"No tienes reportes registrados en la pestaña '{ws_name}'.")
                 else:
                     st.info(f"La pestaña '{ws_name}' aún no cuenta con registros guardados.")
-
+                    
     # =================================================================
     # ANALÍTICA (SIEMPRE VISIBLE AL FONDO)
     # =================================================================
