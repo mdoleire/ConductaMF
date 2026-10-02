@@ -398,8 +398,11 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
             userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers, timeout=10).json()
-            
-            email_obtenido = user_info.get("email", "").lower().strip()
+
+             # 🛡️ GUARDAR TOKEN DE ACCESO PARA GOOGLE CLASSROOM
+            st.session_state["access_token"] = access_token
+            st.session_state["auth_email"] = user_info.get("email", "").lower().strip()
+            st.session_state["auth_name"] = user_info.get("name", "Docente Miraflores")
 
             ## --- SIMULACIÓN DE ALUMNO (BORRAR DESPUÉS DE LA PRUEBA) ---!!!!!!!!!!!!!
             #email_obtenido = "igonzalez.alm10146@miraflores.edu.mx" 
@@ -439,11 +442,12 @@ if not st.session_state.get("auth_email"):
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": "openid email profile",
+        # 🛡️ SCOPES AMPLIADOS PARA LEER GOOGLE CLASSROOM:
+        "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly",
         "access_type": "online",
-        "state": state_token,
-        "prompt": "select_account"
+        "state": st.session_state["oauth_state"]
     }
+
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
     # IMPORTANTE: target="_self" para que navegue en la misma pestaña y no rompa la sesión
@@ -533,7 +537,7 @@ else:
     # 🧪 INYECCIÓN DIRECTA DE ALUMNO (BYPASS TOTAL)
     # =========================================================
     # Para probar como alumno, descomenta estas dos líneas:
-    #correo_google = "bgonzalez.alm9170@miraflores.edu.mx"
+    correo_google = "bgonzalez.alm9170@miraflores.edu.mx"
     #es_alumno = True
     # ─────────────────────────────────────────────────────────
 

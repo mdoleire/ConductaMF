@@ -404,3 +404,98 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
             mime="text/csv",
             use_container_width=True
         )
+
+    import requests
+
+def sincronizar_actividades_desde_classroom(access_token, materia_nombre, grupo_nombre, periodo_actual, rubro_defecto, engine):
+    """
+    Descarga tareas y notas de Google Classroom y las guarda en Supabase.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    # 1. Obtener los cursos del profesor
+    res_cursos = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me", headers=headers).json()
+    cursos = res_cursos.get("courses", [])
+    
+    # Buscamos el curso que coincida con la materia o grupo
+    curso_id = None
+    for c in cursos:
+        nombre_c = c.get("name", "").lower()
+        if materia_nombre.lower() in nombre_c and grupo_nombre.lower() in nombre_c:
+            curso_id = c.get("id")
+            break
+            
+    if not curso_id and cursos:
+        # Fallback si el nombre no coincide exacto: toma el curso que tenga la materia
+        for c in cursos:
+            if materia_nombre.lower() in c.get("name", "").lower():
+                curso_id = c.get("id")
+                break
+                
+    if not curso_id:
+        return False, "No se encontró un curso en Google Classroom que coincida con esta materia y grupo."
+
+    # 2. Obtener las tareas (CourseWork) del curso
+    url_tareas = f"https://classroom.googleapis.com/v1/courses/{curso_id}/courseWork"
+    res_tareas = requests.get(url_tareas, headers=headers).json()
+    tareas = res_tareas.get("courseWork", [])
+    
+    if not tareas:
+        return False, "El curso en Classroom no tiene tareas o actividades creadas."
+
+    clase_id = f"{materia_nombre} - {grupo_nombre}"
+    
+    # 3. Guardar las actividades en Supabase (calif_actividades)
+    filas_actividades = []
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    
+    for t in tareas:
+        id_act = f"CR-{t['id']}"
+        nombre_act = t.get("title", "Sin título")
+        p_max = float(t.get("maxPoints", 100.0))
+        filas_actividades.append([id_act, clase_id, periodo_actual, nombre_act, rubro_defecto, p_max, fecha_hoy])
+        
+    df_act = pd.DataFrame(filas_actividades, columns=["ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion"])
+    
+    # 4. Obtener las calificaciones de los alumnos para cada tarea
+    filas_notas = []
+    # Obtenemos el perfil de alumnos para cruzar ID de Classroom con nombre/correo
+    res_estudiantes = requests.get(f"https://classroom.googleapis.com/v1/courses/{curso_id}/students", headers=headers).json()
+    mapa_alumnos = {s["userId"]: s.get("profile", {}).get("name", {}).get("fullName", "") for s in res_estudiantes.get("students", [])}
+    
+    for t in tareas:
+        id_act = f"CR-{t['id']}"
+        url_entregas = f"https://classroom.googleapis.com/v1/courses/{curso_id}/courseWork/{t['id']}/studentSubmissions"
+        res_entregas = requests.get(url_entregas, headers=headers).json()
+        
+        for entrega in res_entregas.get("studentSubmissions", []):
+            user_id = entrega.get("userId")
+            nombre_alumno = mapa_alumnos.get(user_id, "")
+            
+            # Nota asignada en Classroom
+            nota = entrega.get("assignedGrade")
+            if nota is not None and nombre_alumno:
+                filas_notas.append([id_act, clase_id, nombre_alumno, float(nota)])
+                
+    df_notas = pd.DataFrame(filas_notas, columns=["ID_Actividad", "Clase", "Alumno", "Nota"])
+    
+    # Guardamos en Supabase sin duplicar
+    with engine.begin() as conn:
+        # Insertar actividades no existentes
+        for _, r in df_act.iterrows():
+            conn.execute(
+                text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                        VALUES (:id, :clase, :per, :nom, :rub, :pmax, :fec)
+                        ON CONFLICT ("ID_Actividad") DO NOTHING'''),
+                {"id": r["ID_Actividad"], "clase": r["Clase"], "per": r["Periodo"], "nom": r["Nombre_Actividad"], "rub": r["Rubro"], "pmax": r["Puntos_Max"], "fec": r["Fecha_Creacion"]}
+            )
+        # Actualizar notas
+        for _, r in df_notas.iterrows():
+            conn.execute(
+                text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
+                        VALUES (:id, :clase, :alm, :nota)
+                        ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
+                {"id": r["ID_Actividad"], "clase": r["Clase"], "alm": r["Alumno"], "nota": r["Nota"]}
+            )
+
+    return True, f"Se sincronizaron con éxito {len(tareas)} actividades y {len(filas_notas)} calificaciones desde Classroom."    
