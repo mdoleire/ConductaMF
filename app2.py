@@ -427,6 +427,9 @@ if "code" in parametros_url and not st.session_state["auth_email"]:
 # ESCENARIO A: No hay sesión activa
 if not st.session_state.get("auth_email"):
     aplicar_diseno_institucional(compacto=True)
+
+     # ⚠️ MENSAJE PARA LA VERSIÓN DE PRUEBAS (NO OFICIAL)
+    st.info("🧪 Servidor de Pruebas: Esta versión es de evaluación y no altera los registros oficiales del colegio.")
     
     # Generamos el state firmado con la marca de tiempo actual
     ahora_ts = str(time.time())
@@ -463,7 +466,10 @@ if not st.session_state.get("auth_email"):
 # ESCENARIO B: Sesión autenticada
 else:
     aplicar_diseno_institucional()
-    
+
+    #Mensaje de advertencia para la versión de prueba (NO OFICIAL)!!!!!
+    st.warning("🧪 **AVISO:** Esta es una versión de prueba. Los registros y cambios que se realizan aquí no son oficiales.")
+
     # 1. Guardamos tu identidad original intocable
     correo_real = st.session_state["auth_email"].lower().strip()
     nombre_real = st.session_state["auth_name"]
@@ -595,7 +601,10 @@ else:
 
         # Barra lateral de navegación
         st.sidebar.title("⚙️ Navegación")
-        
+
+        # ⚠️ Mensaje de advertencia para la versión de prueba!!!!!!!!!!!!
+        st.sidebar.caption("⚠️ *Versión de prueba (Cambios no oficiales)*")
+
         if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
             st.session_state.clear()
             st.query_params.clear()
