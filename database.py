@@ -6,12 +6,13 @@ import html
 import logging
 from datetime import datetime
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool  # 🛡️ REQUERIDO POR SUPABASE CONNECTION POOLER
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SeguridadMF")
 
 # =================================================================
-# 1. CONEXIÓN CENTRAL A SUPABASE (POSTGRESQL SEGURO)
+# 1. CONEXIÓN CENTRAL A SUPABASE (COMPATIBLE CON POOLER)
 # =================================================================
 @st.cache_resource
 def obtener_engine_sql():
@@ -23,8 +24,7 @@ def obtener_engine_sql():
     )
     
     if not url_db:
-        logger.critical("No se encontró la cadena de conexión en st.secrets.")
-        st.error("🚨 Error crítico de configuración de seguridad. Contacte a soporte.")
+        st.error("🚨 ERROR: No se encontró 'DATABASE_URL' en los secretos.")
         st.stop()
         
     if url_db.startswith("postgres://"):
@@ -32,16 +32,13 @@ def obtener_engine_sql():
     elif url_db.startswith("postgresql://") and not url_db.startswith("postgresql+psycopg2://"):
         url_db = url_db.replace("postgresql://", "postgresql+psycopg2://", 1)
         
+    # 🛡️ FIX DEFINITIVO SUPABASE: Usamos NullPool para que el Pooler de Supabase no aborte las consultas
     return create_engine(
         url_db, 
-        pool_pre_ping=True, 
-        pool_recycle=300,
-        pool_size=5,
-        max_overflow=10,
+        poolclass=NullPool,
         connect_args={"sslmode": "require"}
     )
 
-# 🛡️ LISTA BLANCA ESTRICTA DE TABLAS PERMITIDAS
 TABLAS_PERMITIDAS = {
     "usuarios", "asignaciones", "alumnos", "conducta_registros",
     "asistencia_registros", "asistencia_config", "calif_ponderaciones",
@@ -67,7 +64,7 @@ def resolver_nombre_tabla(nombre_archivo, nombre_pestana=None):
     
     candidato = str(nombre_archivo).strip()
     return candidato if candidato in TABLAS_PERMITIDAS else "conducta_registros"
-
+    
 # =================================================================
 # 2. PUENTE DE COMPATIBILIDAD ASISTENCIA (SQLITE ➔ SUPABASE)
 # =================================================================
@@ -314,12 +311,14 @@ def conectar_gsheets():
 # =================================================================
 # 4. CONSULTAS DE LECTURA INSTANTÁNEA EN SUPABASE (POSTGRESQL)
 # =================================================================
+# =================================================================
+# CONSULTAS DE LECTURA (CON VISIBILIDAD DE ERRORES REALES)
+# =================================================================
 @st.cache_data(ttl=60)
 def leer_datos(_client_or_conn, nombre_tabla, nombre_pestana=None):
     engine = obtener_engine_sql()
+    tabla_real = resolver_nombre_tabla(nombre_tabla, nombre_pestana)
     try:
-        tabla_real = resolver_nombre_tabla(nombre_tabla, nombre_pestana)
-        
         if tabla_real == "asistencia_registros" and nombre_pestana and nombre_pestana != "Configuracion":
             clase_buscada = str(nombre_pestana).strip().lower()
             query = text('SELECT "Alumno", "Fecha", "Estatus" FROM "asistencia_registros" WHERE LOWER(TRIM("Clase")) = :clase')
@@ -332,9 +331,17 @@ def leer_datos(_client_or_conn, nombre_tabla, nombre_pestana=None):
 
         df = pd.read_sql(f'SELECT * FROM "{tabla_real}"', engine)
         df.columns = df.columns.str.strip()
+        
+        # Normalizamos nombres de columnas para que coincidan siempre en mayúsculas/minúsculas
+        if tabla_real == "usuarios":
+            for c in df.columns:
+                if c.lower() in ["usuario", "email", "correo"]:
+                    df.rename(columns={c: "Usuario"}, inplace=True)
+                    
         return df
     except Exception as e:
-        logger.error(f"Error seguro en leer_datos: {e}")
+        # 🔍 Revelamos el error real en pantalla si la consulta falla
+        st.error(f"🚨 Error leyendo la tabla '{tabla_real}' en Supabase: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
@@ -357,6 +364,7 @@ def leer_todas_las_asignaciones(_client_or_conn, nombre_archivo=None):
         df = pd.read_sql('SELECT * FROM "asignaciones"', engine)
         df.columns = df.columns.str.strip()
         
+        # Mapeo universal de columnas
         for col in df.columns:
             col_limpia = str(col).lower().replace(" ", "_").replace("’", "").replace("'", "").strip()
             if col_limpia in ["usuario_profesor", "usuario_prof", "profesor", "usuario", "correo"]:
@@ -371,7 +379,7 @@ def leer_todas_las_asignaciones(_client_or_conn, nombre_archivo=None):
                 df.rename(columns={col: "Area"}, inplace=True)
         return df
     except Exception as e:
-        logger.error(f"Error seguro en leer_todas_las_asignaciones: {e}")
+        st.error(f"🚨 Error leyendo 'asignaciones' en Supabase: {e}")
         return pd.DataFrame()
 
 def obtener_lista_alumnos(client_or_conn, archivo, grupo):
