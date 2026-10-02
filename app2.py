@@ -537,8 +537,8 @@ else:
     # 🧪 INYECCIÓN DIRECTA DE ALUMNO (BYPASS TOTAL)
     # =========================================================
     # Para probar como alumno, descomenta estas dos líneas:
-    correo_google = "bgonzalez.alm9170@miraflores.edu.mx"
-    es_alumno = True
+    #correo_google = "bgonzalez.alm9170@miraflores.edu.mx"
+    #es_alumno = True
     # ─────────────────────────────────────────────────────────
 
     if es_alumno:
