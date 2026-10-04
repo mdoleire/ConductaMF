@@ -102,7 +102,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     st.markdown("---")
     
     # =================================================================
-    # 2. PONDERACIONES / CRITERIOS
+    # 2. PONDERACIONES / CRITERIOS (CON AUTO-CARGA DESDE CLASSROOM)
     # =================================================================
     df_pond_todas = leer_datos(gc, FILE_CALIFICACIONES, "Ponderaciones")
     if not df_pond_todas.empty:
@@ -118,72 +118,61 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     if pond_actual.empty:
         st.warning(f"⚠️ No has configurado los criterios de evaluación para **{clase_id}** en el **{periodo_sel}**.")
         
-        # Opción A: Clonar del periodo anterior
-        idx_actual = periodos_disponibles.index(periodo_sel) if periodo_sel in periodos_disponibles else 0
-        if idx_actual > 0 and not df_pond_todas.empty and 'Clase' in df_pond_todas.columns:
-            periodo_anterior = periodos_disponibles[idx_actual - 1]
-            pond_ant = df_pond_todas[(df_pond_todas['Clase'] == clase_id) & (df_pond_todas['Periodo'] == periodo_anterior)]
-            if not pond_ant.empty:
-                if st.button(f"📋 Copiar ponderaciones del {periodo_anterior}", type="secondary"):
-                    with st.spinner("Clonando criterios en Supabase..."):
-                        with engine.begin() as conn:
-                            for t in tareas_cr:
-                                id_act_cr = f"CR-{t['id']}"
-                                nom_t = t.get("title", "Sin Título")
-                                p_max_t = float(t.get("maxPoints", 100.0))
+        # 🎓 OPCIÓN 1: CARGAR DIRECTO DE GOOGLE CLASSROOM (RECOMENDADA)
+        token_google = st.session_state.get("access_token")
+        if token_google:
+            with st.container():
+                st.markdown("##### 🚀 Opción Rápida: Importar desde Classroom")
+                st.caption("Lee automáticamente los porcentajes que ya configuraste en los ajustes de Google Classroom.")
+                
+                try:
+                    headers_cr = {"Authorization": f"Bearer {token_google}"}
+                    res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
+                    cursos_cr = res_c.get("courses", [])
+                    
+                    if cursos_cr:
+                        dict_c = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
+                        curso_elegido_pond = st.selectbox("Selecciona la clase correspondiente en Classroom:", list(dict_c.keys()), key="c_pond_cr")
+                        id_c_pond = dict_c[curso_elegido_pond]
+                        
+                        if st.button("🎓 Cargar Criterios Oficiales de Classroom (100% Automático)", type="primary", use_container_width=True):
+                            with st.spinner("Descargando categorías y ponderaciones oficiales de Classroom..."):
+                                res_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_c_pond}", headers=headers_cr).json()
+                                cats = res_det.get("gradeCategories", [])
                                 
-                                # Categoría inteligente
-                                cat_id_t = t.get("gradeCategoryId")
-                                rubro_detectado = mapa_cats_cr.get(cat_id_t, "Tareas y Trabajos")
-                                
-                                rubro_final = categorias_validas[0]
-                                for c_val in categorias_validas:
-                                    if any(w in c_val.lower() for w in rubro_detectado.lower().split()):
-                                        rubro_final = c_val
-                                        break
-                                
-                                # 1. Guardar o actualizar la actividad
-                                conn.execute(
-                                    text('DELETE FROM "calif_actividades" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
-                                    {"id": id_act_cr, "c": clase_id}
-                                )
-                                conn.execute(
-                                    text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
-                                            VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)'''),
-                                    {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
-                                )
-                                
-                                # Descargar Notas de cada Alumno
-                                res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
-                                
-                                # 🛡️ 1. Limpiamos notas previas de esta tarea en esta clase (Evita duplicados sin requerir ON CONFLICT)
-                                conn.execute(
-                                    text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
-                                    {"id": id_act_cr, "c": clase_id}
-                                )
-                                
-                                # 🛡️ 2. Insertamos las notas de cada estudiante
-                                for sub in res_sub.get("studentSubmissions", []):
-                                    u_id = sub.get("userId")
-                                    nom_alm = mapa_userid_a_nombre.get(u_id)
-                                    
-                                    nota_asignada = sub.get("assignedGrade")
-                                    if nota_asignada is None:
-                                        nota_asignada = sub.get("draftGrade")
-                                    
-                                    if nom_alm and nota_asignada is not None:
+                                if not cats:
+                                    st.warning("⚠️ Esta clase en Classroom no tiene categorías con porcentaje configuradas en sus ajustes.")
+                                else:
+                                    with engine.begin() as conn:
                                         conn.execute(
-                                            text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
-                                                    VALUES (:id, :c, :alm, :nota)'''),
-                                            {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_asignada)}
+                                            text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
+                                            {"c": clase_id, "p": periodo_sel}
                                         )
-                                        total_notas_descargadas += 1
+                                        for cat in cats:
+                                            cat_nom = str(cat.get("name", "")).strip()
+                                            cat_w = cat.get("weight", 0)
+                                            cat_pct = int(round(cat_w / 10000)) if cat_w > 0 else 0
+                                            if cat_nom and cat_pct > 0:
+                                                conn.execute(
+                                                    text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
+                                                    {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
+                                                )
+                                    leer_datos.clear()
+                                    st.success(f"✅ ¡Éxito! Se importaron {len(cats)} categorías de Classroom perfectamente.")
+                                    time.sleep(1)
+                                    st.rerun()
+                except Exception as e_cr_pond:
+                    st.error(f"Error consultando Classroom: {e_cr_pond}")
+                    
+        st.markdown("---")
 
-        st.markdown("##### 📝 Define tus Criterios de Evaluación")
+        # 📝 OPCIÓN 2: CONFIGURACIÓN MANUAL
+        st.markdown("##### 📝 Opción Alternativa: Configuración Manual")
         criterios_base = pd.DataFrame([
-            {"Categoría / Rubro": "Tareas y Trabajos", "Porcentaje (%)": 50},
-            {"Categoría / Rubro": "Exámenes", "Porcentaje (%)": 30},
-            {"Categoría / Rubro": "Proyectos e Investigación", "Porcentaje (%)": 20}
+            {"Categoría / Rubro": "Examen de periodo", "Porcentaje (%)": 40},
+            {"Categoría / Rubro": "Laboratorio", "Porcentaje (%)": 30},
+            {"Categoría / Rubro": "Trabajos y Tareas", "Porcentaje (%)": 15},
+            {"Categoría / Rubro": "Actividades y participación", "Porcentaje (%)": 15}
         ])
         
         df_criterios_edit = st.data_editor(
@@ -207,39 +196,34 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         c_status, c_save_btn = st.columns([3, 2])
         with c_status:
             if suma_porcentajes == 100:
-                st.success(f"Suma total: **{suma_porcentajes}%** ✅ (Listo para guardar)")
+                st.success(f"Suma total: **{suma_porcentajes}%** ✅")
             else:
                 st.error(f"Suma total: **{suma_porcentajes}%** ❌ (Debe dar 100%)")
                 
         with c_save_btn:
-            if st.button("💾 Guardar Criterios de Evaluación", type="primary", use_container_width=True):
+            if st.button("💾 Guardar Criterios Manualmente", type="secondary", use_container_width=True):
                 if suma_porcentajes != 100:
-                    st.error("🚨 La suma debe ser exactamente 100%.")
-                elif not clases_destino_pond:
-                    st.error("🚨 Selecciona al menos una clase.")
+                    st.error("🚨 La suma debe dar 100%.")
                 else:
                     with st.spinner("Guardando en Supabase..."):
-                        try:
-                            with engine.begin() as conn:
-                                for target_clase in clases_destino_pond:
-                                    conn.execute(
-                                        text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
-                                        {"c": target_clase, "p": periodo_sel}
-                                    )
-                                    for _, fila in df_criterios_edit.iterrows():
-                                        r_nom = str(fila["Categoría / Rubro"]).strip()
-                                        r_pct = int(fila["Porcentaje (%)"])
-                                        if r_nom:
-                                            conn.execute(
-                                                text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
-                                                {"c": target_clase, "p": periodo_sel, "r": r_nom, "pct": r_pct}
-                                            )
-                            leer_datos.clear()
-                            st.success(f"✅ Criterios guardados para {len(clases_destino_pond)} clase(s).")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e_p:
-                            st.error(f"Error al guardar: {e_p}")
+                        with engine.begin() as conn:
+                            for target_clase in clases_destino_pond:
+                                conn.execute(
+                                    text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
+                                    {"c": target_clase, "p": periodo_sel}
+                                )
+                                for _, fila in df_criterios_edit.iterrows():
+                                    r_nom = str(fila["Categoría / Rubro"]).strip()
+                                    r_pct = int(fila["Porcentaje (%)"])
+                                    if r_nom:
+                                        conn.execute(
+                                            text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
+                                            {"c": target_clase, "p": periodo_sel, "r": r_nom, "pct": r_pct}
+                                        )
+                        leer_datos.clear()
+                        st.success("✅ Criterios guardados exitosamente.")
+                        time.sleep(1)
+                        st.rerun()
         st.stop()
         
     rubros_pesos = dict(zip(pond_actual['Rubro'], pond_actual['Porcentaje']))
@@ -267,7 +251,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 st.error(f"Error al modificar criterios: {e_mod}")
         
     st.markdown("---")
-    
+
     # =================================================================
     # 3. ACCIONES DE ACTIVIDADES: CREAR, SINCRONIZAR, EDITAR Y ELIMINAR
     # =================================================================
