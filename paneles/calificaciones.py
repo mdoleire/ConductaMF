@@ -259,13 +259,26 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                             st.error(f"Error al crear: {e_act}")
 
    # --- BOTÓN 2: SINCRONIZAR TODO DESDE CLASSROOM (MULTICATEGORÍA AUTOMÁTICA) ---
+    # --- BOTÓN 2: SINCRONIZAR TODO DESDE CLASSROOM ---
     with col_btn_act2:
         with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
             st.markdown("### 🎓 Conexión con Google Classroom")
             token_google = st.session_state.get("access_token")
             
             if not token_google:
-                st.warning("⚠️ No se detectó sesión de Classroom activa. Cierra sesión e inicia nuevamente aceptando los permisos.")
+                st.info("Para sincronizar tus calificaciones en tiempo real, vincula tu cuenta institucional:")
+                
+                # Generamos el enlace de autorización directo a Classroom sin tener que salir
+                params_cr = {
+                    "client_id": CLIENT_ID,
+                    "redirect_uri": REDIRECT_URI,
+                    "response_type": "code",
+                    "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+                    "access_type": "online",
+                    "prompt": "consent"
+                }
+                url_cr = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params_cr)}"
+                st.link_button("🔑 Conectar con Google Classroom", url_cr, type="primary", use_container_width=True)
             else:
                 st.caption("Esta herramienta descarga automáticamente **todas las tareas y exámenes de todas las categorías** con sus calificaciones.")
                 
@@ -391,7 +404,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                     st.rerun()
                 except Exception as e_cr:
                     st.error(f"Error con Classroom: {e_cr}")
-                    
+
     # --- ✅ BOTÓN 3 NUEVO: ELIMINAR ACTIVIDAD ---
     with col_btn_act3:
         with st.popover("🗑️ Eliminar Actividad", use_container_width=True):

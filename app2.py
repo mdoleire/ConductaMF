@@ -310,9 +310,9 @@ def aplicar_diseno_institucional(compacto=False):
         """,
         unsafe_allow_html=True
     )
-# ==========================================
-# GESTIÓN DE SESIÓN Y OAUTH SEGURO (F5 RESILIENTE CON HMAC)
-# ==========================================
+# =================================================================
+# GESTIÓN DE SESIÓN Y OAUTH SEGURO (PRIORIDAD AL RETORNO DE GOOGLE)
+# =================================================================
 import hmac
 import hashlib
 
@@ -324,38 +324,25 @@ if "auth_email" not in st.session_state:
     st.session_state["auth_email"] = None
 if "auth_name" not in st.session_state:
     st.session_state["auth_name"] = None
+if "access_token" not in st.session_state:
+    st.session_state["access_token"] = None
 
 parametros_url = st.query_params.to_dict()
 
 # --- 🛡️ FUNCIONES CRIPTOGRÁFICAS DE PERSISTENCIA ---
 def generar_firma_segura(correo_usuario):
-    """Genera un hash criptográfico único que ningún usuario puede falsificar"""
     clave_privada = CLIENT_SECRET.encode('utf-8')
     mensaje = str(correo_usuario).lower().strip().encode('utf-8')
     return hmac.new(clave_privada, mensaje, hashlib.sha256).hexdigest()
 
 def verificar_firma_segura(correo_usuario, firma_recibida):
-    """Verifica en tiempo constante que la firma pertenezca a ese correo exacto"""
     if not correo_usuario or not firma_recibida:
         return False
     firma_real = generar_firma_segura(correo_usuario)
     return hmac.compare_digest(firma_real, firma_recibida)
 
-# --- 🔄 VALIDACIÓN DE PERSISTENCIA TRAS F5 / RECARGA ---
-if not st.session_state.get("auth_email") and "_p_email" in parametros_url and "_p_sig" in parametros_url:
-    candidato_correo = parametros_url["_p_email"].lower().strip()
-    candidato_firma = parametros_url["_p_sig"]
-    
-    if verificar_firma_segura(candidato_correo, candidato_firma):
-        # Firma legítima: restauramos la sesión automáticamente
-        st.session_state["auth_email"] = candidato_correo
-        st.session_state["auth_name"] = parametros_url.get("_p_name", "Docente Miraflores")
-    else:
-        # Intento de alteración manual: expulsión inmediata
-        st.query_params.clear()
-
-# --- PROCESAMIENTO DEL RETORNO OAUTH DESDE GOOGLE ---
-if "code" in parametros_url and not st.session_state.get("auth_email"):
+# 1. 🔑 PRIORIDAD MÁXIMA: SI GOOGLE ENVÍA UN CÓDIGO NUEVO, EXTRAEMOS EL ACCESS_TOKEN
+if "code" in parametros_url:
     codigo_autorizacion = parametros_url["code"]
     
     token_url = "https://oauth2.googleapis.com/token"
@@ -371,10 +358,6 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
         res_raw = requests.post(token_url, data=token_data, timeout=10)
         response = res_raw.json()
         
-        if "error" in response:
-            st.error(f"🚨 Error en Google OAuth: {response.get('error')} - {response.get('error_description')}")
-            st.stop()
-            
         access_token = response.get("access_token")
         
         if access_token:
@@ -385,27 +368,33 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
             email_verificado = user_info.get("email", "").lower().strip()
             nombre_verificado = user_info.get("name", "Docente Miraflores")
             
-            # Generamos la firma criptográfica infalsificable
-            firma_digital = generar_firma_segura(email_verificado)
-            
+            # Guardamos la sesión y el token de Google Classroom en memoria
             st.session_state["auth_email"] = email_verificado
             st.session_state["auth_name"] = nombre_verificado
             st.session_state["access_token"] = access_token
             
-            # Escribimos los parámetros firmados en la URL para sobrevivir al F5
+            # Firmamos digitalmente la URL para resistir recargas F5
+            firma_digital = generar_firma_segura(email_verificado)
             st.query_params.clear()
             st.query_params["_p_email"] = email_verificado
             st.query_params["_p_sig"] = firma_digital
             st.query_params["_p_name"] = nombre_verificado
-            
             st.rerun()
-        else:
-            st.error("No se pudo obtener el token de acceso de Google.")
-            st.stop()
             
     except Exception as e:
-        st.error(f"Error en la conexión de autenticación: {e}")
+        st.error(f"Error en la conexión con Google: {e}")
         st.stop()
+
+# 2. 🔄 PERSISTENCIA F5: Si no hay código nuevo pero existe la firma legítima en la URL
+elif not st.session_state.get("auth_email") and "_p_email" in parametros_url and "_p_sig" in parametros_url:
+    candidato_correo = parametros_url["_p_email"].lower().strip()
+    candidato_firma = parametros_url["_p_sig"]
+    
+    if verificar_firma_segura(candidato_correo, candidato_firma):
+        st.session_state["auth_email"] = candidato_correo
+        st.session_state["auth_name"] = parametros_url.get("_p_name", "Docente Miraflores")
+    else:
+        st.query_params.clear()
         
 # ==========================================
 # CONTROL DE PANTALLA PRINCIPAL
