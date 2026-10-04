@@ -4,7 +4,7 @@ import pandas as pd
 import uuid
 import time
 import requests
-import urllib.parse
+import unicodedata
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import text
@@ -16,7 +16,6 @@ from config import (
     PERIODOS_LECTIVOS, 
     SUPER_USUARIOS_WHITELIST
 )
-
 from database import (
     leer_datos, 
     obtener_lista_alumnos, 
@@ -29,6 +28,24 @@ def format_calif_100(val):
     if val >= 90.0: return f"🟢 {val:.1f}"
     if val >= 70.0: return f"🟡 {val:.1f}"
     return f"🔴 {val:.1f}"
+
+# 🛡️ EMPAREJADOR INTELIGENTE DE NOMBRES (INMUNE AL ORDEN NOMBRE/APELLIDO)
+def normalizar_palabras(txt):
+    s = str(txt).lower().strip().replace("'", "").replace("’", "")
+    s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+    return set(w for w in s.split() if len(w) > 2)
+
+def encontrar_alumno_oficial(nombre_cr, lista_oficial):
+    tokens_cr = normalizar_palabras(nombre_cr)
+    mejor_match = None
+    max_coincidencias = 0
+    for nom_of in lista_oficial:
+        tokens_of = normalizar_palabras(nom_of)
+        interseccion = len(tokens_cr.intersection(tokens_of))
+        if interseccion > max_coincidencias and interseccion >= 2:
+            max_coincidencias = interseccion
+            mejor_match = nom_of
+    return mejor_match or nombre_cr
 
 def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     st.header(f"📊 Calificador Académico: {nombre_prof}")
@@ -74,10 +91,18 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     periodo_sel = c3.selectbox("Periodo de Evaluación:", periodos_disponibles, key="calif_per")
     
     clase_id = f"{materia_sel} - {grupo_sel}"
+    
+    # 2. Cargar lista oficial de alumnos de este salón desde el inicio
+    try:
+        grupo_limpio = grupo_sel.split("(")[0].strip()
+        alumnos_clase = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
+    except Exception:
+        alumnos_clase = []
+        
     st.markdown("---")
     
     # =================================================================
-    # 2. PONDERACIONES / CRITERIOS (CONEXIÓN SQL SUPABASE)
+    # 2. PONDERACIONES / CRITERIOS
     # =================================================================
     df_pond_todas = leer_datos(gc, FILE_CALIFICACIONES, "Ponderaciones")
     if not df_pond_todas.empty:
@@ -90,7 +115,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     else:
         pond_actual = pd.DataFrame()
         
-    # Si no están configuradas las ponderaciones
     if pond_actual.empty:
         st.warning(f"⚠️ No has configurado los criterios de evaluación para **{clase_id}** en el **{periodo_sel}**.")
         
@@ -115,10 +139,9 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
 
         st.markdown("##### 📝 Define tus Criterios de Evaluación")
         criterios_base = pd.DataFrame([
-            {"Categoría / Rubro": "Exámenes", "Porcentaje (%)": 40},
-            {"Categoría / Rubro": "Tareas y Trabajos", "Porcentaje (%)": 30},
-            {"Categoría / Rubro": "Proyectos e Investigación", "Porcentaje (%)": 20},
-            {"Categoría / Rubro": "Participación y Asistencia", "Porcentaje (%)": 10},
+            {"Categoría / Rubro": "Tareas y Trabajos", "Porcentaje (%)": 50},
+            {"Categoría / Rubro": "Exámenes", "Porcentaje (%)": 30},
+            {"Categoría / Rubro": "Proyectos e Investigación", "Porcentaje (%)": 20}
         ])
         
         df_criterios_edit = st.data_editor(
@@ -137,11 +160,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         todas_mis_clases = sorted(list(set([f"{r['Materia']} - {r['Grupo']}" for _, r in mis_asig.iterrows()])))
         
         st.markdown("##### 👥 Aplicar estos mismos criterios a:")
-        clases_destino_pond = st.multiselect(
-            "Selecciona las materias/salones que compartirán esta ponderación:",
-            options=todas_mis_clases,
-            default=[clase_id]
-        )
+        clases_destino_pond = st.multiselect("Selecciona las materias/salones que compartirán esta ponderación:", options=todas_mis_clases, default=[clase_id])
         
         c_status, c_save_btn = st.columns([3, 2])
         with c_status:
@@ -161,7 +180,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         try:
                             with engine.begin() as conn:
                                 for target_clase in clases_destino_pond:
-                                    # Borramos anteriores de ese periodo en Supabase
                                     conn.execute(
                                         text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
                                         {"c": target_clase, "p": periodo_sel}
@@ -183,15 +201,14 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         st.stop()
         
     rubros_pesos = dict(zip(pond_actual['Rubro'], pond_actual['Porcentaje']))
+    categorias_validas = list(rubros_pesos.keys())
     
-    # Visualización de los criterios configurados
     col_t1, col_t2 = st.columns([4, 1])
     with col_t1:
         cols_badge = st.columns(len(rubros_pesos))
         for i, (rubro, pct) in enumerate(rubros_pesos.items()):
             cols_badge[i].metric(rubro, f"{pct}%")
             
-    # ✅ FIX DEFINITIVO BOTÓN MODIFICAR (EJECUCIÓN SQL DIRECTA)
     with col_t2:
         if st.button("⚙️ Modificar Criterios", help="Borra las ponderaciones actuales para reeditarlas", use_container_width=True):
             try:
@@ -210,9 +227,8 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     st.markdown("---")
     
     # =================================================================
-    # 3. ACCIONES DE ACTIVIDADES: CREAR, SINCRONIZAR Y ELIMINAR
+    # 3. ACCIONES DE ACTIVIDADES: CREAR, SINCRONIZAR, EDITAR Y ELIMINAR
     # =================================================================
-    # Consultamos las actividades existentes de esta clase y periodo
     df_act_todas = leer_datos(gc, FILE_CALIFICACIONES, "Actividades")
     if not df_act_todas.empty and 'Clase' in df_act_todas.columns:
         df_act_todas['Clase'] = df_act_todas['Clase'].astype(str).str.strip()
@@ -221,21 +237,20 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     else:
         mis_actividades = pd.DataFrame()
 
-    # Fila de 3 botones de acción equilibrados
-    col_btn_act1, col_btn_act2, col_btn_act3 = st.columns(3)
+    col_btn_act1, col_btn_act2, col_btn_act3, col_btn_act4 = st.columns(4)
     
-    # --- BOTÓN 1: CREAR ACTIVIDAD MANUAL ---
+    # --- BOTÓN 1: CREAR MANUAL ---
     with col_btn_act1:
         with st.popover("➕ Nueva Tarea Manual", use_container_width=True):
             st.markdown("### Crear Actividad Manual")
-            nombre_actividad = st.text_input("Nombre de la Actividad:", placeholder="Ej. Tarea 1 - Ley de Ohm")
-            rubro_actividad = st.selectbox("Categoría a la que pertenece:", list(rubros_pesos.keys()))
+            nombre_actividad = st.text_input("Nombre de la Actividad:", placeholder="Ej. Tarea 1 - Vectores")
+            rubro_actividad = st.selectbox("Categoría a la que pertenece:", categorias_validas)
             puntos_max = st.number_input("Puntos Máximos:", min_value=10.0, max_value=100.0, value=100.0, step=10.0)
             
             st.markdown("##### 👥 Asignar a grupos:")
-            grupos_seleccionados_tarea = st.multiselect("Grupos a los que aplica:", options=grupos_de_esta_materia, default=[grupo_sel])
+            grupos_seleccionados_tarea = st.multiselect("Grupos que harán la actividad:", options=grupos_de_esta_materia, default=[grupo_sel])
             
-            if st.button("🚀 Crear y Asignar Actividad", type="primary", use_container_width=True):
+            if st.button("🚀 Crear y Asignar", type="primary", use_container_width=True):
                 if not nombre_actividad.strip():
                     st.error("⚠️ Asigna un nombre a la actividad.")
                 elif not grupos_seleccionados_tarea:
@@ -260,20 +275,16 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         except Exception as e_act:
                             st.error(f"Error al crear: {e_act}")
 
-   # --- BOTÓN 2: SINCRONIZAR TODO DESDE CLASSROOM (MULTICATEGORÍA AUTOMÁTICA) ---
-    # --- BOTÓN 2: SINCRONIZAR TODO DESDE CLASSROOM ---
+    # --- BOTÓN 2: SINCRONIZAR DE CLASSROOM CON EMPAREJADOR INTELIGENTE ---
     with col_btn_act2:
         with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
             st.markdown("### 🎓 Conexión con Google Classroom")
             token_google = st.session_state.get("access_token")
             
             if not token_google:
-                st.info("Para sincronizar tus calificaciones en tiempo real, vincula tu cuenta institucional:")
-                
-                # 🛡️ FIX: Leemos las credenciales directamente de la bóveda de secretos
+                st.warning("⚠️ No se detectó sesión de Classroom. Vincula tu cuenta institucional:")
                 client_id_cr = st.secrets["auth"]["google_client_id"]
                 redirect_uri_cr = st.secrets["auth"]["redirect_uri"]
-                
                 params_cr = {
                     "client_id": client_id_cr,
                     "redirect_uri": redirect_uri_cr,
@@ -286,8 +297,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 url_cr = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params_cr)}"
                 st.link_button("🔑 Conectar con Google Classroom", url_cr, type="primary", use_container_width=True)
             else:
-                st.caption("Esta herramienta descarga automáticamente **todas las tareas y exámenes de todas las categorías** con sus calificaciones.")
-                
                 try:
                     headers_cr = {"Authorization": f"Bearer {token_google}"}
                     res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
@@ -297,55 +306,35 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         st.info("No se encontraron cursos activos en Google Classroom.")
                     else:
                         dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
-                        curso_seleccionado_label = st.selectbox("Selecciona la clase en Classroom:", list(dict_cursos.keys()))
+                        curso_seleccionado_label = st.selectbox("Selecciona el curso en Classroom:", list(dict_cursos.keys()))
                         id_curso_elegido = dict_cursos[curso_seleccionado_label]
                         
-                        if st.button("🚀 Sincronizar Todo (Todas las Categorías y Notas)", type="primary", use_container_width=True):
-                            with st.spinner("Descargando tareas, categorías y notas de Classroom a Supabase..."):
-                                # 1. Consultamos el curso para extraer sus categorías oficiales de Classroom
+                        if st.button("🚀 Sincronizar Tareas y Calificaciones", type="primary", use_container_width=True):
+                            with st.spinner("Descargando tareas y calificaciones reales..."):
+                                # Categorías de Classroom
                                 res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
                                 cats_cr = res_curso_det.get("gradeCategories", [])
                                 mapa_cats_cr = {c["id"]: c.get("name", "Tareas y Trabajos") for c in cats_cr}
 
-                                # 2. Descargar todas las tareas (CourseWork)
+                                # Tareas
                                 res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
                                 tareas_cr = res_w.get("courseWork", [])
                                 
                                 if not tareas_cr:
                                     st.warning("Ese curso en Classroom no tiene tareas creadas.")
                                 else:
-                                    # 3. Padrón oficial de alumnos para cruzar por Correo Institucional
-                                    df_alumnos_db = pd.read_sql('SELECT * FROM "alumnos"', engine)
-                                    df_alumnos_db.columns = df_alumnos_db.columns.str.strip()
-                                    col_correo_db = next((c for c in df_alumnos_db.columns if 'correo' in c.lower()), 'Correo')
-                                    
-                                    mapa_email_a_oficial = {}
-                                    for _, al_row in df_alumnos_db.iterrows():
-                                        c_inst = str(al_row.get(col_correo_db, '')).lower().strip()
-                                        nom_of = str(al_row.get('Nombre Completo', '')).strip()
-                                        if c_inst and nom_of:
-                                            mapa_email_a_oficial[c_inst] = nom_of
-
-                                    # 4. Alumnos de Classroom (IDs y Correos)
+                                    # Alumnos de Classroom
                                     res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
                                     mapa_userid_a_nombre = {}
+                                    
                                     for s in res_st.get("students", []):
                                         u_id = s.get("userId")
                                         prof = s.get("profile", {})
-                                        email_cr = str(prof.get("emailAddress", "")).lower().strip()
                                         nombre_cr = str(prof.get("name", {}).get("fullName", "")).strip()
                                         
-                                        if email_cr in mapa_email_a_oficial:
-                                            mapa_userid_a_nombre[u_id] = mapa_email_a_oficial[email_cr]
-                                        else:
-                                            nombre_encontrado = None
-                                            palabras_cr = set(nombre_cr.lower().replace("'", "").split())
-                                            for nom_of in alumnos_clase:
-                                                palabras_of = set(nom_of.lower().replace("'", "").split())
-                                                if len(palabras_cr.intersection(palabras_of)) >= 2:
-                                                    nombre_encontrado = nom_of
-                                                    break
-                                            mapa_userid_a_nombre[u_id] = nombre_encontrado or nombre_cr
+                                        # 🛡️ EMPAREJAMIENTO DE NOMBRE (Nombre Apellido <-> Apellido Nombre)
+                                        nombre_oficial_resuelto = encontrar_alumno_oficial(nombre_cr, alumnos_clase)
+                                        mapa_userid_a_nombre[u_id] = nombre_oficial_resuelto
                                     
                                     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                                     total_notas_descargadas = 0
@@ -356,28 +345,16 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                             nom_t = t.get("title", "Sin Título")
                                             p_max_t = float(t.get("maxPoints", 100.0))
                                             
-                                            # 🏷️ ASIGNACIÓN AUTOMÁTICA DE CATEGORÍA DESDE CLASSROOM:
+                                            # Categoría inteligente obligada a pertenecer a las categorías válidas
                                             cat_id_t = t.get("gradeCategoryId")
-                                            if cat_id_t and cat_id_t in mapa_cats_cr:
-                                                rubro_detectado = mapa_cats_cr[cat_id_t]
-                                            else:
-                                                # Inferencia inteligente si no tenía categoría en Classroom
-                                                nom_low = nom_t.lower()
-                                                if any(w in nom_low for w in ["examen", "evalua", "quiz", "prueba"]):
-                                                    rubro_detectado = "Exámenes"
-                                                elif any(w in nom_low for w in ["proyect", "investig", "practic"]):
-                                                    rubro_detectado = "Proyectos e Investigación"
-                                                else:
-                                                    rubro_detectado = "Tareas y Trabajos"
+                                            rubro_detectado = mapa_cats_cr.get(cat_id_t, "Tareas y Trabajos")
                                             
-                                            # Emparejamos con los rubros configurados en la app
-                                            rubro_final = rubro_detectado
-                                            for r_existente in rubros_pesos.keys():
-                                                if rubro_detectado.lower() in r_existente.lower() or r_existente.lower() in rubro_detectado.lower():
-                                                    rubro_final = r_existente
+                                            rubro_final = categorias_validas[0]
+                                            for c_val in categorias_validas:
+                                                if any(w in c_val.lower() for w in rubro_detectado.lower().split()):
+                                                    rubro_final = c_val
                                                     break
                                             
-                                            # Guardar / Actualizar Actividad en Supabase
                                             conn.execute(
                                                 text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
                                                         VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
@@ -385,7 +362,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                 {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
                                             )
                                             
-                                            # Descargar Notas de cada Alumno (Borradores y Oficiales)
+                                            # Notas (Borradores y Oficiales)
                                             res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
                                             for sub in res_sub.get("studentSubmissions", []):
                                                 u_id = sub.get("userId")
@@ -405,47 +382,85 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                     total_notas_descargadas += 1
                                                     
                                     leer_datos.clear()
-                                    st.success(f"🎉 ¡Éxito! Se importaron {len(tareas_cr)} tareas y {total_notas_descargadas} calificaciones en todas sus categorías correspondientes.")
+                                    st.success(f"🎉 ¡Éxito! Se importaron {len(tareas_cr)} tareas y {total_notas_descargadas} calificaciones.")
                                     time.sleep(1)
                                     st.rerun()
                 except Exception as e_cr:
                     st.error(f"Error con Classroom: {e_cr}")
 
-    # --- ✅ BOTÓN 3 NUEVO: ELIMINAR ACTIVIDAD ---
+    # --- ✅ BOTÓN 3 NUEVO: EDITAR ACTIVIDAD (CAMBIAR CATEGORÍA, NOMBRE O PUNTOS) ---
     with col_btn_act3:
-        with st.popover("🗑️ Eliminar Actividad", use_container_width=True):
+        with st.popover("✏️ Editar Tarea", use_container_width=True):
+            st.markdown("### Modificar Actividad Existente")
+            if mis_actividades.empty:
+                st.info("No hay actividades registradas en este periodo para editar.")
+            else:
+                dict_acts_edit = {
+                    f"{r['Nombre_Actividad']} ({r['Rubro']})": str(r['ID_Actividad']).strip()
+                    for _, r in mis_actividades.iterrows()
+                }
+                act_a_editar_lbl = st.selectbox("Selecciona la actividad a modificar:", list(dict_acts_edit.keys()), key="sel_act_edit")
+                id_act_a_editar = dict_acts_edit[act_a_editar_lbl]
+                
+                fila_act_edit = mis_actividades[mis_actividades['ID_Actividad'] == id_act_a_editar].iloc[0]
+                
+                nuevo_nombre_act = st.text_input("Nombre de la Actividad:", value=str(fila_act_edit['Nombre_Actividad']), key="edit_nom_act")
+                
+                # Permite cambiar de categoría fácilmente
+                rubro_actual = str(fila_act_edit['Rubro'])
+                idx_rubro_act = categorias_validas.index(rubro_actual) if rubro_actual in categorias_validas else 0
+                nuevo_rubro_act = st.selectbox("Categoría / Rubro:", categorias_validas, index=idx_rubro_act, key="edit_rub_act")
+                
+                nuevos_puntos_max = st.number_input("Puntos Máximos:", min_value=10.0, max_value=100.0, value=float(fila_act_edit.get('Puntos_Max', 100.0)), step=10.0, key="edit_pts_act")
+                
+                if st.button("💾 Guardar Cambios de la Actividad", type="primary", use_container_width=True):
+                    with st.spinner("Actualizando en Supabase..."):
+                        try:
+                            with engine.begin() as conn:
+                                conn.execute(
+                                    text('''UPDATE "calif_actividades" 
+                                            SET "Nombre_Actividad" = :nom, "Rubro" = :rub, "Puntos_Max" = :pmax
+                                            WHERE "ID_Actividad" = :id AND "Clase" = :c'''),
+                                    {"nom": nuevo_nombre_act.strip(), "rub": nuevo_rubro_act, "pmax": nuevos_puntos_max, "id": id_act_a_editar, "c": clase_id}
+                                )
+                            leer_datos.clear()
+                            st.success("✅ Actividad y categoría actualizadas exitosamente.")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e_upd_act:
+                            st.error(f"Error al actualizar actividad: {e_upd_act}")
+
+    # --- BOTÓN 4: ELIMINAR ACTIVIDAD ---
+    with col_btn_act4:
+        with st.popover("🗑️ Eliminar Tarea", use_container_width=True):
             st.markdown("### Eliminar Tarea o Examen")
             if mis_actividades.empty:
                 st.info("No hay actividades registradas en este periodo para eliminar.")
             else:
-                st.warning("⚠️ **Atención:** Al eliminar una actividad, se borrarán también todas las calificaciones que los alumnos tengan en ella.")
-                
+                st.warning("⚠️ **Atención:** Se borrarán también todas las calificaciones asociadas.")
                 dict_acts_del = {
                     f"{r['Nombre_Actividad']} ({r['Rubro']})": str(r['ID_Actividad']).strip()
                     for _, r in mis_actividades.iterrows()
                 }
-                
-                act_a_borrar_lbl = st.selectbox("Selecciona la actividad a eliminar:", list(dict_acts_del.keys()), key="sel_act_del")
+                act_a_borrar_lbl = st.selectbox("Actividad a eliminar:", list(dict_acts_del.keys()), key="sel_act_del")
                 id_act_a_borrar = dict_acts_del[act_a_borrar_lbl]
                 
-                confirmar_borrado = st.checkbox("Confirmo que deseo borrar esta actividad y sus notas", key="chk_conf_del_act")
+                confirmar_borrado = st.checkbox("Confirmo que deseo borrarla", key="chk_conf_del_act")
                 
                 if st.button("🗑️ Borrar Definitivamente", type="secondary", disabled=not confirmar_borrado, use_container_width=True):
-                    with st.spinner("Eliminando actividad y calificaciones de Supabase..."):
+                    with st.spinner("Eliminando de Supabase..."):
                         try:
                             with engine.begin() as conn:
-                                # 1. Borramos notas de los alumnos asociadas a esa actividad
                                 conn.execute(
                                     text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
                                     {"id": id_act_a_borrar, "c": clase_id}
                                 )
-                                # 2. Borramos la actividad del catálogo
                                 conn.execute(
                                     text('DELETE FROM "calif_actividades" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
                                     {"id": id_act_a_borrar, "c": clase_id}
                                 )
                             leer_datos.clear()
-                            st.success(f"✅ Actividad '{act_a_borrar_lbl}' eliminada exitosamente.")
+                            st.success(f"✅ Actividad eliminada exitosamente.")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e_del:
@@ -456,23 +471,9 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     # =================================================================
     # 4. MATRIZ DE CALIFICACIONES (ESCALA 100)
     # =================================================================
-    try:
-        grupo_limpio = grupo_sel.split("(")[0].strip()
-        alumnos_clase = obtener_lista_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
-    except Exception:
-        alumnos_clase = []
-        
     if not alumnos_clase:
         st.warning(f"No hay alumnos registrados en la lista de '{grupo_limpio}'.")
         return
-        
-    df_act_todas = leer_datos(gc, FILE_CALIFICACIONES, "Actividades")
-    if not df_act_todas.empty and 'Clase' in df_act_todas.columns:
-        df_act_todas['Clase'] = df_act_todas['Clase'].astype(str).str.strip()
-        df_act_todas['Periodo'] = df_act_todas['Periodo'].astype(str).str.strip()
-        mis_actividades = df_act_todas[(df_act_todas['Clase'] == clase_id) & (df_act_todas['Periodo'] == periodo_sel)]
-    else:
-        mis_actividades = pd.DataFrame()
         
     if mis_actividades.empty:
         st.info("💡 Aún no hay actividades en este periodo. Crea una manual o sincroniza desde Google Classroom arriba.")
@@ -497,6 +498,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         notas_act = mis_notas[mis_notas['ID_Actividad'] == id_act] if not mis_notas.empty else pd.DataFrame()
         dicc_notas = dict(zip(notas_act['Alumno'].astype(str).str.strip(), pd.to_numeric(notas_act['Nota'], errors='coerce').fillna(0.0))) if not notas_act.empty else {}
         
+        # Mapeo limpio con respaldo del normalizador
         datos_matriz[col_nombre] = [float(dicc_notas.get(str(al).strip(), 0.0)) for al in alumnos_clase]
 
     df_editable = pd.DataFrame(datos_matriz)
