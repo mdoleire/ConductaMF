@@ -127,15 +127,57 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 if st.button(f"📋 Copiar ponderaciones del {periodo_anterior}", type="secondary"):
                     with st.spinner("Clonando criterios en Supabase..."):
                         with engine.begin() as conn:
-                            for _, r in pond_ant.iterrows():
+                            for t in tareas_cr:
+                                id_act_cr = f"CR-{t['id']}"
+                                nom_t = t.get("title", "Sin Título")
+                                p_max_t = float(t.get("maxPoints", 100.0))
+                                
+                                # Categoría inteligente
+                                cat_id_t = t.get("gradeCategoryId")
+                                rubro_detectado = mapa_cats_cr.get(cat_id_t, "Tareas y Trabajos")
+                                
+                                rubro_final = categorias_validas[0]
+                                for c_val in categorias_validas:
+                                    if any(w in c_val.lower() for w in rubro_detectado.lower().split()):
+                                        rubro_final = c_val
+                                        break
+                                
+                                # 1. Guardar o actualizar la actividad
                                 conn.execute(
-                                    text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
-                                    {"c": clase_id, "p": periodo_sel, "r": r['Rubro'], "pct": int(r['Porcentaje'])}
+                                    text('DELETE FROM "calif_actividades" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                    {"id": id_act_cr, "c": clase_id}
                                 )
-                        leer_datos.clear()
-                        st.success("✅ Criterios copiados exitosamente.")
-                        time.sleep(1)
-                        st.rerun()
+                                conn.execute(
+                                    text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                                            VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)'''),
+                                    {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
+                                )
+                                
+                                # 2. Descargar Notas de cada Alumno
+                                res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
+                                
+                                # Limpiamos notas viejas de esta actividad en esta clase
+                                conn.execute(
+                                    text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                    {"id": id_act_cr, "c": clase_id}
+                                )
+                                
+                                for sub in res_sub.get("studentSubmissions", []):
+                                    u_id = sub.get("userId")
+                                    nom_alm = mapa_userid_a_nombre.get(u_id)
+                                    
+                                    nota_asignada = sub.get("assignedGrade")
+                                    if nota_asignada is None:
+                                        nota_asignada = sub.get("draftGrade")
+                                    
+                                    # 🛡️ INSERCIÓN LIMPIA EN SUPABASE (SIN ON CONFLICT)
+                                    if nom_alm and nota_asignada is not None:
+                                        conn.execute(
+                                            text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
+                                                    VALUES (:id, :c, :alm, :nota)'''),
+                                            {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_asignada)}
+                                        )
+                                        total_notas_descargadas += 1
 
         st.markdown("##### 📝 Define tus Criterios de Evaluación")
         criterios_base = pd.DataFrame([
