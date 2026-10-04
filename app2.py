@@ -418,12 +418,16 @@ if not st.session_state.get("auth_email"):
      # ⚠️ MENSAJE PARA LA VERSIÓN DE PRUEBAS (NO OFICIAL)
     st.info("🧪 Servidor de Pruebas: Esta versión es de evaluación y no altera los registros oficiales del colegio.")
     
-    # Generamos el state firmado con la marca de tiempo actual
-    ahora_ts = str(time.time())
-    state_token = f"{ahora_ts}:{firmar_estado(ahora_ts)}"
-    
-    if "oauth_state" not in st.session_state:
-        st.session_state["oauth_state"] = secrets.token_urlsafe(16)
+    # ✅ FIX: Definimos la función de firma HMAC con la clave secreta del servidor
+    def firmar_estado(texto):
+        return hmac.new(CLIENT_SECRET.encode('utf-8'), str(texto).encode('utf-8'), hashlib.sha256).hexdigest()
+
+        # Generamos el state firmado con la marca de tiempo actual
+        ahora_ts = str(int(time.time()))
+        state_token = f"{ahora_ts}:{firmar_estado(ahora_ts)}"
+
+        if "oauth_state" not in st.session_state:
+            st.session_state["oauth_state"] = state_token
 
     params = {
         "client_id": CLIENT_ID,
