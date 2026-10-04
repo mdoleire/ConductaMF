@@ -311,7 +311,7 @@ def aplicar_diseno_institucional(compacto=False):
         unsafe_allow_html=True
     )
 # =================================================================
-# GESTIÓN DE SESIÓN Y OAUTH SEGURO (CON TOKEN OPACO ANTI-FUGA DE PII)
+# GESTIÓN DE SESIÓN Y OAUTH SEGURO (CON TOKEN CLASSROOM PERSISTENTE)
 # =================================================================
 import hmac
 import hashlib
@@ -333,31 +333,33 @@ if "access_token" not in st.session_state:
 
 parametros_url = st.query_params.to_dict()
 
-# --- 🛡️ MOTOR CRIPTOGRÁFICO DE TOKEN OPACO (SIN DATOS PERSONALES EN URL) ---
-def empaquetar_token_opaco(email, nombre):
-    """Convierte el correo y nombre en un token cifrado e ininteligible para la URL"""
-    payload = json.dumps({"e": str(email).lower().strip(), "n": str(nombre).strip()}).encode('utf-8')
+# --- 🛡️ MOTOR CRIPTOGRÁFICO: AHORA GUARDA TAMBIÉN EL TOKEN DE CLASSROOM ---
+def empaquetar_token_opaco(email, nombre, token_classroom=""):
+    """Cifra el correo, nombre y el token de Classroom en un hash seguro para la URL"""
+    payload = json.dumps({
+        "e": str(email).lower().strip(), 
+        "n": str(nombre).strip(),
+        "t": str(token_classroom or "").strip()
+    }).encode('utf-8')
     comprimido = zlib.compress(payload)
-    # Firma HMAC de 8 bytes para validar integridad contra manipulaciones
     firma = hmac.new(CLIENT_SECRET.encode('utf-8'), comprimido, hashlib.sha256).digest()[:8]
     return base64.urlsafe_b64encode(firma + comprimido).decode('utf-8')
 
 def desempaquetar_token_opaco(token_str):
-    """Descifra el token opaco y valida la firma digital en el servidor"""
+    """Descifra el paquete y recupera la sesión completa junto con Classroom"""
     try:
         raw_bytes = base64.urlsafe_b64decode(token_str.encode('utf-8'))
         firma_recibida = raw_bytes[:8]
         comprimido = raw_bytes[8:]
         firma_calculada = hmac.new(CLIENT_SECRET.encode('utf-8'), comprimido, hashlib.sha256).digest()[:8]
         
-        # Validación de integridad en tiempo constante (Anti-Timing Attacks)
         if not hmac.compare_digest(firma_recibida, firma_calculada):
-            return None, None
+            return None, None, None
             
         datos = json.loads(zlib.decompress(comprimido).decode('utf-8'))
-        return datos.get("e"), datos.get("n")
+        return datos.get("e"), datos.get("n"), datos.get("t")
     except Exception:
-        return None, None
+        return None, None, None
 
 # 1. 🔑 RETORNO DESDE GOOGLE OAUTH
 if "code" in parametros_url:
@@ -376,6 +378,10 @@ if "code" in parametros_url:
         res_raw = requests.post(token_url, data=token_data, timeout=10)
         response = res_raw.json()
         
+        if "error" in response:
+            st.error(f"🚨 Error en Google OAuth: {response.get('error')} - {response.get('error_description')}")
+            st.stop()
+            
         access_token = response.get("access_token")
         
         if access_token:
@@ -390,27 +396,29 @@ if "code" in parametros_url:
             st.session_state["auth_name"] = nombre_verificado
             st.session_state["access_token"] = access_token
             
-            # 🛡️ BLINDAJE DE PRIVACIDAD: Generamos el token opaco sin texto plano
-            token_seguro = empaquetar_token_opaco(email_verificado, nombre_verificado)
+            # 🛡️ Empacamos todo cifrado (incluyendo Classroom) para sobrevivir al F5
+            token_seguro = empaquetar_token_opaco(email_verificado, nombre_verificado, access_token)
             
             st.query_params.clear()
-            st.query_params["session"] = token_seguro  # Solo un hash ininteligible en la URL
+            st.query_params["session"] = token_seguro
             st.rerun()
             
     except Exception as e:
         st.error(f"Error en la conexión con Google: {e}")
         st.stop()
 
-# 2. 🔄 RESILIENCIA A F5 / RECARGA: Validamos el token opaco de la URL
+# 2. 🔄 RESILIENCIA A F5: Restauramos Sesión + Token de Classroom automáticamente
 elif not st.session_state.get("auth_email") and "session" in parametros_url:
     token_recibido = parametros_url["session"]
-    correo_recuperado, nombre_recuperado = desempaquetar_token_opaco(token_recibido)
+    correo_rec, nombre_rec, token_cr_rec = desempaquetar_token_opaco(token_recibido)
     
-    if correo_recuperado and nombre_recuperado:
-        st.session_state["auth_email"] = correo_recuperado
-        st.session_state["auth_name"] = nombre_recuperado
+    if correo_rec and nombre_rec:
+        st.session_state["auth_email"] = correo_rec
+        st.session_state["auth_name"] = nombre_rec
+        # ✅ RESTAURACIÓN AUTOMÁTICA DEL TOKEN DE CLASSROOM:
+        if token_cr_rec:
+            st.session_state["access_token"] = token_cr_rec
     else:
-        # Token inválido o alterado: limpiamos y forzamos salida
         st.query_params.clear()
         
 # ==========================================
