@@ -153,15 +153,16 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                     {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
                                 )
                                 
-                                # 2. Descargar Notas de cada Alumno
+                                # Descargar Notas de cada Alumno
                                 res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
                                 
-                                # Limpiamos notas viejas de esta actividad en esta clase
+                                # 🛡️ 1. Limpiamos notas previas de esta tarea en esta clase (Evita duplicados sin requerir ON CONFLICT)
                                 conn.execute(
                                     text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
                                     {"id": id_act_cr, "c": clase_id}
                                 )
                                 
+                                # 🛡️ 2. Insertamos las notas de cada estudiante
                                 for sub in res_sub.get("studentSubmissions", []):
                                     u_id = sub.get("userId")
                                     nom_alm = mapa_userid_a_nombre.get(u_id)
@@ -170,7 +171,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                     if nota_asignada is None:
                                         nota_asignada = sub.get("draftGrade")
                                     
-                                    # 🛡️ INSERCIÓN LIMPIA EN SUPABASE (SIN ON CONFLICT)
                                     if nom_alm and nota_asignada is not None:
                                         conn.execute(
                                             text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
