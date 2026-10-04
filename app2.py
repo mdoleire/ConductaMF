@@ -311,39 +311,14 @@ def aplicar_diseno_institucional(compacto=False):
         unsafe_allow_html=True
     )
 # ==========================================
-# GESTIÓN DE SESIÓN Y OAUTH SEGURO (F5-PROOF)
+# GESTIÓN DE SESIÓN Y OAUTH SEGURO (F5 RESILIENTE CON HMAC)
 # ==========================================
+import hmac
+import hashlib
+
 CLIENT_ID = st.secrets["auth"]["google_client_id"]
 CLIENT_SECRET = st.secrets["auth"]["google_client_secret"]
 REDIRECT_URI = st.secrets["auth"]["redirect_uri"]
-
-def firmar_estado(timestamp_str):
-    """Firma un timestamp con el Client Secret para validar que el retorno OAuth sea legítimo."""
-    return hmac.new(CLIENT_SECRET.encode('utf-8'), timestamp_str.encode('utf-8'), hashlib.sha256).hexdigest()
-
-def crear_token_sesion(correo, nombre):
-    """Genera un token opaco y firmado para mantener la sesión viva tras F5 sin exponer datos sensibles."""
-    datos = json.dumps({"u": correo, "n": nombre, "t": time.time()})
-    payload = base64.urlsafe_b64encode(datos.encode()).decode()
-    firma = hmac.new(CLIENT_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
-    return f"{payload}.{firma}"
-
-def resolver_token_sesion(token):
-    """Verifica la integridad del token de sesión y recupera la identidad del usuario."""
-    try:
-        payload, firma = token.split(".", 1)
-        firma_esperada = hmac.new(CLIENT_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(firma, firma_esperada):
-            return None, None
-        
-        datos = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
-        # El token es válido durante 12 horas consecutivas
-        if time.time() - datos.get("t", 0) > 43200:
-            return None, None
-            
-        return datos.get("u"), datos.get("n")
-    except Exception:
-        return None, None
 
 if "auth_email" not in st.session_state:
     st.session_state["auth_email"] = None
@@ -352,19 +327,34 @@ if "auth_name" not in st.session_state:
 
 parametros_url = st.query_params.to_dict()
 
-# --- 1. RESTAURACIÓN AUTOMÁTICA TRAS F5 ---
-if not st.session_state["auth_email"] and "_s" in parametros_url:
-    u_recup, n_recup = resolver_token_sesion(parametros_url["_s"])
-    if u_recup:
-        st.session_state["auth_email"] = u_recup
-        st.session_state["auth_name"] = n_recup
+# --- 🛡️ FUNCIONES CRIPTOGRÁFICAS DE PERSISTENCIA ---
+def generar_firma_segura(correo_usuario):
+    """Genera un hash criptográfico único que ningún usuario puede falsificar"""
+    clave_privada = CLIENT_SECRET.encode('utf-8')
+    mensaje = str(correo_usuario).lower().strip().encode('utf-8')
+    return hmac.new(clave_privada, mensaje, hashlib.sha256).hexdigest()
+
+def verificar_firma_segura(correo_usuario, firma_recibida):
+    """Verifica en tiempo constante que la firma pertenezca a ese correo exacto"""
+    if not correo_usuario or not firma_recibida:
+        return False
+    firma_real = generar_firma_segura(correo_usuario)
+    return hmac.compare_digest(firma_real, firma_recibida)
+
+# --- 🔄 VALIDACIÓN DE PERSISTENCIA TRAS F5 / RECARGA ---
+if not st.session_state.get("auth_email") and "_p_email" in parametros_url and "_p_sig" in parametros_url:
+    candidato_correo = parametros_url["_p_email"].lower().strip()
+    candidato_firma = parametros_url["_p_sig"]
+    
+    if verificar_firma_segura(candidato_correo, candidato_firma):
+        # Firma legítima: restauramos la sesión automáticamente
+        st.session_state["auth_email"] = candidato_correo
+        st.session_state["auth_name"] = parametros_url.get("_p_name", "Docente Miraflores")
     else:
+        # Intento de alteración manual: expulsión inmediata
         st.query_params.clear()
 
-# --- 2. PROCESAMIENTO DEL RETORNO OAUTH ---
-# ❌ REEMPLAZA TODO ESE BLOQUE POR ESTA VERSIÓN SIN BUCLE:
-
-# --- PROCESAMIENTO DEL RETORNO OAUTH (SIN BUCLE DE PESTAÑAS) ---
+# --- PROCESAMIENTO DEL RETORNO OAUTH DESDE GOOGLE ---
 if "code" in parametros_url and not st.session_state.get("auth_email"):
     codigo_autorizacion = parametros_url["code"]
     
@@ -381,12 +371,8 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
         res_raw = requests.post(token_url, data=token_data, timeout=10)
         response = res_raw.json()
         
-        # 🔍 SI GOOGLE RECHAZA EL CANJE, LO MOSTRAMOS EN PANTALLA EN LUGAR DE ENTRAR EN BUCLE
         if "error" in response:
             st.error(f"🚨 Error en Google OAuth: {response.get('error')} - {response.get('error_description')}")
-            st.info("💡 **Diagnóstico de Redirección:**")
-            st.write(f"- URI configurada en tus secretos: `{REDIRECT_URI}`")
-            st.write("- Asegúrate de que en Google Cloud Console esté escrita exactamente igual.")
             st.stop()
             
         access_token = response.get("access_token")
@@ -396,17 +382,25 @@ if "code" in parametros_url and not st.session_state.get("auth_email"):
             headers = {"Authorization": f"Bearer {access_token}"}
             user_info = requests.get(userinfo_url, headers=headers, timeout=10).json()
             
-            # Guardamos la sesión y el token de Google Classroom
-            st.session_state["auth_email"] = user_info.get("email", "").lower().strip()
-            st.session_state["auth_name"] = user_info.get("name", "Docente Miraflores")
+            email_verificado = user_info.get("email", "").lower().strip()
+            nombre_verificado = user_info.get("name", "Docente Miraflores")
+            
+            # Generamos la firma criptográfica infalsificable
+            firma_digital = generar_firma_segura(email_verificado)
+            
+            st.session_state["auth_email"] = email_verificado
+            st.session_state["auth_name"] = nombre_verificado
             st.session_state["access_token"] = access_token
             
-            # Limpiamos la barra de direcciones y entramos al sistema
+            # Escribimos los parámetros firmados en la URL para sobrevivir al F5
             st.query_params.clear()
+            st.query_params["_p_email"] = email_verificado
+            st.query_params["_p_sig"] = firma_digital
+            st.query_params["_p_name"] = nombre_verificado
+            
             st.rerun()
         else:
             st.error("No se pudo obtener el token de acceso de Google.")
-            st.write("Respuesta recibida:", response)
             st.stop()
             
     except Exception as e:
