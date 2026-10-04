@@ -351,12 +351,29 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         curso_seleccionado_label = st.selectbox("Selecciona el curso en Classroom:", list(dict_cursos.keys()))
                         id_curso_elegido = dict_cursos[curso_seleccionado_label]
                         
-                        if st.button("🚀 Sincronizar Tareas y Calificaciones", type="primary", use_container_width=True):
-                            with st.spinner("Descargando tareas y calificaciones reales..."):
-                                # Categorías de Classroom
+                        if st.button("🚀 Sincronizar Todo (Tareas, Categorías y Calificaciones)", type="primary", use_container_width=True):
+                            with st.spinner("Descargando criterios, tareas y calificaciones de Classroom a Supabase..."):
+                                # 1. 🪄 AUTO-SINCRONIZACIÓN DE CRITERIOS / PONDERACIONES DE CLASSROOM
                                 res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
                                 cats_cr = res_curso_det.get("gradeCategories", [])
-                                mapa_cats_cr = {c["id"]: c.get("name", "Tareas y Trabajos") for c in cats_cr}
+                                mapa_cats_cr = {c["id"]: c.get("name", "Trabajos y Tareas").strip() for c in cats_cr}
+
+                                with engine.begin() as conn:
+                                    # Si Classroom tiene categorías con porcentajes, las sincroniza en Supabase
+                                    if cats_cr:
+                                        conn.execute(
+                                            text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
+                                            {"c": clase_id, "p": periodo_sel}
+                                        )
+                                        for cat in cats_cr:
+                                            cat_nom = str(cat.get("name", "Tareas y Trabajos")).strip()
+                                            # En Classroom el 50% viene como 500000
+                                            cat_pct = int(round(cat.get("weight", 0) / 10000)) if cat.get("weight", 0) > 0 else 0
+                                            if cat_pct > 0:
+                                                conn.execute(
+                                                    text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
+                                                    {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
+                                                )
 
                                 # Tareas
                                 res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
@@ -546,9 +563,24 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     df_editable = pd.DataFrame(datos_matriz)
     
     # Cálculo proporcional en base 100
+    # 🧮 CÁLCULO PROPORCIONAL TOLERANTE (RESUELVE EL 0.0)
+    rubros_pesos_norm = {str(k).lower().strip(): float(v) for k, v in rubros_pesos.items()}
+
+    def obtener_peso_rubro_flexible(r_nombre):
+        r_c = str(r_nombre).lower().strip()
+        # 1. Coincidencia directa
+        if r_c in rubros_pesos_norm:
+            return rubros_pesos_norm[r_c]
+        # 2. Coincidencia parcial (ej. si uno dice 'Trabajos' y el otro 'Trabajos de 100')
+        for k, w in rubros_pesos_norm.items():
+            if k in r_c or r_c in k:
+                return w
+        # 3. Fallback: si no coincide, toma el peso del primer rubro disponible
+        return list(rubros_pesos_norm.values())[0] if rubros_pesos_norm else 100.0
+
     rubros_con_tareas = list(set([r for _, _, r, _ in actividades_cols]))
-    peso_total_evaluado = sum(float(rubros_pesos.get(r, 0.0)) for r in rubros_con_tareas)
-    
+    peso_total_evaluado = sum(obtener_peso_rubro_flexible(r) for r in rubros_con_tareas)
+
     promedios_calculados = []
     for idx, row in df_editable.iterrows():
         desglose_por_rubro = {r: [] for r in rubros_con_tareas}
@@ -560,7 +592,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
             
         puntos_acumulados = 0.0
         for rubro, lista_notas in desglose_por_rubro.items():
-            pct_rubro = float(rubros_pesos.get(rubro, 0.0))
+            pct_rubro = obtener_peso_rubro_flexible(rubro)
             prom_rubro = (sum(lista_notas) / len(lista_notas)) if lista_notas else 0.0
             puntos_acumulados += (prom_rubro * (pct_rubro / 100.0))
             
