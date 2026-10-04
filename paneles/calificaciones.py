@@ -4,9 +4,11 @@ import pandas as pd
 import uuid
 import time
 import requests
+import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import text
+from config import CLIENT_ID, REDIRECT_URI
 
 from config import (
     FILE_ASIGNACIONES, 
