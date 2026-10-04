@@ -8,7 +8,6 @@ import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import text
-from config import CLIENT_ID, REDIRECT_URI
 
 from config import (
     FILE_ASIGNACIONES, 
@@ -17,6 +16,7 @@ from config import (
     PERIODOS_LECTIVOS, 
     SUPER_USUARIOS_WHITELIST
 )
+
 from database import (
     leer_datos, 
     obtener_lista_alumnos, 
@@ -270,15 +270,19 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
             if not token_google:
                 st.info("Para sincronizar tus calificaciones en tiempo real, vincula tu cuenta institucional:")
                 
-                # Generamos el enlace de autorización directo a Classroom sin tener que salir
+                # 🛡️ FIX: Leemos las credenciales directamente de la bóveda de secretos
+                client_id_cr = st.secrets["auth"]["google_client_id"]
+                redirect_uri_cr = st.secrets["auth"]["redirect_uri"]
+                
                 params_cr = {
-                    "client_id": CLIENT_ID,
-                    "redirect_uri": REDIRECT_URI,
+                    "client_id": client_id_cr,
+                    "redirect_uri": redirect_uri_cr,
                     "response_type": "code",
                     "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly",
                     "access_type": "online",
                     "prompt": "consent"
                 }
+                import urllib.parse
                 url_cr = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params_cr)}"
                 st.link_button("🔑 Conectar con Google Classroom", url_cr, type="primary", use_container_width=True)
             else:
