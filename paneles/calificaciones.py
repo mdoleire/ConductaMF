@@ -331,7 +331,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                     "client_id": client_id_cr,
                     "redirect_uri": redirect_uri_cr,
                     "response_type": "code",
-                    "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+                    "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly https://www.googleapis.com/auth/classroom.rosters.readonly",
                     "access_type": "online",
                     "prompt": "consent"
                 }

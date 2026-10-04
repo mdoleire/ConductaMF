@@ -439,7 +439,7 @@ if not st.session_state.get("auth_email"):
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+        "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly https://www.googleapis.com/auth/classroom.rosters.readonly",
         "access_type": "online",
         "state": st.session_state.get("oauth_state", secrets.token_urlsafe(16))
     }
