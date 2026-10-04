@@ -405,20 +405,26 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                             p_max_t = float(t.get("maxPoints", 100.0))
                                             
                                             # Categoría inteligente obligada a pertenecer a las categorías válidas
+                                            # 🏷️ CATEGORÍA FIEL: Respetamos al 100% el nombre oficial de Classroom
                                             cat_id_t = t.get("gradeCategoryId")
-                                            rubro_detectado = mapa_cats_cr.get(cat_id_t, "Tareas y Trabajos")
+                                            if cat_id_t and cat_id_t in mapa_cats_cr:
+                                                rubro_final = str(mapa_cats_cr[cat_id_t]).strip()
+                                            else:
+                                                # Inferencia de respaldo solo si la tarea no tenía categoría en Classroom
+                                                nom_low = nom_t.lower()
+                                                if any(w in nom_low for w in ["examen", "evalua", "quiz", "prueba"]):
+                                                    rubro_final = "Exámenes"
+                                                elif any(w in nom_low for w in ["proyect", "investig", "practic"]):
+                                                    rubro_final = "Proyectos e Investigación"
+                                                else:
+                                                    rubro_final = "Trabajos y Tareas"
                                             
-                                            rubro_final = categorias_validas[0]
-                                            for c_val in categorias_validas:
-                                                if any(w in c_val.lower() for w in rubro_detectado.lower().split()):
-                                                    rubro_final = c_val
-                                                    break
-                                            
+                                            # 🛡️ Aseguramos que la categoría exista en Ponderaciones para que no quede huérfana
                                             conn.execute(
-                                                text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
-                                                        VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
-                                                        ON CONFLICT ("ID_Actividad") DO UPDATE SET "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", "Rubro" = EXCLUDED."Rubro", "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
-                                                {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
+                                                text('''INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje")
+                                                        VALUES (:c, :p, :r, 50)
+                                                        ON CONFLICT DO NOTHING'''),
+                                                {"c": clase_id, "p": periodo_sel, "r": rubro_final}
                                             )
                                             
                                             # Notas (Borradores y Oficiales)
