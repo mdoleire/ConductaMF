@@ -208,13 +208,23 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     st.markdown("---")
     
     # =================================================================
-    # 3. CREACIÓN MANUAL Y SINCRONIZACIÓN DESDE CLASSROOM
+    # 3. ACCIONES DE ACTIVIDADES: CREAR, SINCRONIZAR Y ELIMINAR
     # =================================================================
-    col_btn_act1, col_btn_act2 = st.columns(2)
+    # Consultamos las actividades existentes de esta clase y periodo
+    df_act_todas = leer_datos(gc, FILE_CALIFICACIONES, "Actividades")
+    if not df_act_todas.empty and 'Clase' in df_act_todas.columns:
+        df_act_todas['Clase'] = df_act_todas['Clase'].astype(str).str.strip()
+        df_act_todas['Periodo'] = df_act_todas['Periodo'].astype(str).str.strip()
+        mis_actividades = df_act_todas[(df_act_todas['Clase'] == clase_id) & (df_act_todas['Periodo'] == periodo_sel)]
+    else:
+        mis_actividades = pd.DataFrame()
+
+    # Fila de 3 botones de acción equilibrados
+    col_btn_act1, col_btn_act2, col_btn_act3 = st.columns(3)
     
-    # A. Botón para crear tarea manual
+    # --- BOTÓN 1: CREAR ACTIVIDAD MANUAL ---
     with col_btn_act1:
-        with st.popover("➕ Nueva Actividad / Tarea Manual", use_container_width=True):
+        with st.popover("➕ Nueva Tarea Manual", use_container_width=True):
             st.markdown("### Crear Actividad Manual")
             nombre_actividad = st.text_input("Nombre de la Actividad:", placeholder="Ej. Tarea 1 - Ley de Ohm")
             rubro_actividad = st.selectbox("Categoría a la que pertenece:", list(rubros_pesos.keys()))
@@ -248,41 +258,36 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         except Exception as e_act:
                             st.error(f"Error al crear: {e_act}")
 
-    # B. ✅ NUEVO BOTÓN: Sincronización desde Google Classroom
+    # --- BOTÓN 2: SINCRONIZAR DESDE CLASSROOM ---
     with col_btn_act2:
-        with st.popover("🔄 Sincronizar desde Google Classroom", use_container_width=True):
+        with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
             st.markdown("### 🎓 Conexión con Google Classroom")
             token_google = st.session_state.get("access_token")
             
             if not token_google:
-                st.warning("⚠️ No se detectó sesión de Classroom activa. Cierra sesión e inicia nuevamente aceptando los permisos de Classroom.")
+                st.warning("⚠️ No se detectó sesión de Classroom activa. Cierra sesión e inicia nuevamente aceptando los permisos.")
             else:
-                st.caption("Esta herramienta descarga las tareas y calificaciones que ya pusiste en Google Classroom.")
-                rubro_destino_cr = st.selectbox("Categoría donde se guardarán las tareas importadas:", list(rubros_pesos.keys()), key="rubro_cr")
-                
-                # Consultar cursos del profesor en Classroom
+                rubro_destino_cr = st.selectbox("Categoría para tareas importadas:", list(rubros_pesos.keys()), key="rubro_cr")
                 try:
                     headers_cr = {"Authorization": f"Bearer {token_google}"}
                     res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
                     cursos_cr = res_c.get("courses", [])
                     
                     if not cursos_cr:
-                        st.info("No se encontraron cursos activos bajo tu cuenta de Google Classroom.")
+                        st.info("No se encontraron cursos activos en Classroom.")
                     else:
                         dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
-                        curso_seleccionado_label = st.selectbox("Selecciona la clase en Google Classroom:", list(dict_cursos.keys()))
+                        curso_seleccionado_label = st.selectbox("Selecciona la clase en Classroom:", list(dict_cursos.keys()))
                         id_curso_elegido = dict_cursos[curso_seleccionado_label]
                         
-                        if st.button("🚀 Iniciar Descarga de Calificaciones", type="primary", use_container_width=True):
-                            with st.spinner("Descargando tareas y notas de Google Classroom a Supabase..."):
-                                # 1. Descargar Tareas
+                        if st.button("🚀 Iniciar Descarga de Notas", type="primary", use_container_width=True):
+                            with st.spinner("Descargando tareas y notas a Supabase..."):
                                 res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
                                 tareas_cr = res_w.get("courseWork", [])
                                 
                                 if not tareas_cr:
                                     st.warning("Ese curso en Classroom no tiene tareas creadas.")
                                 else:
-                                    # 2. Descargar Alumnos de Classroom para mapear nombres
                                     res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
                                     mapa_alumnos = {s["userId"]: s.get("profile", {}).get("name", {}).get("fullName", "") for s in res_st.get("students", [])}
                                     
@@ -295,7 +300,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                             nom_t = t.get("title", "Sin Título")
                                             p_max_t = float(t.get("maxPoints", 100.0))
                                             
-                                            # Guardar Actividad
                                             conn.execute(
                                                 text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
                                                         VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
@@ -303,7 +307,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                 {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_destino_cr, "pmax": p_max_t, "fec": fecha_hoy}
                                             )
                                             
-                                            # Descargar Notas de los Alumnos
                                             res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
                                             for sub in res_sub.get("studentSubmissions", []):
                                                 u_id = sub.get("userId")
@@ -320,12 +323,217 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                     total_notas_descargadas += 1
                                                     
                                     leer_datos.clear()
-                                    st.success(f"🎉 ¡Éxito! Se importaron {len(tareas_cr)} tareas y {total_notas_descargadas} calificaciones.")
+                                    st.success(f"🎉 ¡Éxito! {len(tareas_cr)} tareas y {total_notas_descargadas} notas sincronizadas.")
                                     time.sleep(1)
                                     st.rerun()
                 except Exception as e_cr:
-                    st.error(f"Error al conectar con Classroom: {e_cr}")
+                    st.error(f"Error con Classroom: {e_cr}")
 
+    # --- ✅ BOTÓN 3 NUEVO: ELIMINAR ACTIVIDAD ---
+    with col_btn_act3:
+        with st.popover("🗑️ Eliminar Actividad", use_container_width=True):
+            st.markdown("### Eliminar Tarea o Examen")
+            if mis_actividades.empty:
+                st.info("No hay actividades registradas en este periodo para eliminar.")
+            else:
+                st.warning("⚠️ **Atención:** Al eliminar una actividad, se borrarán también todas las calificaciones que los alumnos tengan en ella.")
+                
+                dict_acts_del = {
+                    f"{r['Nombre_Actividad']} ({r['Rubro']})": str(r['ID_Actividad']).strip()
+                    for _, r in mis_actividades.iterrows()
+                }
+                
+                act_a_borrar_lbl = st.selectbox("Selecciona la actividad a eliminar:", list(dict_acts_del.keys()), key="sel_act_del")
+                id_act_a_borrar = dict_acts_del[act_a_borrar_lbl]
+                
+                confirmar_borrado = st.checkbox("Confirmo que deseo borrar esta actividad y sus notas", key="chk_conf_del_act")
+                
+                if st.button("🗑️ Borrar Definitivamente", type="secondary", disabled=not confirmar_borrado, use_container_width=True):
+                    with st.spinner("Eliminando actividad y calificaciones de Supabase..."):
+                        try:
+                            with engine.begin() as conn:
+                                # 1. Borramos notas de los alumnos asociadas a esa actividad
+                                conn.execute(
+                                    text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                    {"id": id_act_a_borrar, "c": clase_id}
+                                )
+                                # 2. Borramos la actividad del catálogo
+                                conn.execute(
+                                    text('DELETE FROM "calif_actividades" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                    {"id": id_act_a_borrar, "c": clase_id}
+                                )
+                            leer_datos.clear()
+                            st.success(f"✅ Actividad '{act_a_borrar_lbl}' eliminada exitosamente.")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e_del:
+                            st.error(f"Error al eliminar actividad: {e_del}")
+
+    st.markdown("---")
+    # =================================================================
+    # 3. ACCIONES DE ACTIVIDADES: CREAR, SINCRONIZAR Y ELIMINAR
+    # =================================================================
+    # Consultamos las actividades existentes de esta clase y periodo
+    df_act_todas = leer_datos(gc, FILE_CALIFICACIONES, "Actividades")
+    if not df_act_todas.empty and 'Clase' in df_act_todas.columns:
+        df_act_todas['Clase'] = df_act_todas['Clase'].astype(str).str.strip()
+        df_act_todas['Periodo'] = df_act_todas['Periodo'].astype(str).str.strip()
+        mis_actividades = df_act_todas[(df_act_todas['Clase'] == clase_id) & (df_act_todas['Periodo'] == periodo_sel)]
+    else:
+        mis_actividades = pd.DataFrame()
+
+    # Fila de 3 botones de acción equilibrados
+    col_btn_act1, col_btn_act2, col_btn_act3 = st.columns(3)
+    
+    # --- BOTÓN 1: CREAR ACTIVIDAD MANUAL ---
+    with col_btn_act1:
+        with st.popover("➕ Nueva Tarea Manual", use_container_width=True):
+            st.markdown("### Crear Actividad Manual")
+            nombre_actividad = st.text_input("Nombre de la Actividad:", placeholder="Ej. Tarea 1 - Ley de Ohm")
+            rubro_actividad = st.selectbox("Categoría a la que pertenece:", list(rubros_pesos.keys()))
+            puntos_max = st.number_input("Puntos Máximos:", min_value=10.0, max_value=100.0, value=100.0, step=10.0)
+            
+            st.markdown("##### 👥 Asignar a grupos:")
+            grupos_seleccionados_tarea = st.multiselect("Grupos a los que aplica:", options=grupos_de_esta_materia, default=[grupo_sel])
+            
+            if st.button("🚀 Crear y Asignar Actividad", type="primary", use_container_width=True):
+                if not nombre_actividad.strip():
+                    st.error("⚠️ Asigna un nombre a la actividad.")
+                elif not grupos_seleccionados_tarea:
+                    st.error("⚠️ Selecciona al menos un grupo.")
+                else:
+                    with st.spinner("Creando en Supabase..."):
+                        try:
+                            fecha_creacion = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d")
+                            with engine.begin() as conn:
+                                for g in grupos_seleccionados_tarea:
+                                    id_act = f"ACT-{uuid.uuid4().hex[:6].upper()}"
+                                    clase_target = f"{materia_sel} - {g}"
+                                    conn.execute(
+                                        text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                                                VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)'''),
+                                        {"id": id_act, "c": clase_target, "p": periodo_sel, "nom": nombre_actividad.strip(), "rub": rubro_actividad, "pmax": puntos_max, "fec": fecha_creacion}
+                                    )
+                            leer_datos.clear()
+                            st.success(f"✅ Actividad creada para {len(grupos_seleccionados_tarea)} grupo(s).")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e_act:
+                            st.error(f"Error al crear: {e_act}")
+
+    # --- BOTÓN 2: SINCRONIZAR DESDE CLASSROOM ---
+    with col_btn_act2:
+        with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
+            st.markdown("### 🎓 Conexión con Google Classroom")
+            token_google = st.session_state.get("access_token")
+            
+            if not token_google:
+                st.warning("⚠️ No se detectó sesión de Classroom activa. Cierra sesión e inicia nuevamente aceptando los permisos.")
+            else:
+                rubro_destino_cr = st.selectbox("Categoría para tareas importadas:", list(rubros_pesos.keys()), key="rubro_cr")
+                try:
+                    headers_cr = {"Authorization": f"Bearer {token_google}"}
+                    res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
+                    cursos_cr = res_c.get("courses", [])
+                    
+                    if not cursos_cr:
+                        st.info("No se encontraron cursos activos en Classroom.")
+                    else:
+                        dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
+                        curso_seleccionado_label = st.selectbox("Selecciona la clase en Classroom:", list(dict_cursos.keys()))
+                        id_curso_elegido = dict_cursos[curso_seleccionado_label]
+                        
+                        if st.button("🚀 Iniciar Descarga de Notas", type="primary", use_container_width=True):
+                            with st.spinner("Descargando tareas y notas a Supabase..."):
+                                res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
+                                tareas_cr = res_w.get("courseWork", [])
+                                
+                                if not tareas_cr:
+                                    st.warning("Ese curso en Classroom no tiene tareas creadas.")
+                                else:
+                                    res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
+                                    mapa_alumnos = {s["userId"]: s.get("profile", {}).get("name", {}).get("fullName", "") for s in res_st.get("students", [])}
+                                    
+                                    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+                                    total_notas_descargadas = 0
+                                    
+                                    with engine.begin() as conn:
+                                        for t in tareas_cr:
+                                            id_act_cr = f"CR-{t['id']}"
+                                            nom_t = t.get("title", "Sin Título")
+                                            p_max_t = float(t.get("maxPoints", 100.0))
+                                            
+                                            conn.execute(
+                                                text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                                                        VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
+                                                        ON CONFLICT ("ID_Actividad") DO UPDATE SET "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
+                                                {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_destino_cr, "pmax": p_max_t, "fec": fecha_hoy}
+                                            )
+                                            
+                                            res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
+                                            for sub in res_sub.get("studentSubmissions", []):
+                                                u_id = sub.get("userId")
+                                                nom_alm = mapa_alumnos.get(u_id)
+                                                nota_asignada = sub.get("assignedGrade")
+                                                
+                                                if nom_alm and nota_asignada is not None:
+                                                    conn.execute(
+                                                        text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
+                                                                VALUES (:id, :c, :alm, :nota)
+                                                                ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
+                                                        {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_asignada)}
+                                                    )
+                                                    total_notas_descargadas += 1
+                                                    
+                                    leer_datos.clear()
+                                    st.success(f"🎉 ¡Éxito! {len(tareas_cr)} tareas y {total_notas_descargadas} notas sincronizadas.")
+                                    time.sleep(1)
+                                    st.rerun()
+                except Exception as e_cr:
+                    st.error(f"Error con Classroom: {e_cr}")
+
+    # --- ✅ BOTÓN 3 NUEVO: ELIMINAR ACTIVIDAD ---
+    with col_btn_act3:
+        with st.popover("🗑️ Eliminar Actividad", use_container_width=True):
+            st.markdown("### Eliminar Tarea o Examen")
+            if mis_actividades.empty:
+                st.info("No hay actividades registradas en este periodo para eliminar.")
+            else:
+                st.warning("⚠️ **Atención:** Al eliminar una actividad, se borrarán también todas las calificaciones que los alumnos tengan en ella.")
+                
+                dict_acts_del = {
+                    f"{r['Nombre_Actividad']} ({r['Rubro']})": str(r['ID_Actividad']).strip()
+                    for _, r in mis_actividades.iterrows()
+                }
+                
+                act_a_borrar_lbl = st.selectbox("Selecciona la actividad a eliminar:", list(dict_acts_del.keys()), key="sel_act_del")
+                id_act_a_borrar = dict_acts_del[act_a_borrar_lbl]
+                
+                confirmar_borrado = st.checkbox("Confirmo que deseo borrar esta actividad y sus notas", key="chk_conf_del_act")
+                
+                if st.button("🗑️ Borrar Definitivamente", type="secondary", disabled=not confirmar_borrado, use_container_width=True):
+                    with st.spinner("Eliminando actividad y calificaciones de Supabase..."):
+                        try:
+                            with engine.begin() as conn:
+                                # 1. Borramos notas de los alumnos asociadas a esa actividad
+                                conn.execute(
+                                    text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                    {"id": id_act_a_borrar, "c": clase_id}
+                                )
+                                # 2. Borramos la actividad del catálogo
+                                conn.execute(
+                                    text('DELETE FROM "calif_actividades" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                    {"id": id_act_a_borrar, "c": clase_id}
+                                )
+                            leer_datos.clear()
+                            st.success(f"✅ Actividad '{act_a_borrar_lbl}' eliminada exitosamente.")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e_del:
+                            st.error(f"Error al eliminar actividad: {e_del}")
+
+    st.markdown("---")
+    
     # =================================================================
     # 4. MATRIZ DE CALIFICACIONES (ESCALA 100)
     # =================================================================
