@@ -351,109 +351,105 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         curso_seleccionado_label = st.selectbox("Selecciona el curso en Classroom:", list(dict_cursos.keys()))
                         id_curso_elegido = dict_cursos[curso_seleccionado_label]
                         
-                        if st.button("🚀 Sincronizar Todo (Tareas, Categorías y Calificaciones)", type="primary", use_container_width=True):
-                            with st.spinner("Descargando criterios, tareas y calificaciones de Classroom a Supabase..."):
-                                # 1. 🪄 AUTO-SINCRONIZACIÓN DE CRITERIOS / PONDERACIONES DE CLASSROOM
+                        # ❌ REEMPLAZA EL BLOQUE DE SINCRONIZACIÓN POR ESTA VERSIÓN FIEL A CLASSROOM:
+
+                        if st.button("🚀 Sincronizar Todo (Categorías, Tareas y Notas)", type="primary", use_container_width=True):
+                            with st.spinner("Descargando configuración y notas de Classroom a Supabase..."):
+                                # 1. 🎓 DESCARGA AUTOMÁTICA DE CATEGORÍAS Y PORCENTAJES DE CLASSROOM
                                 res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
                                 cats_cr = res_curso_det.get("gradeCategories", [])
                                 mapa_cats_cr = {c["id"]: c.get("name", "Trabajos y Tareas").strip() for c in cats_cr}
 
                                 with engine.begin() as conn:
-                                    # Si Classroom tiene categorías con porcentajes, las sincroniza en Supabase
+                                    # Si Classroom tiene categorías con porcentajes (como tus 4 categorías: 40%, 30%, 15%, 15%):
                                     if cats_cr:
                                         conn.execute(
                                             text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
                                             {"c": clase_id, "p": periodo_sel}
                                         )
                                         for cat in cats_cr:
-                                            cat_nom = str(cat.get("name", "Tareas y Trabajos")).strip()
-                                            # En Classroom el 50% viene como 500000
-                                            cat_pct = int(round(cat.get("weight", 0) / 10000)) if cat.get("weight", 0) > 0 else 0
-                                            if cat_pct > 0:
+                                            cat_nom = str(cat.get("name", "")).strip()
+                                            cat_w_raw = cat.get("weight", 0)
+                                            # Classroom entrega 40% como 400000, 15% como 150000
+                                            cat_pct = int(round(cat_w_raw / 10000)) if cat_w_raw > 0 else 0
+                                            if cat_nom and cat_pct > 0:
                                                 conn.execute(
                                                     text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
                                                     {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
                                                 )
 
-                                # Tareas
-                                res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
-                                tareas_cr = res_w.get("courseWork", [])
-                                
-                                if not tareas_cr:
-                                    st.warning("Ese curso en Classroom no tiene tareas creadas.")
-                                else:
-                                    # Alumnos de Classroom
+                                    # 2. Descargar todas las tareas
+                                    res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
+                                    tareas_cr = res_w.get("courseWork", [])
+                                    
+                                    # 3. Padrón oficial de alumnos
+                                    df_alumnos_db = pd.read_sql('SELECT * FROM "alumnos"', engine)
+                                    df_alumnos_db.columns = df_alumnos_db.columns.str.strip()
+                                    col_correo_db = next((c for c in df_alumnos_db.columns if 'correo' in c.lower()), 'Correo')
+                                    mapa_email_a_oficial = {str(r.get(col_correo_db, '')).lower().strip(): str(r.get('Nombre Completo', '')).strip() for _, r in df_alumnos_db.iterrows()}
+
+                                    # 4. Alumnos de Classroom
                                     res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
                                     mapa_userid_a_nombre = {}
-                                    
                                     for s in res_st.get("students", []):
                                         u_id = s.get("userId")
                                         prof = s.get("profile", {})
-                                        nombre_cr = str(prof.get("name", {}).get("fullName", "")).strip()
-                                        
-                                        # 🛡️ EMPAREJAMIENTO DE NOMBRE (Nombre Apellido <-> Apellido Nombre)
-                                        nombre_oficial_resuelto = encontrar_alumno_oficial(nombre_cr, alumnos_clase)
-                                        mapa_userid_a_nombre[u_id] = nombre_oficial_resuelto
-                                    
+                                        email_cr = str(prof.get("emailAddress", "")).lower().strip()
+                                        nom_cr = str(prof.get("name", {}).get("fullName", "")).strip()
+                                        if email_cr in mapa_email_a_oficial:
+                                            mapa_userid_a_nombre[u_id] = mapa_email_a_oficial[email_cr]
+                                        else:
+                                            mapa_userid_a_nombre[u_id] = encontrar_alumno_oficial(nom_cr, alumnos_clase)
+
                                     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-                                    total_notas_descargadas = 0
+                                    total_notas = 0
                                     
-                                    with engine.begin() as conn:
-                                        for t in tareas_cr:
-                                            id_act_cr = f"CR-{t['id']}"
-                                            nom_t = t.get("title", "Sin Título")
-                                            p_max_t = float(t.get("maxPoints", 100.0))
+                                    # 5. Guardar Actividades y Calificaciones
+                                    for t in tareas_cr:
+                                        id_act_cr = f"CR-{t['id']}"
+                                        nom_t = t.get("title", "Sin Título")
+                                        p_max_t = float(t.get("maxPoints", 100.0))
+                                        
+                                        # Leemos la categoría real de Classroom
+                                        cat_id_t = t.get("gradeCategoryId")
+                                        rubro_final = mapa_cats_cr.get(cat_id_t, "Trabajos y Tareas")
+                                        
+                                        # Guardar / Actualizar Tarea
+                                        conn.execute(
+                                            text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                                                    VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
+                                                    ON CONFLICT ("ID_Actividad") DO UPDATE SET 
+                                                        "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", 
+                                                        "Rubro" = EXCLUDED."Rubro", 
+                                                        "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
+                                            {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
+                                        )
+                                        
+                                        # Borrar notas viejas e insertar notas frescas
+                                        conn.execute(
+                                            text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
+                                            {"id": id_act_cr, "c": clase_id}
+                                        )
+                                        
+                                        res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
+                                        for sub in res_sub.get("studentSubmissions", []):
+                                            u_id = sub.get("userId")
+                                            nom_alm = mapa_userid_a_nombre.get(u_id)
+                                            nota_raw = sub.get("assignedGrade") if sub.get("assignedGrade") is not None else sub.get("draftGrade")
                                             
-                                            # Categoría inteligente obligada a pertenecer a las categorías válidas
-                                            # 🏷️ CATEGORÍA EXACTA DE CLASSROOM
-                                            cat_id_t = t.get("gradeCategoryId")
-                                            if cat_id_t and cat_id_t in mapa_cats_cr:
-                                                rubro_final = str(mapa_cats_cr[cat_id_t]).strip()
-                                            else:
-                                                rubro_final = "Trabajos y Tareas"
-                                            
-                                            # 🛡️ FIX DEFINITIVO: Ahora SÍ actualiza "Rubro" si la tarea ya existía
-                                            conn.execute(
-                                                text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
-                                                        VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
-                                                        ON CONFLICT ("ID_Actividad") DO UPDATE SET 
-                                                            "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", 
-                                                            "Rubro" = EXCLUDED."Rubro", 
-                                                            "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
-                                                {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
-                                            )
-                                            
-                                            # Aseguramos que la categoría exista en Ponderaciones para que tenga porcentaje
-                                            conn.execute(
-                                                text('''INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje")
-                                                        VALUES (:c, :p, :r, 100)
-                                                        ON CONFLICT DO NOTHING'''),
-                                                {"c": clase_id, "p": periodo_sel, "r": rubro_final}
-                                            )
-                                            
-                                            # Notas (Borradores y Oficiales)
-                                            res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
-                                            for sub in res_sub.get("studentSubmissions", []):
-                                                u_id = sub.get("userId")
-                                                nom_alm = mapa_userid_a_nombre.get(u_id)
-                                                
-                                                nota_asignada = sub.get("assignedGrade")
-                                                if nota_asignada is None:
-                                                    nota_asignada = sub.get("draftGrade")
-                                                
-                                                if nom_alm and nota_asignada is not None:
-                                                    conn.execute(
-                                                        text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
-                                                                VALUES (:id, :c, :alm, :nota)
-                                                                ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
-                                                        {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_asignada)}
-                                                    )
-                                                    total_notas_descargadas += 1
-                                                    
-                                    leer_datos.clear()
-                                    st.success(f"🎉 ¡Éxito! Se importaron {len(tareas_cr)} tareas y {total_notas_descargadas} calificaciones.")
-                                    time.sleep(1)
-                                    st.rerun()
+                                            if nom_alm and nota_raw is not None:
+                                                conn.execute(
+                                                    text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
+                                                            VALUES (:id, :c, :alm, :nota)
+                                                            ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
+                                                    {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_raw)}
+                                                )
+                                                total_notas += 1
+
+                                leer_datos.clear()
+                                st.success(f"🎉 ¡Sincronización completa! Se importaron {len(cats_cr)} categorías, {len(tareas_cr)} tareas y {total_notas} notas.")
+                                time.sleep(1)
+                                st.rerun()
                 except Exception as e_cr:
                     st.error(f"Error con Classroom: {e_cr}")
 
