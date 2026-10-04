@@ -258,7 +258,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         except Exception as e_act:
                             st.error(f"Error al crear: {e_act}")
 
-    # --- BOTÓN 2: SINCRONIZAR DESDE CLASSROOM ---
+   # --- BOTÓN 2: SINCRONIZAR TODO DESDE CLASSROOM (MULTICATEGORÍA AUTOMÁTICA) ---
     with col_btn_act2:
         with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
             st.markdown("### 🎓 Conexión con Google Classroom")
@@ -267,29 +267,66 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
             if not token_google:
                 st.warning("⚠️ No se detectó sesión de Classroom activa. Cierra sesión e inicia nuevamente aceptando los permisos.")
             else:
-                rubro_destino_cr = st.selectbox("Categoría para tareas importadas:", list(rubros_pesos.keys()), key="rubro_cr")
+                st.caption("Esta herramienta descarga automáticamente **todas las tareas y exámenes de todas las categorías** con sus calificaciones.")
+                
                 try:
                     headers_cr = {"Authorization": f"Bearer {token_google}"}
                     res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
                     cursos_cr = res_c.get("courses", [])
                     
                     if not cursos_cr:
-                        st.info("No se encontraron cursos activos en Classroom.")
+                        st.info("No se encontraron cursos activos en Google Classroom.")
                     else:
                         dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
                         curso_seleccionado_label = st.selectbox("Selecciona la clase en Classroom:", list(dict_cursos.keys()))
                         id_curso_elegido = dict_cursos[curso_seleccionado_label]
                         
-                        if st.button("🚀 Iniciar Descarga de Notas", type="primary", use_container_width=True):
-                            with st.spinner("Descargando tareas y notas a Supabase..."):
+                        if st.button("🚀 Sincronizar Todo (Todas las Categorías y Notas)", type="primary", use_container_width=True):
+                            with st.spinner("Descargando tareas, categorías y notas de Classroom a Supabase..."):
+                                # 1. Consultamos el curso para extraer sus categorías oficiales de Classroom
+                                res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
+                                cats_cr = res_curso_det.get("gradeCategories", [])
+                                mapa_cats_cr = {c["id"]: c.get("name", "Tareas y Trabajos") for c in cats_cr}
+
+                                # 2. Descargar todas las tareas (CourseWork)
                                 res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
                                 tareas_cr = res_w.get("courseWork", [])
                                 
                                 if not tareas_cr:
                                     st.warning("Ese curso en Classroom no tiene tareas creadas.")
                                 else:
+                                    # 3. Padrón oficial de alumnos para cruzar por Correo Institucional
+                                    df_alumnos_db = pd.read_sql('SELECT * FROM "alumnos"', engine)
+                                    df_alumnos_db.columns = df_alumnos_db.columns.str.strip()
+                                    col_correo_db = next((c for c in df_alumnos_db.columns if 'correo' in c.lower()), 'Correo')
+                                    
+                                    mapa_email_a_oficial = {}
+                                    for _, al_row in df_alumnos_db.iterrows():
+                                        c_inst = str(al_row.get(col_correo_db, '')).lower().strip()
+                                        nom_of = str(al_row.get('Nombre Completo', '')).strip()
+                                        if c_inst and nom_of:
+                                            mapa_email_a_oficial[c_inst] = nom_of
+
+                                    # 4. Alumnos de Classroom (IDs y Correos)
                                     res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
-                                    mapa_alumnos = {s["userId"]: s.get("profile", {}).get("name", {}).get("fullName", "") for s in res_st.get("students", [])}
+                                    mapa_userid_a_nombre = {}
+                                    for s in res_st.get("students", []):
+                                        u_id = s.get("userId")
+                                        prof = s.get("profile", {})
+                                        email_cr = str(prof.get("emailAddress", "")).lower().strip()
+                                        nombre_cr = str(prof.get("name", {}).get("fullName", "")).strip()
+                                        
+                                        if email_cr in mapa_email_a_oficial:
+                                            mapa_userid_a_nombre[u_id] = mapa_email_a_oficial[email_cr]
+                                        else:
+                                            nombre_encontrado = None
+                                            palabras_cr = set(nombre_cr.lower().replace("'", "").split())
+                                            for nom_of in alumnos_clase:
+                                                palabras_of = set(nom_of.lower().replace("'", "").split())
+                                                if len(palabras_cr.intersection(palabras_of)) >= 2:
+                                                    nombre_encontrado = nom_of
+                                                    break
+                                            mapa_userid_a_nombre[u_id] = nombre_encontrado or nombre_cr
                                     
                                     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                                     total_notas_descargadas = 0
@@ -300,18 +337,44 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                             nom_t = t.get("title", "Sin Título")
                                             p_max_t = float(t.get("maxPoints", 100.0))
                                             
+                                            # 🏷️ ASIGNACIÓN AUTOMÁTICA DE CATEGORÍA DESDE CLASSROOM:
+                                            cat_id_t = t.get("gradeCategoryId")
+                                            if cat_id_t and cat_id_t in mapa_cats_cr:
+                                                rubro_detectado = mapa_cats_cr[cat_id_t]
+                                            else:
+                                                # Inferencia inteligente si no tenía categoría en Classroom
+                                                nom_low = nom_t.lower()
+                                                if any(w in nom_low for w in ["examen", "evalua", "quiz", "prueba"]):
+                                                    rubro_detectado = "Exámenes"
+                                                elif any(w in nom_low for w in ["proyect", "investig", "practic"]):
+                                                    rubro_detectado = "Proyectos e Investigación"
+                                                else:
+                                                    rubro_detectado = "Tareas y Trabajos"
+                                            
+                                            # Emparejamos con los rubros configurados en la app
+                                            rubro_final = rubro_detectado
+                                            for r_existente in rubros_pesos.keys():
+                                                if rubro_detectado.lower() in r_existente.lower() or r_existente.lower() in rubro_detectado.lower():
+                                                    rubro_final = r_existente
+                                                    break
+                                            
+                                            # Guardar / Actualizar Actividad en Supabase
                                             conn.execute(
                                                 text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
                                                         VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
-                                                        ON CONFLICT ("ID_Actividad") DO UPDATE SET "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
-                                                {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_destino_cr, "pmax": p_max_t, "fec": fecha_hoy}
+                                                        ON CONFLICT ("ID_Actividad") DO UPDATE SET "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", "Rubro" = EXCLUDED."Rubro", "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
+                                                {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
                                             )
                                             
+                                            # Descargar Notas de cada Alumno (Borradores y Oficiales)
                                             res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
                                             for sub in res_sub.get("studentSubmissions", []):
                                                 u_id = sub.get("userId")
-                                                nom_alm = mapa_alumnos.get(u_id)
+                                                nom_alm = mapa_userid_a_nombre.get(u_id)
+                                                
                                                 nota_asignada = sub.get("assignedGrade")
+                                                if nota_asignada is None:
+                                                    nota_asignada = sub.get("draftGrade")
                                                 
                                                 if nom_alm and nota_asignada is not None:
                                                     conn.execute(
@@ -323,12 +386,12 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                     total_notas_descargadas += 1
                                                     
                                     leer_datos.clear()
-                                    st.success(f"🎉 ¡Éxito! {len(tareas_cr)} tareas y {total_notas_descargadas} notas sincronizadas.")
+                                    st.success(f"🎉 ¡Éxito! Se importaron {len(tareas_cr)} tareas y {total_notas_descargadas} calificaciones en todas sus categorías correspondientes.")
                                     time.sleep(1)
                                     st.rerun()
                 except Exception as e_cr:
                     st.error(f"Error con Classroom: {e_cr}")
-
+                    
     # --- ✅ BOTÓN 3 NUEVO: ELIMINAR ACTIVIDAD ---
     with col_btn_act3:
         with st.popover("🗑️ Eliminar Actividad", use_container_width=True):
