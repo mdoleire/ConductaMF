@@ -135,41 +135,40 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         curso_elegido_pond = st.selectbox("Selecciona la clase correspondiente en Classroom:", list(dict_c.keys()), key="c_pond_cr")
                         id_c_pond = dict_c[curso_elegido_pond]
                         
-                        if st.button("🎓 Cargar Criterios Oficiales de Classroom (100% Automático)", type="primary", use_container_width=True):
-                            if st.button("🎓 Cargar Criterios Oficiales de Classroom (100% Automático)", type="primary", use_container_width=True):
-                                with st.spinner("Descargando categorías y ponderaciones oficiales de Classroom..."):
-                                    res_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_c_pond}", headers=headers_cr).json()
+                        if st.button("🎓 Cargar Criterios Oficiales de Classroom (100% Automático)", type="primary", use_container_width=True, key="btn_cargar_criterios_cr_unico"):
+                            with st.spinner("Descargando categorías y ponderaciones oficiales de Classroom..."):
+                                res_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_c_pond}", headers=headers_cr).json()
+                                
+                                # 🔍 Si Google reporta algún error, lo mostramos
+                                if "error" in res_det:
+                                    st.error(f"🚨 Google Classroom reportó: {res_det['error'].get('message', res_det['error'])}")
+                                else:
+                                    # 🛡️ BÚSQUEDA PROFUNDA: Busca en la raíz O dentro de gradebookSettings
+                                    cats = res_det.get("gradeCategories") or res_det.get("gradebookSettings", {}).get("gradeCategories", [])
                                     
-                                    # 🔍 Si Google reporta algún error, lo mostramos
-                                    if "error" in res_det:
-                                        st.error(f"🚨 Google Classroom reportó: {res_det['error'].get('message', res_det['error'])}")
+                                    if not cats:
+                                        st.warning("⚠️ Esta clase en Classroom no devolvió categorías de calificación.")
+                                        st.info("💡 **Solución inmediata:** Desplázate hacia abajo; ya te dejamos la tabla prellenada con tus 4 categorías oficiales (40%, 30%, 15%, 15%). Solo haz clic en **'💾 Guardar Criterios Manualmente'** abajo.")
                                     else:
-                                        # 🛡️ BÚSQUEDA PROFUNDA: Busca en la raíz O dentro de gradebookSettings
-                                        cats = res_det.get("gradeCategories") or res_det.get("gradebookSettings", {}).get("gradeCategories", [])
-                                        
-                                        if not cats:
-                                            st.warning("⚠️ Esta clase en Classroom no devolvió categorías de calificación.")
-                                            st.info("💡 **Solución inmediata:** Desplázate hacia abajo; ya te dejamos la tabla prellenada con tus 4 categorías oficiales (40%, 30%, 15%, 15%). Solo haz clic en **'💾 Guardar Criterios Manualmente'** abajo.")
-                                        else:
-                                            with engine.begin() as conn:
-                                                conn.execute(
-                                                    text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
-                                                    {"c": clase_id, "p": periodo_sel}
-                                                )
-                                                for cat in cats:
-                                                    cat_nom = str(cat.get("name", "")).strip()
-                                                    cat_w = cat.get("weight", 0)
-                                                    # En Classroom el 40% es 400000, 15% es 150000
-                                                    cat_pct = int(round(cat_w / 10000)) if cat_w > 0 else 0
-                                                    if cat_nom and cat_pct > 0:
-                                                        conn.execute(
-                                                            text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
-                                                            {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
-                                                        )
-                                            leer_datos.clear()
-                                            st.success(f"✅ ¡Éxito! Se importaron {len(cats)} categorías oficiales de Classroom.")
-                                            time.sleep(1)
-                                            st.rerun()
+                                        with engine.begin() as conn:
+                                            conn.execute(
+                                                text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
+                                                {"c": clase_id, "p": periodo_sel}
+                                            )
+                                            for cat in cats:
+                                                cat_nom = str(cat.get("name", "")).strip()
+                                                cat_w = cat.get("weight", 0)
+                                                # En Classroom el 40% es 400000, 15% es 150000
+                                                cat_pct = int(round(cat_w / 10000)) if cat_w > 0 else 0
+                                                if cat_nom and cat_pct > 0:
+                                                    conn.execute(
+                                                        text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
+                                                        {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
+                                                    )
+                                        leer_datos.clear()
+                                        st.success(f"✅ ¡Éxito! Se importaron {len(cats)} categorías oficiales de Classroom.")
+                                        time.sleep(1)
+                                        st.rerun()
                 except Exception as e_cr_pond:
                     st.error(f"Error consultando Classroom: {e_cr_pond}")
                     
