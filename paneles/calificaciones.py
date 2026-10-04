@@ -1,11 +1,12 @@
 # paneles/calificaciones.py
 import streamlit as st
 import pandas as pd
-import gspread
 import uuid
 import time
+import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from sqlalchemy import text
 
 from config import (
     FILE_ASIGNACIONES, 
@@ -17,10 +18,11 @@ from config import (
 from database import (
     leer_datos, 
     obtener_lista_alumnos, 
-    leer_todas_las_asignaciones
+    leer_todas_las_asignaciones,
+    obtener_engine_sql
 )
 
-# 🎨 SEMÁFORO EN ESCALA DE 100 PUNTOS (ESTÁNDAR GOOGLE CLASSROOM)
+# 🎨 SEMÁFORO EN ESCALA 100 (GOOGLE CLASSROOM)
 def format_calif_100(val):
     if val >= 90.0: return f"🟢 {val:.1f}"
     if val >= 70.0: return f"🟡 {val:.1f}"
@@ -31,8 +33,9 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     
     usuario = str(usuario).lower().strip()
     es_superusuario = usuario in SUPER_USUARIOS_WHITELIST
+    engine = obtener_engine_sql()
     
-    # 1. Cargar asignaciones
+    # 1. Cargar asignaciones docentes
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
         st.warning("⚠️ No se encontró la estructura de asignaciones docentes.")
@@ -48,7 +51,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         mis_asig = df_asig[df_asig['Usuario_Profesor'] == usuario]
         
     if mis_asig.empty:
-        st.warning("⚠️ No tienes materias asignadas para calificar.")
+        st.warning("⚠️ Sin materias asignadas para calificar.")
         return
         
     niveles = sorted(mis_asig['Nivel'].unique().tolist())
@@ -58,6 +61,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     else:
         nivel_sel = niveles[0]
 
+    # Selectores: Materia, Grupo y Periodo
     c1, c2, c3 = st.columns(3)
     materia_sel = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key="calif_mat")
     grupos_de_esta_materia = mis_asig[mis_asig['Materia'] == materia_sel]['Grupo'].unique().tolist()
@@ -71,7 +75,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     st.markdown("---")
     
     # =================================================================
-    # 2. PONDERACIONES / CRITERIOS
+    # 2. PONDERACIONES / CRITERIOS (CONEXIÓN SQL SUPABASE)
     # =================================================================
     df_pond_todas = leer_datos(gc, FILE_CALIFICACIONES, "Ponderaciones")
     if not df_pond_todas.empty:
@@ -84,21 +88,24 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     else:
         pond_actual = pd.DataFrame()
         
+    # Si no están configuradas las ponderaciones
     if pond_actual.empty:
         st.warning(f"⚠️ No has configurado los criterios de evaluación para **{clase_id}** en el **{periodo_sel}**.")
         
-        # Opción de clonar
+        # Opción A: Clonar del periodo anterior
         idx_actual = periodos_disponibles.index(periodo_sel) if periodo_sel in periodos_disponibles else 0
         if idx_actual > 0 and not df_pond_todas.empty and 'Clase' in df_pond_todas.columns:
             periodo_anterior = periodos_disponibles[idx_actual - 1]
             pond_ant = df_pond_todas[(df_pond_todas['Clase'] == clase_id) & (df_pond_todas['Periodo'] == periodo_anterior)]
             if not pond_ant.empty:
                 if st.button(f"📋 Copiar ponderaciones del {periodo_anterior}", type="secondary"):
-                    with st.spinner("Clonando criterios..."):
-                        doc_calif = gc.open(FILE_CALIFICACIONES)
-                        ws_p = doc_calif.worksheet("Ponderaciones")
-                        filas_clon = [[clase_id, periodo_sel, r['Rubro'], r['Porcentaje']] for _, r in pond_ant.iterrows()]
-                        ws_p.append_rows(filas_clon)
+                    with st.spinner("Clonando criterios en Supabase..."):
+                        with engine.begin() as conn:
+                            for _, r in pond_ant.iterrows():
+                                conn.execute(
+                                    text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
+                                    {"c": clase_id, "p": periodo_sel, "r": r['Rubro'], "pct": int(r['Porcentaje'])}
+                                )
                         leer_datos.clear()
                         st.success("✅ Criterios copiados exitosamente.")
                         time.sleep(1)
@@ -146,116 +153,181 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 if suma_porcentajes != 100:
                     st.error("🚨 La suma debe ser exactamente 100%.")
                 elif not clases_destino_pond:
-                    st.error("🚨 Selecciona al menos una materia/salón.")
+                    st.error("🚨 Selecciona al menos una clase.")
                 else:
-                    with st.spinner("Guardando en la nube..."):
+                    with st.spinner("Guardando en Supabase..."):
                         try:
-                            doc_calif = gc.open(FILE_CALIFICACIONES)
-                            ws_p = doc_calif.worksheet("Ponderaciones")
-                            all_vals = ws_p.get_all_values()
-                            if not all_vals:
-                                ws_p.append_row(["Clase", "Periodo", "Rubro", "Porcentaje"])
-                            
-                            lote_p = []
-                            for target_clase in clases_destino_pond:
-                                for _, fila in df_criterios_edit.iterrows():
-                                    r_nom = str(fila["Categoría / Rubro"]).strip()
-                                    r_pct = int(fila["Porcentaje (%)"])
-                                    if r_nom:
-                                        lote_p.append([target_clase, periodo_sel, r_nom, r_pct])
-                                        
-                            ws_p.append_rows(lote_p)
+                            with engine.begin() as conn:
+                                for target_clase in clases_destino_pond:
+                                    # Borramos anteriores de ese periodo en Supabase
+                                    conn.execute(
+                                        text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
+                                        {"c": target_clase, "p": periodo_sel}
+                                    )
+                                    for _, fila in df_criterios_edit.iterrows():
+                                        r_nom = str(fila["Categoría / Rubro"]).strip()
+                                        r_pct = int(fila["Porcentaje (%)"])
+                                        if r_nom:
+                                            conn.execute(
+                                                text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
+                                                {"c": target_clase, "p": periodo_sel, "r": r_nom, "pct": r_pct}
+                                            )
                             leer_datos.clear()
-                            st.success(f"✅ Criterios configurados para {len(clases_destino_pond)} clase(s).")
+                            st.success(f"✅ Criterios guardados para {len(clases_destino_pond)} clase(s).")
                             time.sleep(1)
                             st.rerun()
-                        except Exception as e_save:
-                            if "200" in str(e_save):
-                                leer_datos.clear()
-                                st.success("✅ Criterios guardados exitosamente.")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error(f"Error al guardar: {e_save}")
+                        except Exception as e_p:
+                            st.error(f"Error al guardar: {e_p}")
         st.stop()
         
     rubros_pesos = dict(zip(pond_actual['Rubro'], pond_actual['Porcentaje']))
     
+    # Visualización de los criterios configurados
     col_t1, col_t2 = st.columns([4, 1])
     with col_t1:
         cols_badge = st.columns(len(rubros_pesos))
         for i, (rubro, pct) in enumerate(rubros_pesos.items()):
             cols_badge[i].metric(rubro, f"{pct}%")
+            
+    # ✅ FIX DEFINITIVO BOTÓN MODIFICAR (EJECUCIÓN SQL DIRECTA)
     with col_t2:
-        if st.button("⚙️ Modificar", help="Borra los criterios actuales para reconfigurarlos", use_container_width=True):
-            doc_calif = gc.open(FILE_CALIFICACIONES)
-            ws_p = doc_calif.worksheet("Ponderaciones")
-            all_vals = ws_p.get_all_values()
-            nuevas_filas = [r for r in all_vals if len(r) > 1 and not (r[0] == clase_id and r[1] == periodo_sel)]
-            ws_p.clear()
-            ws_p.append_rows([["Clase", "Periodo", "Rubro", "Porcentaje"]] + nuevas_filas)
-            leer_datos.clear()
-            st.rerun()
+        if st.button("⚙️ Modificar Criterios", help="Borra las ponderaciones actuales para reeditarlas", use_container_width=True):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
+                        {"c": clase_id, "p": periodo_sel}
+                    )
+                leer_datos.clear()
+                st.success("✅ Criterios eliminados. Ya puedes reconfigurarlos.")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e_mod:
+                st.error(f"Error al modificar criterios: {e_mod}")
         
     st.markdown("---")
     
     # =================================================================
-    # 3. CREACIÓN DE ACTIVIDAD (ESCALA 100)
+    # 3. CREACIÓN MANUAL Y SINCRONIZACIÓN DESDE CLASSROOM
     # =================================================================
-    with st.popover("➕ Nueva Actividad / Tarea", use_container_width=True):
-        st.markdown("### Crear Actividad de Evaluación (Escala 100)")
-        
-        nombre_actividad = st.text_input("Nombre de la Actividad:", placeholder="Ej. Examen 1 - Leyes de Newton")
-        rubro_actividad = st.selectbox("Categoría a la que pertenece:", list(rubros_pesos.keys()))
-        puntos_max = st.number_input("Puntos Máximos:", min_value=10.0, max_value=100.0, value=100.0, step=10.0)
-        
-        st.markdown("##### 👥 Asignar a grupos:")
-        grupos_seleccionados_tarea = st.multiselect(
-            "Grupos que realizarán esta actividad:",
-            options=grupos_de_esta_materia,
-            default=[grupo_sel]
-        )
-        
-        if st.button("🚀 Crear y Asignar Actividad", type="primary", use_container_width=True):
-            if not nombre_actividad.strip():
-                st.error("⚠️ Asigna un nombre a la actividad.")
-            elif not grupos_seleccionados_tarea:
-                st.error("⚠️ Selecciona al menos un grupo.")
-            else:
-                with st.spinner("Creando actividad..."):
-                    try:
-                        doc_calif = gc.open(FILE_CALIFICACIONES)
-                        ws_act = doc_calif.worksheet("Actividades")
-                        all_acts = ws_act.get_all_values()
-                        headers_act = ["ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion"]
-                        if not all_acts:
-                            ws_act.append_row(headers_act)
-                        
-                        lote_actividades = []
-                        fecha_creacion = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d")
-                        for g in grupos_seleccionados_tarea:
-                            id_act = f"ACT-{uuid.uuid4().hex[:6].upper()}"
-                            clase_target = f"{materia_sel} - {g}"
-                            lote_actividades.append([
-                                id_act, clase_target, periodo_sel, nombre_actividad.strip(), rubro_actividad, puntos_max, fecha_creacion
-                            ])
-                            
-                        ws_act.append_rows(lote_actividades)
-                        leer_datos.clear()
-                        st.success(f"✅ Actividad creada para {len(grupos_seleccionados_tarea)} grupo(s).")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e_act:
-                        if "200" in str(e_act):
+    col_btn_act1, col_btn_act2 = st.columns(2)
+    
+    # A. Botón para crear tarea manual
+    with col_btn_act1:
+        with st.popover("➕ Nueva Actividad / Tarea Manual", use_container_width=True):
+            st.markdown("### Crear Actividad Manual")
+            nombre_actividad = st.text_input("Nombre de la Actividad:", placeholder="Ej. Tarea 1 - Ley de Ohm")
+            rubro_actividad = st.selectbox("Categoría a la que pertenece:", list(rubros_pesos.keys()))
+            puntos_max = st.number_input("Puntos Máximos:", min_value=10.0, max_value=100.0, value=100.0, step=10.0)
+            
+            st.markdown("##### 👥 Asignar a grupos:")
+            grupos_seleccionados_tarea = st.multiselect("Grupos a los que aplica:", options=grupos_de_esta_materia, default=[grupo_sel])
+            
+            if st.button("🚀 Crear y Asignar Actividad", type="primary", use_container_width=True):
+                if not nombre_actividad.strip():
+                    st.error("⚠️ Asigna un nombre a la actividad.")
+                elif not grupos_seleccionados_tarea:
+                    st.error("⚠️ Selecciona al menos un grupo.")
+                else:
+                    with st.spinner("Creando en Supabase..."):
+                        try:
+                            fecha_creacion = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d")
+                            with engine.begin() as conn:
+                                for g in grupos_seleccionados_tarea:
+                                    id_act = f"ACT-{uuid.uuid4().hex[:6].upper()}"
+                                    clase_target = f"{materia_sel} - {g}"
+                                    conn.execute(
+                                        text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                                                VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)'''),
+                                        {"id": id_act, "c": clase_target, "p": periodo_sel, "nom": nombre_actividad.strip(), "rub": rubro_actividad, "pmax": puntos_max, "fec": fecha_creacion}
+                                    )
                             leer_datos.clear()
-                            st.success("✅ Actividad creada exitosamente.")
+                            st.success(f"✅ Actividad creada para {len(grupos_seleccionados_tarea)} grupo(s).")
                             time.sleep(1)
                             st.rerun()
-                        else:
-                            st.error(f"Error al crear actividad: {e_act}")
+                        except Exception as e_act:
+                            st.error(f"Error al crear: {e_act}")
+
+    # B. ✅ NUEVO BOTÓN: Sincronización desde Google Classroom
+    with col_btn_act2:
+        with st.popover("🔄 Sincronizar desde Google Classroom", use_container_width=True):
+            st.markdown("### 🎓 Conexión con Google Classroom")
+            token_google = st.session_state.get("access_token")
+            
+            if not token_google:
+                st.warning("⚠️ No se detectó sesión de Classroom activa. Cierra sesión e inicia nuevamente aceptando los permisos de Classroom.")
+            else:
+                st.caption("Esta herramienta descarga las tareas y calificaciones que ya pusiste en Google Classroom.")
+                rubro_destino_cr = st.selectbox("Categoría donde se guardarán las tareas importadas:", list(rubros_pesos.keys()), key="rubro_cr")
+                
+                # Consultar cursos del profesor en Classroom
+                try:
+                    headers_cr = {"Authorization": f"Bearer {token_google}"}
+                    res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
+                    cursos_cr = res_c.get("courses", [])
+                    
+                    if not cursos_cr:
+                        st.info("No se encontraron cursos activos bajo tu cuenta de Google Classroom.")
+                    else:
+                        dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
+                        curso_seleccionado_label = st.selectbox("Selecciona la clase en Google Classroom:", list(dict_cursos.keys()))
+                        id_curso_elegido = dict_cursos[curso_seleccionado_label]
+                        
+                        if st.button("🚀 Iniciar Descarga de Calificaciones", type="primary", use_container_width=True):
+                            with st.spinner("Descargando tareas y notas de Google Classroom a Supabase..."):
+                                # 1. Descargar Tareas
+                                res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
+                                tareas_cr = res_w.get("courseWork", [])
+                                
+                                if not tareas_cr:
+                                    st.warning("Ese curso en Classroom no tiene tareas creadas.")
+                                else:
+                                    # 2. Descargar Alumnos de Classroom para mapear nombres
+                                    res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
+                                    mapa_alumnos = {s["userId"]: s.get("profile", {}).get("name", {}).get("fullName", "") for s in res_st.get("students", [])}
+                                    
+                                    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+                                    total_notas_descargadas = 0
+                                    
+                                    with engine.begin() as conn:
+                                        for t in tareas_cr:
+                                            id_act_cr = f"CR-{t['id']}"
+                                            nom_t = t.get("title", "Sin Título")
+                                            p_max_t = float(t.get("maxPoints", 100.0))
+                                            
+                                            # Guardar Actividad
+                                            conn.execute(
+                                                text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
+                                                        VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
+                                                        ON CONFLICT ("ID_Actividad") DO UPDATE SET "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
+                                                {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_destino_cr, "pmax": p_max_t, "fec": fecha_hoy}
+                                            )
+                                            
+                                            # Descargar Notas de los Alumnos
+                                            res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
+                                            for sub in res_sub.get("studentSubmissions", []):
+                                                u_id = sub.get("userId")
+                                                nom_alm = mapa_alumnos.get(u_id)
+                                                nota_asignada = sub.get("assignedGrade")
+                                                
+                                                if nom_alm and nota_asignada is not None:
+                                                    conn.execute(
+                                                        text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
+                                                                VALUES (:id, :c, :alm, :nota)
+                                                                ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
+                                                        {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_asignada)}
+                                                    )
+                                                    total_notas_descargadas += 1
+                                                    
+                                    leer_datos.clear()
+                                    st.success(f"🎉 ¡Éxito! Se importaron {len(tareas_cr)} tareas y {total_notas_descargadas} calificaciones.")
+                                    time.sleep(1)
+                                    st.rerun()
+                except Exception as e_cr:
+                    st.error(f"Error al conectar con Classroom: {e_cr}")
 
     # =================================================================
-    # 4. MATRIZ DE CALIFICACIONES (ESCALA 100 Y CÁLCULO PROPORCIONAL)
+    # 4. MATRIZ DE CALIFICACIONES (ESCALA 100)
     # =================================================================
     try:
         grupo_limpio = grupo_sel.split("(")[0].strip()
@@ -276,7 +348,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         mis_actividades = pd.DataFrame()
         
     if mis_actividades.empty:
-        st.info("💡 Aún no has agregado ninguna actividad evaluativa en este periodo. Haz clic en **'➕ Nueva Actividad / Tarea'** arriba.")
+        st.info("💡 Aún no hay actividades en este periodo. Crea una manual o sincroniza desde Google Classroom arriba.")
         return
 
     df_notas_todas = leer_datos(gc, FILE_CALIFICACIONES, "Calificaciones")
@@ -295,7 +367,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         p_max = float(act.get('Puntos_Max', 100.0))
         actividades_cols.append((id_act, col_nombre, act['Rubro'], p_max))
         
-        # Leemos notas existentes de la nube
         notas_act = mis_notas[mis_notas['ID_Actividad'] == id_act] if not mis_notas.empty else pd.DataFrame()
         dicc_notas = dict(zip(notas_act['Alumno'].astype(str).str.strip(), pd.to_numeric(notas_act['Nota'], errors='coerce').fillna(0.0))) if not notas_act.empty else {}
         
@@ -303,8 +374,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
 
     df_editable = pd.DataFrame(datos_matriz)
     
-    # 🧮 CÁLCULO PROPORCIONAL DE PROMEDIOS (ESTILO GOOGLE CLASSROOM)
-    # Solo evalúa los rubros que REALMENTE tienen tareas creadas
+    # Cálculo proporcional en base 100
     rubros_con_tareas = list(set([r for _, _, r, _ in actividades_cols]))
     peso_total_evaluado = sum(float(rubros_pesos.get(r, 0.0)) for r in rubros_con_tareas)
     
@@ -314,7 +384,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         
         for id_act, col_nom, rubro, p_max in actividades_cols:
             val_nota = float(row.get(col_nom, 0.0))
-            # Normalizamos cada tarea a base 100
             nota_base_100 = (val_nota / p_max) * 100.0 if p_max > 0 else 0.0
             desglose_por_rubro[rubro].append(nota_base_100)
             
@@ -324,7 +393,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
             prom_rubro = (sum(lista_notas) / len(lista_notas)) if lista_notas else 0.0
             puntos_acumulados += (prom_rubro * (pct_rubro / 100.0))
             
-        # Ponderación proporcional: normaliza sobre el peso activo
         if peso_total_evaluado > 0:
             promedio_periodo_alumno = (puntos_acumulados / (peso_total_evaluado / 100.0))
         else:
@@ -355,45 +423,25 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     col_save, col_dl = st.columns([1, 1])
     with col_save:
         if st.button("💾 Guardar Calificaciones", type="primary", use_container_width=True):
-            with st.spinner("Guardando calificaciones en la nube..."):
+            with st.spinner("Guardando en Supabase..."):
                 try:
-                    doc_calif = gc.open(FILE_CALIFICACIONES)
-                    ws_notas = doc_calif.worksheet("Calificaciones")
-                    
-                    all_vals_notas = ws_notas.get_all_values()
-                    headers_notas = ["ID_Actividad", "Clase", "Alumno", "Nota"]
-                    
-                    # Conservamos notas de otras clases
-                    if len(all_vals_notas) > 1:
-                        filas_otras = [r for r in all_vals_notas[1:] if len(r) > 1 and str(r[1]).strip() != clase_id]
-                    else:
-                        filas_otras = []
-                    
-                    filas_nuevas = []
-                    for _, r in df_resultado.iterrows():
-                        al_nombre = str(r['Alumno']).strip()
-                        for id_act, col_nom, _, _ in actividades_cols:
-                            nota_val = float(r.get(col_nom, 0.0))
-                            filas_nuevas.append([id_act, clase_id, al_nombre, nota_val])
-                    
-                    # Matriz limpia consolidada
-                    matriz_final = [headers_notas] + filas_otras + filas_nuevas
-                    
-                    # Sobrescritura directa desde A1 sin usar .clear()
-                    ws_notas.update(range_name="A1", values=matriz_final)
-                    
+                    with engine.begin() as conn:
+                        for _, r in df_resultado.iterrows():
+                            al_nombre = str(r['Alumno']).strip()
+                            for id_act, col_nom, _, _ in actividades_cols:
+                                nota_val = float(r.get(col_nom, 0.0))
+                                conn.execute(
+                                    text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
+                                            VALUES (:id, :c, :alm, :nota)
+                                            ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
+                                    {"id": id_act, "c": clase_id, "alm": al_nombre, "nota": nota_val}
+                                )
                     leer_datos.clear()
-                    st.success("✅ Calificaciones guardadas exitosamente en la nube.")
+                    st.success("✅ Calificaciones guardadas exitosamente en Supabase.")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e_grades:
-                    if "200" in str(e_grades):
-                        leer_datos.clear()
-                        st.success("✅ Calificaciones guardadas exitosamente.")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(f"Error al guardar notas: {e_grades}")
+                    st.error(f"Error al guardar notas: {e_grades}")
                 
     with col_dl:
         csv_boleta = df_resultado.to_csv(index=False).encode('utf-8-sig')
@@ -404,98 +452,3 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
             mime="text/csv",
             use_container_width=True
         )
-
-    import requests
-
-def sincronizar_actividades_desde_classroom(access_token, materia_nombre, grupo_nombre, periodo_actual, rubro_defecto, engine):
-    """
-    Descarga tareas y notas de Google Classroom y las guarda en Supabase.
-    """
-    headers = {"Authorization": f"Bearer {access_token}"}
-    
-    # 1. Obtener los cursos del profesor
-    res_cursos = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me", headers=headers).json()
-    cursos = res_cursos.get("courses", [])
-    
-    # Buscamos el curso que coincida con la materia o grupo
-    curso_id = None
-    for c in cursos:
-        nombre_c = c.get("name", "").lower()
-        if materia_nombre.lower() in nombre_c and grupo_nombre.lower() in nombre_c:
-            curso_id = c.get("id")
-            break
-            
-    if not curso_id and cursos:
-        # Fallback si el nombre no coincide exacto: toma el curso que tenga la materia
-        for c in cursos:
-            if materia_nombre.lower() in c.get("name", "").lower():
-                curso_id = c.get("id")
-                break
-                
-    if not curso_id:
-        return False, "No se encontró un curso en Google Classroom que coincida con esta materia y grupo."
-
-    # 2. Obtener las tareas (CourseWork) del curso
-    url_tareas = f"https://classroom.googleapis.com/v1/courses/{curso_id}/courseWork"
-    res_tareas = requests.get(url_tareas, headers=headers).json()
-    tareas = res_tareas.get("courseWork", [])
-    
-    if not tareas:
-        return False, "El curso en Classroom no tiene tareas o actividades creadas."
-
-    clase_id = f"{materia_nombre} - {grupo_nombre}"
-    
-    # 3. Guardar las actividades en Supabase (calif_actividades)
-    filas_actividades = []
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-    
-    for t in tareas:
-        id_act = f"CR-{t['id']}"
-        nombre_act = t.get("title", "Sin título")
-        p_max = float(t.get("maxPoints", 100.0))
-        filas_actividades.append([id_act, clase_id, periodo_actual, nombre_act, rubro_defecto, p_max, fecha_hoy])
-        
-    df_act = pd.DataFrame(filas_actividades, columns=["ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion"])
-    
-    # 4. Obtener las calificaciones de los alumnos para cada tarea
-    filas_notas = []
-    # Obtenemos el perfil de alumnos para cruzar ID de Classroom con nombre/correo
-    res_estudiantes = requests.get(f"https://classroom.googleapis.com/v1/courses/{curso_id}/students", headers=headers).json()
-    mapa_alumnos = {s["userId"]: s.get("profile", {}).get("name", {}).get("fullName", "") for s in res_estudiantes.get("students", [])}
-    
-    for t in tareas:
-        id_act = f"CR-{t['id']}"
-        url_entregas = f"https://classroom.googleapis.com/v1/courses/{curso_id}/courseWork/{t['id']}/studentSubmissions"
-        res_entregas = requests.get(url_entregas, headers=headers).json()
-        
-        for entrega in res_entregas.get("studentSubmissions", []):
-            user_id = entrega.get("userId")
-            nombre_alumno = mapa_alumnos.get(user_id, "")
-            
-            # Nota asignada en Classroom
-            nota = entrega.get("assignedGrade")
-            if nota is not None and nombre_alumno:
-                filas_notas.append([id_act, clase_id, nombre_alumno, float(nota)])
-                
-    df_notas = pd.DataFrame(filas_notas, columns=["ID_Actividad", "Clase", "Alumno", "Nota"])
-    
-    # Guardamos en Supabase sin duplicar
-    with engine.begin() as conn:
-        # Insertar actividades no existentes
-        for _, r in df_act.iterrows():
-            conn.execute(
-                text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
-                        VALUES (:id, :clase, :per, :nom, :rub, :pmax, :fec)
-                        ON CONFLICT ("ID_Actividad") DO NOTHING'''),
-                {"id": r["ID_Actividad"], "clase": r["Clase"], "per": r["Periodo"], "nom": r["Nombre_Actividad"], "rub": r["Rubro"], "pmax": r["Puntos_Max"], "fec": r["Fecha_Creacion"]}
-            )
-        # Actualizar notas
-        for _, r in df_notas.iterrows():
-            conn.execute(
-                text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
-                        VALUES (:id, :clase, :alm, :nota)
-                        ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
-                {"id": r["ID_Actividad"], "clase": r["Clase"], "alm": r["Alumno"], "nota": r["Nota"]}
-            )
-
-    return True, f"Se sincronizaron con éxito {len(tareas)} actividades y {len(filas_notas)} calificaciones desde Classroom."    
