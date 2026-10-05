@@ -353,18 +353,16 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
 
                         if st.button("🚀 Sincronizar Todo (Categorías, Tareas y Notas)", type="primary", use_container_width=True):
                             with st.spinner("Descargando configuración y notas de Classroom a Supabase..."):
-                                # 1. 🎓 DESCARGA AUTOMÁTICA DE CATEGORÍAS Y PORCENTAJES DE CLASSROOM
+                                # 1. 🎓 DESCARGA AUTOMÁTICA DE CATEGORÍAS
                                 res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
-
-                                # 🛡️ FIX: Buscar las categorías dentro de gradebookSettings
                                 cats_cr = res_curso_det.get("gradebookSettings", {}).get("gradeCategories", [])
-                                if not cats_cr: # Respaldo por si Google lo manda en la raíz en versiones antiguas
+                                if not cats_cr:
                                     cats_cr = res_curso_det.get("gradeCategories", [])
-
-                                mapa_cats_cr = {c["id"]: c.get("name", "Trabajos y Tareas").strip() for c in cats_cr}
+                                    
+                                # 🛡️ FIX BLINDADO 1: Aseguramos que los IDs sean TEXTO ESTRICTO
+                                mapa_cats_cr = {str(c["id"]): str(c.get("name", "Trabajos y Tareas")).strip() for c in cats_cr}
 
                                 with engine.begin() as conn:
-                                    # Si Classroom tiene categorías con porcentajes (como tus 4 categorías: 40%, 30%, 15%, 15%):
                                     if cats_cr:
                                         conn.execute(
                                             text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
@@ -373,7 +371,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                         for cat in cats_cr:
                                             cat_nom = str(cat.get("name", "")).strip()
                                             cat_w_raw = cat.get("weight", 0)
-                                            # Classroom entrega 40% como 400000, 15% como 150000
                                             cat_pct = int(round(cat_w_raw / 10000)) if cat_w_raw > 0 else 0
                                             if cat_nom and cat_pct > 0:
                                                 conn.execute(
@@ -409,12 +406,16 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                     
                                     # 5. Guardar Actividades y Calificaciones
                                     for t in tareas_cr:
+                                        # 🛡️ FIX BLINDADO 2: Ignorar tareas en la papelera o borradores viejos
+                                        if t.get("state") == "DELETED":
+                                            continue
+                                            
                                         id_act_cr = f"CR-{t['id']}"
                                         nom_t = t.get("title", "Sin Título")
                                         p_max_t = float(t.get("maxPoints", 100.0))
                                         
-                                        # Leemos la categoría real de Classroom
-                                        cat_id_t = t.get("gradeCategoryId")
+                                        # 🛡️ FIX BLINDADO 3: Extraer el ID como TEXTO ESTRICTO para el diccionario
+                                        cat_id_t = str(t.get("gradeCategoryId", ""))
                                         rubro_final = mapa_cats_cr.get(cat_id_t, "Trabajos y Tareas")
                                         
                                         # Guardar / Actualizar Tarea
@@ -428,7 +429,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                             {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
                                         )
                                         
-                                        # Borrar notas viejas e insertar notas frescas
+                                        # Borrar notas viejas e insertar frescas
                                         conn.execute(
                                             text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
                                             {"id": id_act_cr, "c": clase_id}
