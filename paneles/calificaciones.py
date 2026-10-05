@@ -355,7 +355,12 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                             with st.spinner("Descargando configuración y notas de Classroom a Supabase..."):
                                 # 1. 🎓 DESCARGA AUTOMÁTICA DE CATEGORÍAS Y PORCENTAJES DE CLASSROOM
                                 res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
-                                cats_cr = res_curso_det.get("gradeCategories", [])
+
+                                # 🛡️ FIX: Buscar las categorías dentro de gradebookSettings
+                                cats_cr = res_curso_det.get("gradebookSettings", {}).get("gradeCategories", [])
+                                if not cats_cr: # Respaldo por si Google lo manda en la raíz en versiones antiguas
+                                    cats_cr = res_curso_det.get("gradeCategories", [])
+
                                 mapa_cats_cr = {c["id"]: c.get("name", "Trabajos y Tareas").strip() for c in cats_cr}
 
                                 with engine.begin() as conn:
