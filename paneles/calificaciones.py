@@ -357,29 +357,11 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                 if not cats_cr:
                                     cats_cr = res_curso_det.get("gradeCategories", [])
                                     
+                                # Diccionario de mapeo de IDs a Nombres (Como texto estricto)
                                 mapa_cats_cr = {str(c["id"]): str(c.get("name", "Trabajos y Tareas")).strip() for c in cats_cr}
 
-                                # 2. Descargar todas las tareas
-                                res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
-                                tareas_cr = res_w.get("courseWork", [])
-                                
-                                # 🛑 ========================================================
-                                # TRAMPA DE DEBUG: Interceptamos la tarea ANTES de la base de datos
-                                # ===========================================================
-                                for t_debug in tareas_cr:
-                                    if "senos" in str(t_debug.get("title", "")).lower():
-                                        st.error("🛑 MODO DEBUG: Hemos interceptado la tarea sospechosa antes de guardarla.")
-                                        c_d1, c_d2 = st.columns(2)
-                                        with c_d1:
-                                            st.write("👉 **1. Categorías extraídas del curso:**")
-                                            st.json(mapa_cats_cr)
-                                        with c_d2:
-                                            st.write("👉 **2. Lo que Google dice de la Tarea:**")
-                                            st.json(t_debug)
-                                        st.stop() # Congelamos la app aquí para que no guarde nada y podamos leer
-                                # ===========================================================
-
                                 with engine.begin() as conn:
+                                    # Insertar Categorías en la Base de Datos
                                     if cats_cr:
                                         conn.execute(
                                             text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
@@ -395,7 +377,11 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                     {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
                                                 )
 
-                                    # 3. Padrón oficial de alumnos
+                                    # 2. Descargar todas las tareas
+                                    res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
+                                    tareas_cr = res_w.get("courseWork", [])
+                                    
+                                    # 3. Padrón oficial de alumnos (Base de Datos)
                                     df_alumnos_db = pd.read_sql('SELECT * FROM "alumnos"', engine)
                                     df_alumnos_db.columns = df_alumnos_db.columns.str.strip()
                                     col_correo_db = next((c for c in df_alumnos_db.columns if 'correo' in c.lower()), 'Correo')
@@ -426,8 +412,16 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                         nom_t = t.get("title", "Sin Título")
                                         p_max_t = float(t.get("maxPoints", 100.0))
                                         
-                                        cat_id_t = str(t.get("gradeCategoryId", ""))
-                                        rubro_final = mapa_cats_cr.get(cat_id_t, "Trabajos y Tareas")
+                                        # 🛡️ FIX API CLASSROOM: Búsqueda doble y segura de la categoría
+                                        rubro_final = "Trabajos y Tareas" # Default
+                                        
+                                        # Intento 1: Nuevo formato de Google (Diccionario anidado)
+                                        if "gradeCategory" in t and isinstance(t["gradeCategory"], dict):
+                                            rubro_final = str(t["gradeCategory"].get("name", "Trabajos y Tareas")).strip()
+                                        # Intento 2: Formato clásico (Solo el ID)
+                                        elif "gradeCategoryId" in t:
+                                            cat_id_t = str(t["gradeCategoryId"])
+                                            rubro_final = mapa_cats_cr.get(cat_id_t, "Trabajos y Tareas")
                                         
                                         # Guardar / Actualizar Tarea
                                         conn.execute(
