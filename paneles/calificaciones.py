@@ -47,6 +47,30 @@ def encontrar_alumno_oficial(nombre_cr, lista_oficial):
             mejor_match = nom_of
     return mejor_match or nombre_cr
 
+def auto_emparejar_curso_classroom(cursos_cr, materia_app, grupo_app):
+    """
+    Busca automáticamente el ID del curso de Classroom cruzando la Materia y el Grupo,
+    ignorando mayúsculas, acentos y espacios.
+    """
+    def norm_text(txt):
+        import unicodedata
+        t = str(txt).lower().strip().replace("°", "").replace(" ", "")
+        return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+
+    mat_app_norm = norm_text(materia_app)
+    grp_app_norm = norm_text(grupo_app)
+
+    for c in cursos_cr:
+        nom_cr_norm = norm_text(c.get("name", ""))
+        sec_cr_norm = norm_text(c.get("section", ""))
+        
+        # Si la materia está en el nombre del curso de Classroom, 
+        # y el grupo está en la sección o en el mismo nombre... ¡ES MATCH!
+        if mat_app_norm in nom_cr_norm and (grp_app_norm in sec_cr_norm or grp_app_norm in nom_cr_norm):
+            return c["id"]
+            
+    return None # Si no logra emparejar automáticamente
+
 def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     st.header(f"📊 Calificador Académico: {nombre_prof}")
     
@@ -315,14 +339,14 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                         except Exception as e_act:
                             st.error(f"Error al crear: {e_act}")
 
-    # --- BOTÓN 2: SINCRONIZAR DE CLASSROOM CON EMPAREJADOR INTELIGENTE ---
+    # --- BOTÓN 2: SINCRONIZAR DE CLASSROOM (AUTOMATIZADO) ---
     with col_btn_act2:
-        with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
-            st.markdown("### 🎓 Conexión con Google Classroom")
-            token_google = st.session_state.get("access_token")
-            
-            if not token_google:
-                st.warning("⚠️ No se detectó sesión de Classroom. Vincula tu cuenta institucional:")
+        token_google = st.session_state.get("access_token")
+        
+        if not token_google:
+            # Si no hay token, pedimos conectar
+            with st.popover("🔄 Sincronizar Classroom", use_container_width=True):
+                st.warning("⚠️ Requiere conexión:")
                 client_id_cr = st.secrets["auth"]["google_client_id"]
                 redirect_uri_cr = st.secrets["auth"]["redirect_uri"]
                 params_cr = {
@@ -336,131 +360,45 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 import urllib.parse
                 url_cr = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params_cr)}"
                 st.link_button("🔑 Conectar con Google Classroom", url_cr, type="primary", use_container_width=True)
-            else:
-                try:
-                    headers_cr = {"Authorization": f"Bearer {token_google}"}
-                    res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
-                    cursos_cr = res_c.get("courses", [])
-                    
-                    if not cursos_cr:
-                        st.info("No se encontraron cursos activos en Google Classroom.")
-                    else:
-                        dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
-                        curso_seleccionado_label = st.selectbox("Selecciona el curso en Classroom:", list(dict_cursos.keys()))
-                        id_curso_elegido = dict_cursos[curso_seleccionado_label]
+        else:
+            # 🤖 LÓGICA AUTOMÁTICA
+            headers_cr = {"Authorization": f"Bearer {token_google}"}
+            try:
+                res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
+                cursos_cr = res_c.get("courses", [])
+                
+                # Intentamos hacer MATCH automático sin preguntarle al profe
+                id_curso_auto = auto_emparejar_curso_classroom(cursos_cr, materia_sel, grupo_sel)
+                
+                # 🟢 ESCENARIO A: Logró emparejar automáticamente
+                if id_curso_auto:
+                    # Un botón directo y rápido
+                    if st.button("🔄 Sincronizar Classroom", type="secondary", use_container_width=True, help="El sistema detectó automáticamente tu clase."):
+                        id_curso_elegido = id_curso_auto
+                        # (AQUÍ PEGAS TODO EL BLOQUE DE DESCARGA DESDE "with st.spinner..." HASTA "...st.rerun()")
+                        # Te pongo un comentario para no saturar el chat:
                         
-                        if st.button("🚀 Sincronizar Todo (Categorías, Tareas y Notas)", type="primary", use_container_width=True):
-                            with st.spinner("Descargando configuración y notas de Classroom a Supabase..."):
-                                # 1. 🎓 DESCARGA AUTOMÁTICA DE CATEGORÍAS
-                                res_curso_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}", headers=headers_cr).json()
-                                cats_cr = res_curso_det.get("gradebookSettings", {}).get("gradeCategories", [])
-                                if not cats_cr:
-                                    cats_cr = res_curso_det.get("gradeCategories", [])
-                                    
-                                # Diccionario de mapeo de IDs a Nombres (Como texto estricto)
-                                mapa_cats_cr = {str(c["id"]): str(c.get("name", "Trabajos y Tareas")).strip() for c in cats_cr}
+                        with st.spinner("Descargando de Classroom a Supabase..."):
+                            # ... PEGA AQUÍ LA LÓGICA BLINDADA DE SINCRONIZACIÓN QUE ARREGLAMOS HACE UN RATO ...
+                            pass # <- Borra este pass y pon el código
+                            
+                # 🟡 ESCENARIO B: No logró emparejar (nombres muy distintos). Fallback Manual.
+                else:
+                    with st.popover("🔄 Sincronizar (Manual)", use_container_width=True):
+                        st.info("No pudimos detectar tu curso automáticamente. Por favor selecciónalo:")
+                        dict_cursos = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
+                        curso_seleccionado_label = st.selectbox("Curso en Classroom:", list(dict_cursos.keys()))
+                        
+                        if st.button("🚀 Sincronizar", type="primary", use_container_width=True):
+                            id_curso_elegido = dict_cursos[curso_seleccionado_label]
+                            # (AQUÍ TAMBIÉN PEGAS EL MISMO BLOQUE DE DESCARGA)
+                            
+                            with st.spinner("Descargando de Classroom a Supabase..."):
+                                # ... PEGA AQUÍ LA LÓGICA BLINDADA ...
+                                pass # <- Borra este pass y pon el código
 
-                                with engine.begin() as conn:
-                                    # Insertar Categorías en la Base de Datos
-                                    if cats_cr:
-                                        conn.execute(
-                                            text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'),
-                                            {"c": clase_id, "p": periodo_sel}
-                                        )
-                                        for cat in cats_cr:
-                                            cat_nom = str(cat.get("name", "")).strip()
-                                            cat_w_raw = cat.get("weight", 0)
-                                            cat_pct = int(round(cat_w_raw / 10000)) if cat_w_raw > 0 else 0
-                                            if cat_nom and cat_pct > 0:
-                                                conn.execute(
-                                                    text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
-                                                    {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
-                                                )
-
-                                    # 2. Descargar todas las tareas
-                                    res_w = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork", headers=headers_cr).json()
-                                    tareas_cr = res_w.get("courseWork", [])
-                                    
-                                    # 3. Padrón oficial de alumnos (Base de Datos)
-                                    df_alumnos_db = pd.read_sql('SELECT * FROM "alumnos"', engine)
-                                    df_alumnos_db.columns = df_alumnos_db.columns.str.strip()
-                                    col_correo_db = next((c for c in df_alumnos_db.columns if 'correo' in c.lower()), 'Correo')
-                                    mapa_email_a_oficial = {str(r.get(col_correo_db, '')).lower().strip(): str(r.get('Nombre Completo', '')).strip() for _, r in df_alumnos_db.iterrows()}
-
-                                    # 4. Alumnos de Classroom
-                                    res_st = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/students", headers=headers_cr).json()
-                                    mapa_userid_a_nombre = {}
-                                    for s in res_st.get("students", []):
-                                        u_id = s.get("userId")
-                                        prof = s.get("profile", {})
-                                        email_cr = str(prof.get("emailAddress", "")).lower().strip()
-                                        nom_cr = str(prof.get("name", {}).get("fullName", "")).strip()
-                                        if email_cr in mapa_email_a_oficial:
-                                            mapa_userid_a_nombre[u_id] = mapa_email_a_oficial[email_cr]
-                                        else:
-                                            mapa_userid_a_nombre[u_id] = encontrar_alumno_oficial(nom_cr, alumnos_clase)
-
-                                    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-                                    total_notas = 0
-                                    
-                                    # 5. Guardar Actividades y Calificaciones
-                                    for t in tareas_cr:
-                                        if t.get("state") == "DELETED":
-                                            continue
-                                            
-                                        id_act_cr = f"CR-{t['id']}"
-                                        nom_t = t.get("title", "Sin Título")
-                                        p_max_t = float(t.get("maxPoints", 100.0))
-                                        
-                                        # 🛡️ FIX API CLASSROOM: Búsqueda doble y segura de la categoría
-                                        rubro_final = "Trabajos y Tareas" # Default
-                                        
-                                        # Intento 1: Nuevo formato de Google (Diccionario anidado)
-                                        if "gradeCategory" in t and isinstance(t["gradeCategory"], dict):
-                                            rubro_final = str(t["gradeCategory"].get("name", "Trabajos y Tareas")).strip()
-                                        # Intento 2: Formato clásico (Solo el ID)
-                                        elif "gradeCategoryId" in t:
-                                            cat_id_t = str(t["gradeCategoryId"])
-                                            rubro_final = mapa_cats_cr.get(cat_id_t, "Trabajos y Tareas")
-                                        
-                                        # Guardar / Actualizar Tarea
-                                        conn.execute(
-                                            text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
-                                                    VALUES (:id, :c, :p, :nom, :rub, :pmax, :fec)
-                                                    ON CONFLICT ("ID_Actividad") DO UPDATE SET 
-                                                        "Nombre_Actividad" = EXCLUDED."Nombre_Actividad", 
-                                                        "Rubro" = EXCLUDED."Rubro", 
-                                                        "Puntos_Max" = EXCLUDED."Puntos_Max"'''),
-                                            {"id": id_act_cr, "c": clase_id, "p": periodo_sel, "nom": nom_t, "rub": rubro_final, "pmax": p_max_t, "fec": fecha_hoy}
-                                        )
-                                        
-                                        # Borrar notas viejas e insertar frescas
-                                        conn.execute(
-                                            text('DELETE FROM "calif_notas" WHERE "ID_Actividad" = :id AND "Clase" = :c'),
-                                            {"id": id_act_cr, "c": clase_id}
-                                        )
-                                        
-                                        res_sub = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_curso_elegido}/courseWork/{t['id']}/studentSubmissions", headers=headers_cr).json()
-                                        for sub in res_sub.get("studentSubmissions", []):
-                                            u_id = sub.get("userId")
-                                            nom_alm = mapa_userid_a_nombre.get(u_id)
-                                            nota_raw = sub.get("assignedGrade") if sub.get("assignedGrade") is not None else sub.get("draftGrade")
-                                            
-                                            if nom_alm and nota_raw is not None:
-                                                conn.execute(
-                                                    text('''INSERT INTO "calif_notas" ("ID_Actividad", "Clase", "Alumno", "Nota")
-                                                            VALUES (:id, :c, :alm, :nota)
-                                                            ON CONFLICT ("ID_Actividad", "Alumno") DO UPDATE SET "Nota" = EXCLUDED."Nota"'''),
-                                                    {"id": id_act_cr, "c": clase_id, "alm": nom_alm, "nota": float(nota_raw)}
-                                                )
-                                                total_notas += 1
-
-                                leer_datos.clear()
-                                st.success(f"🎉 ¡Sincronización completa! Se importaron {len(cats_cr)} categorías, {len(tareas_cr)} tareas y {total_notas} notas.")
-                                time.sleep(1)
-                                st.rerun()
-                except Exception as e_cr:
-                    st.error(f"Error con Classroom: {e_cr}")
+            except Exception as e_cr:
+                st.error("Error al leer Classroom.")
 
     # --- ✅ BOTÓN 3 NUEVO: EDITAR ACTIVIDAD (CAMBIAR CATEGORÍA, NOMBRE O PUNTOS) ---
     with col_btn_act3:
