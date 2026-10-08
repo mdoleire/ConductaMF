@@ -422,6 +422,8 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                             elif "gradeCategoryId" in t:
                                 cat_id_t = str(t["gradeCategoryId"])
                                 rubro_final = mapa_cats_cr.get(cat_id_t, "Trabajos y Tareas")
+                                if "lab" not in materia_sel.lower() and "laboratorio" in rubro_final.lower():
+                                    continue # Se salta esta tarea y no la descarga
                             
                             conn.execute(
                                 text('''INSERT INTO "calif_actividades" ("ID_Actividad", "Clase", "Periodo", "Nombre_Actividad", "Rubro", "Puntos_Max", "Fecha_Creacion")
