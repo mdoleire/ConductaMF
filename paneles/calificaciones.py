@@ -409,18 +409,6 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                     total_notas = 0
                     
                     with engine.begin() as conn:
-                        if cats_cr:
-                            conn.execute(text('DELETE FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p'), {"c": clase_id, "p": periodo_sel})
-                            for cat in cats_cr:
-                                cat_nom = str(cat.get("name", "")).strip()
-                                cat_w_raw = cat.get("weight", 0)
-                                cat_pct = int(round(cat_w_raw / 10000)) if cat_w_raw > 0 else 0
-                                if cat_nom and cat_pct > 0:
-                                    conn.execute(
-                                        text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
-                                        {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
-                                    )
-
                         for t in tareas_cr:
                             if t.get("state") == "DELETED": continue
                                 
@@ -462,7 +450,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                     )
                                     total_notas += 1
 
-                    return True, f"🎉 ¡Sincronización completa! Importadas {len(cats_cr)} categorías, {len(tareas_cr)} tareas y {total_notas} notas."
+                    return True, f"🎉 ¡Sincronización completa! Importadas {len(tareas_cr)} tareas y {total_notas} notas."
                 except Exception as e:
                     return False, f"Error técnico: {e}"
 
