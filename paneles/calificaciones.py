@@ -128,16 +128,8 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     # =================================================================
     # 2. PONDERACIONES / CRITERIOS (CON AUTO-CARGA DESDE CLASSROOM)
     # =================================================================
-    df_pond_todas = leer_datos(gc, FILE_CALIFICACIONES, "Ponderaciones")
-    if not df_pond_todas.empty:
-        df_pond_todas.columns = df_pond_todas.columns.str.strip()
-        
-    if not df_pond_todas.empty and 'Clase' in df_pond_todas.columns and 'Rubro' in df_pond_todas.columns:
-        df_pond_todas['Clase'] = df_pond_todas['Clase'].astype(str).str.strip()
-        df_pond_todas['Periodo'] = df_pond_todas['Periodo'].astype(str).str.strip()
-        pond_actual = df_pond_todas[(df_pond_todas['Clase'] == clase_id) & (df_pond_todas['Periodo'] == periodo_sel)]
-    else:
-        pond_actual = pd.DataFrame()
+    query_pond = text('SELECT * FROM "calif_ponderaciones" WHERE "Clase" = :c AND "Periodo" = :p')
+    pond_actual = pd.read_sql(query_pond, engine, params={"c": clase_id, "p": periodo_sel})
         
     if pond_actual.empty:
         st.warning(f"⚠️ No has configurado los criterios de evaluación para **{clase_id}** en el **{periodo_sel}**.")
@@ -320,13 +312,8 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
     # =================================================================
     # 3. ACCIONES DE ACTIVIDADES: CREAR, SINCRONIZAR, EDITAR Y ELIMINAR
     # =================================================================
-    df_act_todas = leer_datos(gc, FILE_CALIFICACIONES, "Actividades")
-    if not df_act_todas.empty and 'Clase' in df_act_todas.columns:
-        df_act_todas['Clase'] = df_act_todas['Clase'].astype(str).str.strip()
-        df_act_todas['Periodo'] = df_act_todas['Periodo'].astype(str).str.strip()
-        mis_actividades = df_act_todas[(df_act_todas['Clase'] == clase_id) & (df_act_todas['Periodo'] == periodo_sel)]
-    else:
-        mis_actividades = pd.DataFrame()
+    query_act = text('SELECT * FROM "calif_actividades" WHERE "Clase" = :c AND "Periodo" = :p')
+    mis_actividades = pd.read_sql(query_act, engine, params={"c": clase_id, "p": periodo_sel})
 
     col_btn_act1, col_btn_act2, col_btn_act3, col_btn_act4 = st.columns(4)
     
@@ -634,12 +621,8 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
         st.info("💡 Aún no hay actividades en este periodo. Crea una manual o sincroniza desde Google Classroom arriba.")
         return
 
-    df_notas_todas = leer_datos(gc, FILE_CALIFICACIONES, "Calificaciones")
-    if not df_notas_todas.empty and 'Clase' in df_notas_todas.columns:
-        df_notas_todas['Clase'] = df_notas_todas['Clase'].astype(str).str.strip()
-        mis_notas = df_notas_todas[df_notas_todas['Clase'] == clase_id]
-    else:
-        mis_notas = pd.DataFrame()
+    query_notas = text('SELECT * FROM "calif_notas" WHERE "Clase" = :c')
+    mis_notas = pd.read_sql(query_notas, engine, params={"c": clase_id})
 
     datos_matriz = {"Alumno": alumnos_clase}
     actividades_cols = []
