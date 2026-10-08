@@ -209,7 +209,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                     cat_nom = str(cat.get("name", "")).strip()
                                                     cat_w_raw = cat.get("weight", 0)
                                                     cat_pct = int(round(cat_w_raw / 10000)) if cat_w_raw > 0 else 0
-                                                    if cat_nom and cat_pct > 0:
+                                                    if cat_nom:
                                                         conn.execute(
                                                             text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
                                                             {"c": clase_id, "p": periodo_sel, "r": cat_nom, "pct": cat_pct}
