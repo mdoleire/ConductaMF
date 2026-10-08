@@ -153,30 +153,57 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                     headers_cr = {"Authorization": f"Bearer {token_google}"}
                     res_c = requests.get("https://classroom.googleapis.com/v1/courses?teacherId=me&courseStates=ACTIVE", headers=headers_cr).json()
                     
-                    # 🛡️ VALIDACIÓN 1: ¿Expiró el token o hubo error de permisos?
                     if "error" in res_c:
                         st.warning("⚠️ Tu sesión con Google Classroom caducó por seguridad (1 hora límite).")
                         st.info("👉 Por favor, usa el botón '🔒 Cerrar Sesión' en el menú izquierdo y vuelve a entrar para renovar tu conexión.")
                     else:
                         cursos_cr = res_c.get("courses", [])
                         
-                        # 🛡️ VALIDACIÓN 2: ¿Encontró cursos?
                         if not cursos_cr:
                             st.info("ℹ️ Tu cuenta de Google no tiene cursos activos configurados como 'Profesor'.")
                         else:
-                            # ✅ Todo correcto, dibujamos el UI
-                            dict_c = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
-                            curso_elegido_pond = st.selectbox("Selecciona la clase correspondiente en Classroom:", list(dict_c.keys()), key="c_pond_cr")
+                            # 🤖 AUTO-MATCHER INTELIGENTE PARA LOS CRITERIOS
+                            def limpiar_texto(txt):
+                                import unicodedata
+                                if not txt: return ""
+                                t = str(txt).lower().strip()
+                                return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+
+                            mat_clave = limpiar_texto(materia_sel.split()[0])
+                            grp_num = ''.join(filter(str.isdigit, grupo_sel))
+                            grp_letra = ''.join(filter(str.isalpha, grupo_sel)).lower()
                             
-                            if st.button("🎓 Cargar Criterios Oficiales de Classroom (100% Automático)", type="primary", use_container_width=True, key="btn_cargar_criterios_cr_unico"):
+                            id_curso_auto = None
+                            for c in cursos_cr:
+                                nom_cr = limpiar_texto(c.get("name", ""))
+                                sec_cr = limpiar_texto(c.get("section", ""))
+                                texto_total = nom_cr + " " + sec_cr
+                                if mat_clave in texto_total and grp_num in texto_total and grp_letra in texto_total:
+                                    id_curso_auto = c["id"]
+                                    break
+                            
+                            # Si hace match, preparamos la variable. Si no, mostramos la lista.
+                            if id_curso_auto:
+                                id_c_pond = id_curso_auto
+                                btn_texto = "🎓 Cargar Criterios Oficiales (Detectado Automáticamente)"
+                            else:
+                                dict_c = {f"{c['name']} ({c.get('section', 'General')})": c['id'] for c in cursos_cr}
+                                curso_elegido_pond = st.selectbox("Selecciona la clase correspondiente en Classroom:", list(dict_c.keys()), key="c_pond_cr")
+                                id_c_pond = dict_c[curso_elegido_pond] # <-- ¡EL FIX DEL ERROR ESTÁ AQUÍ!
+                                btn_texto = "🎓 Cargar Criterios del Curso Seleccionado"
+                                
+                            if st.button(btn_texto, type="primary", use_container_width=True, key="btn_cargar_criterios_cr_unico"):
                                 with st.spinner("Descargando categorías y ponderaciones oficiales de Classroom..."):
                                     res_det = requests.get(f"https://classroom.googleapis.com/v1/courses/{id_c_pond}", headers=headers_cr).json()
                                     
                                     if "error" in res_det:
                                         st.error(f"🚨 Google Classroom reportó: {res_det['error'].get('message', res_det['error'])}")
                                     else:
-                                        cats = res_det.get("gradeCategories") or res_det.get("gradebookSettings", {}).get("gradeCategories", [])
-                                        
+                                        # 🛡️ FIX: Leer las categorías exactamente igual que abajo
+                                        cats = res_det.get("gradebookSettings", {}).get("gradeCategories", [])
+                                        if not cats:
+                                            cats = res_det.get("gradeCategories", [])
+                                            
                                         if not cats:
                                             st.warning("⚠️ Esta clase en Classroom no devolvió categorías de calificación.")
                                             st.info("💡 Desplázate hacia abajo y usa la configuración manual.")
@@ -188,8 +215,8 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                                                 )
                                                 for cat in cats:
                                                     cat_nom = str(cat.get("name", "")).strip()
-                                                    cat_w = cat.get("weight", 0)
-                                                    cat_pct = int(round(cat_w / 10000)) if cat_w > 0 else 0
+                                                    cat_w_raw = cat.get("weight", 0)
+                                                    cat_pct = int(round(cat_w_raw / 10000)) if cat_w_raw > 0 else 0
                                                     if cat_nom and cat_pct > 0:
                                                         conn.execute(
                                                             text('INSERT INTO "calif_ponderaciones" ("Clase", "Periodo", "Rubro", "Porcentaje") VALUES (:c, :p, :r, :pct)'),
@@ -459,7 +486,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 cursos_cr = res_c.get("courses", [])
                 
                 # Auto-matcher MÁS INTELIGENTE (Busca solo la 1ra palabra de la materia, ej. "Física")
-                 id_curso_auto = None
+                id_curso_auto = None
                 
                 # Función rápida para matar acentos y mayúsculas en ambos lados
                 def limpiar_texto(txt):
@@ -481,7 +508,7 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                     if mat_clave in texto_total and grp_num in texto_total and grp_letra in texto_total:
                         id_curso_auto = c["id"]
                         break
-                    
+
                 if id_curso_auto:
                     # ✅ MATCH AUTOMÁTICO ENCONTRADO
                     if st.button("🔄 Sincronizar Classroom", type="secondary", use_container_width=True, help="El sistema detectó automáticamente tu clase."):
