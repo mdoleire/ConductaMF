@@ -459,20 +459,29 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                 cursos_cr = res_c.get("courses", [])
                 
                 # Auto-matcher MÁS INTELIGENTE (Busca solo la 1ra palabra de la materia, ej. "Física")
-                id_curso_auto = None
-                mat_clave = materia_sel.split()[0].lower().replace("á", "a").replace("í", "i").replace("é", "e")
-                grp_num = ''.join(filter(str.isdigit, grupo_sel)) # "4"
-                grp_letra = ''.join(filter(str.isalpha, grupo_sel)).lower() # "a"
+                 id_curso_auto = None
+                
+                # Función rápida para matar acentos y mayúsculas en ambos lados
+                def limpiar_texto(txt):
+                    import unicodedata
+                    if not txt: return ""
+                    t = str(txt).lower().strip()
+                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+
+                mat_clave = limpiar_texto(materia_sel.split()[0]) # Ej. "fisica"
+                grp_num = ''.join(filter(str.isdigit, grupo_sel)) # Ej. "4"
+                grp_letra = ''.join(filter(str.isalpha, grupo_sel)).lower() # Ej. "b"
                 
                 for c in cursos_cr:
-                    nom_cr = c.get("name", "").lower()
-                    sec_cr = c.get("section", "").lower()
+                    nom_cr = limpiar_texto(c.get("name", ""))
+                    sec_cr = limpiar_texto(c.get("section", ""))
                     texto_total = nom_cr + " " + sec_cr
                     
+                    # Ahora sí comparamos peras con peras (sin acentos)
                     if mat_clave in texto_total and grp_num in texto_total and grp_letra in texto_total:
                         id_curso_auto = c["id"]
                         break
-
+                    
                 if id_curso_auto:
                     # ✅ MATCH AUTOMÁTICO ENCONTRADO
                     if st.button("🔄 Sincronizar Classroom", type="secondary", use_container_width=True, help="El sistema detectó automáticamente tu clase."):
