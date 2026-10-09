@@ -449,8 +449,8 @@ if not st.session_state.get("auth_email"):
         "response_type": "code",
         "scope": "openid email profile https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.students.readonly https://www.googleapis.com/auth/classroom.rosters.readonly",
         "access_type": "online",
-        "state": st.session_state.get("oauth_state", secrets.token_urlsafe(16))
-    }
+        "state": st.session_state.get("oauth_state", secrets.token_urlsafe(16)),    
+        }
 
     url_google_auth = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     
