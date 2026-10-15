@@ -80,7 +80,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
         df_asist_plana = compilar_asistencias_grupo_tutor(gc, grupo_sel)
             
         if not df_asist_plana.empty and not df_grupo_conducta.empty:
-            columnas_comunes = ['Fecha', 'Alumno', 'Profesor', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados', 'Fecha_DT']
+            columnas_comunes = ['Fecha', 'Alumno', 'Profesor', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados', 'Fecha_DT', 'Es_Grave']
             for col in columnas_comunes:
                 if col not in df_asist_plana.columns: df_asist_plana[col] = None
                 if col not in df_grupo_conducta.columns: df_grupo_conducta[col] = None
