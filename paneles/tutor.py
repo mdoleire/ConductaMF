@@ -213,23 +213,46 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
         if df_filtrado.empty:
             st.success(f"✨ Sin incidencias en el periodo seleccionado para **{alumno_sel}**.")
         else:
-            df_conducta_pura = df_filtrado[df_filtrado['Categoría'] != 'Asistencia']
+            # 1. MÉTRICAS GLOBALES SUPERIORES
             faltas_totales = len(df_filtrado[df_filtrado['Falta'] == '🔴 Falta'])
             retardos_totales = len(df_filtrado[df_filtrado['Falta'] == '🟡 Retardo'])
-
-            calificacion_final, total_descuento = calcular_calificacion_progresiva(df_conducta_pura)
-            color_calif = format_calif(calificacion_final)
             
-            c_res1, c_res2, c_res3, c_res4 = st.columns(4)
-            c_res1.metric("Calificación Conducta", color_calif.split(" ")[1], delta=f"-{total_descuento:.1f} pts", delta_color="inverse")
-            c_res2.info(f"Semáforo: **{color_calif.split(' ')[0]}**")            
-            c_res3.metric("🔴 Faltas", faltas_totales)
-            c_res4.metric("🟡 Retardos", retardos_totales)
+            c_res1, c_res2 = st.columns(2)
+            c_res1.metric("🔴 Total Faltas (Globales)", faltas_totales)
+            c_res2.metric("🟡 Total Retardos (Globales)", retardos_totales)
             
-            st.markdown("### Expediente Detallado")
+            st.markdown("### 🛡️ Resumen Integral por Materia")
+            
+            # 2. AGRUPAR TODO (CONDUCTA + ASISTENCIA) POR MATERIA
+            boleta_integrada = []
+            
+            for materia_nombre, df_materia in df_filtrado.groupby('Materia'):
+                # A) Cálculos de Conducta (Excluimos los registros de asistencia)
+                df_cond_mat = df_materia[df_materia['Categoría'] != 'Asistencia']
+                calif_mat, desc_mat = calcular_calificacion_progresiva(df_cond_mat)
+                
+                # B) Cálculos de Asistencia (Dentro de la misma materia)
+                f_mat = len(df_materia[df_materia['Falta'] == '🔴 Falta'])
+                r_mat = len(df_materia[df_materia['Falta'] == '🟡 Retardo'])
+                
+                boleta_integrada.append({
+                    "Materia": str(materia_nombre).replace(" - Asistencia", ""),
+                    "Conducta": format_calif(calif_mat),
+                    "Pts Perdidos": f"-{desc_mat:.1f}",
+                    "Faltas": f_mat,
+                    "Retardos": r_mat
+                })
+            
+            df_boleta_int = pd.DataFrame(boleta_integrada)
+            st.dataframe(df_boleta_int, use_container_width=True, hide_index=True)
+            st.caption("ℹ️ Las materias que no aparecen en esta lista tienen un expediente limpio (Conducta 10.0 y cero inasistencias).")
+            
+            st.markdown("---")
+            st.markdown("### 📄 Expediente Detallado (Bitácora)")
+            
+            # 🛡️ FIX DEL ERROR: Declaramos la variable de las columnas a mostrar
             cols_mostrar = ['Fecha', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados']
             
-            # 🛡️ CONTROL DE SCROLL: Evitamos scroll vertical infinito
             st.dataframe(
                 df_filtrado[cols_mostrar].sort_values('Fecha', ascending=False), 
                 use_container_width=True, 
@@ -237,7 +260,17 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
                 height=400
             )
             
-            csv_data = df_filtrado[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
+            df_export_alumno = df_filtrado[cols_mostrar].copy()
+            remplazos_excel_tutor = {
+                "🔴 Falta": "Falta",
+                "🟡 Retardo": "Retardo",
+                "✅ Presente": "Presente",
+                "⚪ Sin Clase": "Sin Clase"
+            }
+            for col in df_export_alumno.columns:
+                df_export_alumno[col] = df_export_alumno[col].replace(remplazos_excel_tutor)
+
+            csv_data = df_export_alumno.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 "📥 Descargar Expediente (CSV)",
                 data=csv_data,
@@ -245,3 +278,13 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
                 mime="text/csv",
                 type="primary"
             )
+
+            # # 🛡️ CONTROL DE SCROLL: Evitamos scroll vertical infinito
+            # st.dataframe(
+            #     df_filtrado[cols_mostrar].sort_values('Fecha', ascending=False), 
+            #     use_container_width=True, 
+            #     hide_index=True,
+            #     height=400
+            # )
+            
+    

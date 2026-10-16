@@ -531,12 +531,17 @@ else:
         # Intercepción de personal nuevo no registrado en archivo 3_Usuarios_Seguridad
         if usuario_registrado.empty:
             es_profesor_oficial = False
-            df_asig_verif = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
             
-            if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
-                profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
-                if correo_google in profesores_validos or es_admin_externo:
-                    es_profesor_oficial = True
+            # 🛡️ FIX VIP: Si es Modo Dios, entra sin hacer filas ni revisar excels
+            if es_admin_externo:
+                es_profesor_oficial = True
+            else:
+                # Si es un simple mortal, que haga fila y revise el Excel
+                df_asig_verif = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
+                if not df_asig_verif.empty and 'Usuario_Profesor' in df_asig_verif.columns:
+                    profesores_validos = [str(email).lower().strip() for email in df_asig_verif['Usuario_Profesor'].dropna().unique()]
+                    if correo_google in profesores_validos:
+                        es_profesor_oficial = True
 
             if not es_profesor_oficial:
                 st.error("⛔ Tu cuenta no se encuentra en la plantilla del personal activo del Colegio.")
