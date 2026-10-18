@@ -52,249 +52,217 @@ from paneles.asistencia import renderizar_panel_asistencia
 from paneles.alumno import renderizar_panel_alumno
 from reglamento import TEXTO_ACUERDO
 from paneles.calificaciones import renderizar_panel_calificaciones
+from streamlit_option_menu import option_menu
 
 # ==========================================
-# CONFIGURACIÓN VISUAL
+# CONFIGURACIÓN VISUAL (ESTILO AULA MÁGICA + DARK MODE)
 # ==========================================
 def aplicar_diseno_institucional(compacto=False):
-    padding_banner = "1.1rem 1rem" if compacto else "2.2rem 1.5rem"
+    padding_banner = "1.1rem 1rem" if compacto else "1.5rem 2rem"
     margin_banner = "1rem" if compacto else "2rem"
 
     st.markdown(
         f"""
         <style>
-            /* 1. VARIABLES GLOBALES (Modo Claro) */
-            @media (prefers-color-scheme: light) {{
-                :root {{
-                    --bg-principal: #F4F6F9;
-                    --texto-principal: #0B1B3D;
-                    --texto-secundario: #2C3E50;
-                    --card-bg: #FFFFFF;
-                    --chip-bg: #0B1B3D;
-                    --chip-text: #FFFFFF;
-                    --tab-active: #0B1B3D;
-                    --tab-inactive: #7F8C8D;
-                    --dorado-miraflores: #C5A059;
-                }}
+            /* =========================================
+               1. VARIABLES MODO CLARO (Default)
+               ========================================= */
+            :root {{
+                --bg-app: #F8FAFC;
+                --bg-sidebar: #FFFFFF;
+                --bg-card: #FFFFFF;
+                --primario-turquesa: #0DA28D;
+                --primario-hover: #0B8A78;
+                --azul-noche: #1E2B38;
+                --texto-oscuro: #1E293B;
+                --texto-gris: #64748B;
+                --borde-suave: #E2E8F0;
+                --bg-secundario: #F1F5F9;
             }}
 
-            /* 2. VARIABLES GLOBALES (Modo Oscuro) */
+            /* =========================================
+               2. VARIABLES MODO OSCURO (Automático)
+               ========================================= */
             @media (prefers-color-scheme: dark) {{
                 :root {{
-                    --bg-principal: #0F172A;
-                    --texto-principal: #F8FAFC;
-                    --texto-secundario: #CBD5E1;
-                    --card-bg: #1E293B;
-                    --chip-bg: #334155;
-                    --chip-text: #F1F5F9;
-                    --tab-active: #C5A059;
-                    --tab-inactive: #94A3B8;
-                    --dorado-miraflores: #C5A059;
+                    --bg-app: #0F172A;
+                    --bg-sidebar: #1E293B;
+                    --bg-card: #1E293B;
+                    --primario-turquesa: #0DA28D; /* El turquesa brilla hermoso en oscuro */
+                    --primario-hover: #14B8A6;
+                    --azul-noche: #0B1120; /* Banner casi negro */
+                    --texto-oscuro: #F8FAFC; /* Texto blanco brillante */
+                    --texto-gris: #94A3B8; /* Texto gris suave */
+                    --borde-suave: #334155;
+                    --bg-secundario: #334155;
                 }}
             }}
 
-            /* 3. REGLAS BASE DE LA APP */
+            /* =========================================
+               3. REGLAS GENERALES APLICADAS
+               ========================================= */
             #MainMenu {{visibility: hidden;}}
             footer {{visibility: hidden;}}
             
+            /* Fondo general de la App */
             .stApp {{
-                background-color: var(--bg-principal) !important;
+                background-color: var(--bg-app) !important;
             }}
 
+            /* Menú Lateral */
             [data-testid="stSidebar"] {{
-                background-color: #0B1B3D !important;
-                border-right: 3px solid var(--dorado-miraflores);
+                background-color: var(--bg-sidebar) !important;
+                border-right: 1px solid var(--borde-suave);
             }}
             
-            /* Regla global: Textos de la barra lateral en blanco */
             [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, 
             [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, 
-            [data-testid="stSidebar"] label, [data-testid="stSidebar"] span,
-            [data-testid="stSidebar"] div {{
-                color: #FFFFFF !important;
-            }}
-            
-            [data-testid="stSidebar"] div[data-testid="stRadio"] label p {{
-                color: #FFFFFF !important;
-                font-weight: 500 !important;
+            [data-testid="stSidebar"] label {{
+                color: var(--texto-oscuro) !important;
             }}
 
-            /* 4. ESTILOS DE LOS BOTONES Y CHAT EN BARRA LATERAL (Por defecto / Modo Claro) */
-            [data-testid="stSidebar"] button[kind="secondary"],
-            [data-testid="stSidebar"] button[kind="secondary"] *,
-            [data-testid="stSidebar"] [data-testid="stPopover"] button,
-            [data-testid="stSidebar"] [data-testid="stPopover"] button *,
-            [data-testid="stSidebar"] [data-testid="stExpander"] summary,
-            [data-testid="stSidebar"] [data-testid="stExpander"] summary * {{
-                color: #001A3D !important;
-                fill: #001A3D !important;
+            /* Títulos Generales */
+            h1, h2, h3, h4, h5, h6 {{
+                color: var(--texto-oscuro) !important;
+                font-weight: 700 !important;
+            }}
+
+            /* Etiquetas de Texto */
+            div[data-testid="stWidgetLabel"] p, label[data-testid="stWidgetLabel"] p {{
+                color: var(--texto-gris) !important;
                 font-weight: 600 !important;
             }}
 
-            [data-testid="stSidebar"] button[kind="secondary"],
-            [data-testid="stSidebar"] [data-testid="stPopover"] button,
-            [data-testid="stSidebar"] [data-testid="stExpander"] {{
-                background-color: #F0F4F8 !important; 
+            /* Tarjetas Suaves (Glassmorphism ligero) */
+            .card-conducta {{
+                background-color: var(--bg-card) !important;
+                padding: 2rem;
+                border-radius: 16px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                border: 1px solid var(--borde-suave);
+                margin-bottom: 1.5rem;
+            }}
+
+            /* Botones Principales (Turquesa) */
+            div.stButton > button:first-child {{
+                background-color: var(--primario-turquesa) !important;
+                color: white !important;
                 border: none !important;
-                border-radius: 6px !important;
-            }}
-
-            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {{
-                color: #001A3D !important;
-                -webkit-text-fill-color: #001A3D !important;
-            }}
-            [data-testid="stSidebar"] [data-testid="stChatInput"] textarea::placeholder {{
-                color: #7F8C8D !important;
-                -webkit-text-fill-color: #7F8C8D !important;
-            }}
-
-            /* 5. ESTILOS DE LA PANTALLA PRINCIPAL */
-            h1, h2, h3, h4, h5, h6, 
-            div[data-testid="stAppViewBlockContainer"] h1,
-            div[data-testid="stAppViewBlockContainer"] h2,
-            div[data-testid="stAppViewBlockContainer"] h3 {{
-                color: var(--texto-principal) !important;
-                font-weight: bold !important;
-            }}
-
-            div[data-testid="stWidgetLabel"] p, label[data-testid="stWidgetLabel"] p,
-            .stWidgetLabel p, .stMarkdown p {{
-                color: var(--texto-secundario) !important;
-                font-weight: 600 !important;
+                border-radius: 8px;
+                padding: 0.5rem 1.5rem;
+                font-weight: 600;
+                transition: all 0.2s ease;
+                width: 100%;
+                box-shadow: 0 2px 4px rgba(13, 162, 141, 0.2);
             }}
             
-            div[data-testid="stCheckbox"] label span p {{
-                color: var(--texto-secundario) !important;
-                font-weight: 600 !important;
+            div.stButton > button:first-child:hover {{
+                background-color: var(--primario-hover) !important;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(13, 162, 141, 0.3);
             }}
 
-            div[data-baseweb="tag"] {{
-                background-color: var(--chip-bg) !important;
-                border: 1px solid var(--dorado-miraflores) !important;
-                border-radius: 6px !important;
-                padding: 4px 8px !important;
-            }}
-            
-            div[data-baseweb="tag"] span {{
-                color: var(--chip-text) !important;
-                font-weight: 500 !important;
+            /* Botones Secundarios */
+            button[kind="secondary"] {{
+                background-color: var(--bg-secundario) !important;
+                color: var(--texto-oscuro) !important;
+                border: 1px solid var(--borde-suave) !important;
             }}
 
-            button[data-baseweb="tab"] {{
-                color: var(--tab-inactive) !important;
-                background-color: transparent !important;
-                font-weight: 500 !important;
-            }}
-            
-            button[data-baseweb="tab"][aria-selected="true"] {{
-                color: var(--tab-active) !important;
-                border-bottom-color: var(--dorado-miraflores) !important;
-                font-weight: bold !important;
+            button[kind="secondary"]:hover {{
+                border-color: var(--primario-turquesa) !important;
             }}
 
+            /* Banner Superior */
             .header-banner {{
-                background-color: #0B1B3D;
+                background-color: var(--azul-noche);
                 color: white !important;
                 padding: {padding_banner};
-                border-radius: 8px;
+                border-radius: 12px;
                 margin-bottom: {margin_banner};
-                text-align: center;
-                border-bottom: 4px solid var(--dorado-miraflores);
-                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
             }}
             
             .banner-titulo {{
-                font-family: 'Cinzel', 'Times New Roman', serif;
-                font-size: 2.1rem;
-                font-weight: bold;
-                letter-spacing: 2px;
+                font-family: 'Segoe UI', system-ui, sans-serif;
+                font-size: 1.6rem;
+                font-weight: 700;
+                letter-spacing: 0.5px;
                 margin: 0;
             }}
             
             .banner-sub {{
-                font-size: 1rem;
-                margin-top: 0.5rem;
-                font-weight: 300;
-                letter-spacing: 1px;
+                font-size: 0.9rem;
+                font-weight: 400;
+                color: #94A3B8;
+                margin-top: 0.2rem;
             }}
 
-            .card-conducta {{
-                background-color: var(--card-bg) !important;
-                padding: 1.5rem;
-                border-radius: 8px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-                border-left: 5px solid var(--dorado-miraflores);
-                margin-bottom: 1rem;
+            /* Metricas y Acentos */
+            [data-testid="stMetricValue"] {{
+                color: var(--primario-turquesa) !important;
             }}
 
-            div.stButton > button:first-child {{
-                background-color: #0B1B3D;
-                color: white !important;
-                border: 1px solid var(--dorado-miraflores);
-                border-radius: 4px;
-                padding: 0.5rem 1.5rem;
-                font-weight: 600;
-                transition: all 0.3s ease;
-                width: 100%;
-            }}
-            
-            div.stButton > button:first-child:hover {{
-                background-color: var(--dorado-miraflores);
-                border-color: var(--dorado-miraflores);
-                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            /* =========================================
+               4. SUBMENÚ LATERAL (Radio Buttons convertidos)
+               ========================================= */
+            /* Ocultar el título "Acción de Conducta:" */
+            [data-testid="stSidebar"] div[data-testid="stRadio"] > label {{
+                display: none !important;
             }}
 
-            .custom-google-btn {{
-                display: inline-block;
-                background-color: #0B1B3D;
-                color: white !important;
-                border: 2px solid var(--dorado-miraflores);
-                border-radius: 4px;
-                padding: 0.65rem 2rem;
-                font-weight: 600;
-                text-decoration: none !important;
-                transition: all 0.3s ease;
-                margin-top: 1rem;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.15);
-            }}
-            
-            .custom-google-btn:hover {{
-                background-color: var(--dorado-miraflores);
-                border-color: var(--dorado-miraflores);
-                box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+            /* Contenedor principal del submenú (Le damos sangría y línea lateral) */
+            [data-testid="stSidebar"] div[role="radiogroup"] {{
+                margin-left: 2rem !important; /* Sangría alineada al icono principal */
+                border-left: 2px solid var(--borde-suave) !important;
+                padding-left: 0.5rem !important;
+                margin-top: -1rem !important; /* Lo pegamos hacia arriba */
+                margin-bottom: 1.5rem !important;
+                gap: 0.2rem !important;
             }}
 
-            /* =======================================================
-               6. CORRECCIONES DE MODO OSCURO (DEBE IR AL FINAL)
-               ======================================================= */
-            @media (prefers-color-scheme: dark) {{
-                /* Invertir el botón de Cerrar Sesión y el Asistente a colores claros */
-                [data-testid="stSidebar"] button[kind="secondary"],
-                [data-testid="stSidebar"] button[kind="secondary"] *,
-                [data-testid="stSidebar"] [data-testid="stPopover"] button,
-                [data-testid="stSidebar"] [data-testid="stPopover"] button *,
-                [data-testid="stSidebar"] [data-testid="stExpander"] summary,
-                [data-testid="stSidebar"] [data-testid="stExpander"] summary * {{
-                    color: #FFFFFF !important;
-                    fill: #FFFFFF !important;
-                    background-color: #1E293B !important;
-                }}
-                
-                [data-testid="stSidebar"] button[kind="secondary"],
-                [data-testid="stSidebar"] [data-testid="stPopover"] button,
-                [data-testid="stSidebar"] [data-testid="stExpander"] {{
-                    background-color: #1E293B !important; 
-                }}
+            /* Diseño de cada opción del submenú */
+            [data-testid="stSidebar"] label[data-baseweb="radio"] {{
+                background-color: transparent !important;
+                padding: 0.4rem 0.5rem !important;
+                border-radius: 6px !important;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+                margin: 0 !important;
+            }}
 
-                /* Asegurar que el texto que escriben en el chat sea blanco sobre el fondo oscuro */
-                [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {{
-                    color: #FFFFFF !important;
-                    -webkit-text-fill-color: #FFFFFF !important;
-                }}
-                [data-testid="stSidebar"] [data-testid="stChatInput"] textarea::placeholder {{
-                    color: #94A3B8 !important;
-                    -webkit-text-fill-color: #94A3B8 !important;
-                }}
+            /* Hover (pasar el mouse) */
+            [data-testid="stSidebar"] label[data-baseweb="radio"]:hover {{
+                background-color: var(--bg-secundario) !important;
+            }}
+
+            /* 🚫 DESTRUIR LOS CÍRCULOS FEOS DEL RADIO BUTTON */
+            [data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child {{
+                display: none !important;
+            }}
+
+            /* Letra del submenú apagada por defecto */
+            [data-testid="stSidebar"] label[data-baseweb="radio"] p {{
+                color: var(--texto-gris) !important;
+                font-size: 0.9rem !important;
+                font-weight: 500 !important;
+                margin: 0 !important;
+            }}
+
+            /* ✨ MAGIA: Cuando la opción está seleccionada */
+            [data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {{
+                background-color: #E6F5F3 !important; /* Fondo turquesa clarito */
+                border-left: 3px solid var(--primario-turquesa) !important;
+                border-radius: 0 6px 6px 0 !important;
+            }}
+
+            /* Letra del submenú encendida (Turquesa oscuro) */
+            [data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) p {{
+                color: var(--primario-hover) !important;
+                font-weight: 700 !important;
             }}
         </style>
         """,
@@ -304,12 +272,15 @@ def aplicar_diseno_institucional(compacto=False):
     st.markdown(
         """
         <div class="header-banner">
-            <div class="banner-titulo">COLEGIO MIRAFLORES</div>
-            <div class="banner-sub">SISTEMA INTEGRAL DE GESTIÓN CONDUCTUAL</div>
+            <div>
+                <div class="banner-titulo">Colegio Miraflores</div>
+                <div class="banner-sub">Sistema Integral de Gestión Escolar</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
+
 # =================================================================
 # GESTIÓN DE SESIÓN Y OAUTH SEGURO (CON TOKEN CLASSROOM PERSISTENTE)
 # =================================================================
@@ -618,13 +589,6 @@ else:
             st.query_params.clear()
             st.rerun()
 
-        st.sidebar.markdown("---")
-        with st.sidebar.expander("⚙️ Opciones de Sistema"):
-            st.caption("Usa esta opción solo si notas un desfase en los registros recientes.")
-            if st.button("🔄 Sincronizar Datos", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
-
         # Detección de tutoría
         df_asig_check = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
         mis_materias_check = []
@@ -643,8 +607,41 @@ else:
         if es_tutor:
             opciones_vista.append("👤 Ver como Tutor")
 
-        seleccion = st.sidebar.radio("Módulo:", opciones_vista)
-            
+    # 🌟 EL NUEVO MENÚ LATERAL TIPO AULA MÁGICA
+        iconos = []
+        for opc in opciones_vista:
+            if "Lista" in opc: iconos.append("calendar2-check")
+            elif "Conducta" in opc: iconos.append("shield-exclamation")
+            elif "Calificaciones" in opc: iconos.append("journal-bookmark-fill")
+            elif "Tutor" in opc: iconos.append("person-vcard")
+            else: iconos.append("grid")
+
+        with st.sidebar:
+            st.markdown("<br>", unsafe_allow_html=True) # Espacio visual
+            seleccion = option_menu(
+                menu_title="Menú Principal",
+                options=opciones_vista,
+                icons=iconos,
+                menu_icon="cast",
+                default_index=0,
+                styles={
+                    "container": {"padding": "0!important", "background-color": "transparent"},
+                    "icon": {"color": "#64748B", "font-size": "18px"}, 
+                    "nav-link": {
+                        "font-size": "15px", 
+                        "text-align": "left", 
+                        "margin":"4px 0", 
+                        "color": "#475569", 
+                        "font-weight": "600",
+                        "border-radius": "8px"
+                    },
+                    "nav-link-selected": {
+                        "background-color": "#0DA28D", # Turquesa
+                        "color": "white", 
+                        "icon-color": "white"
+                    },
+                }
+            )            
         if seleccion == "📝 Reportar Conducta":
             vista_actual = 'Docente'
         elif seleccion == "📅 Pasar Lista":
@@ -659,14 +656,19 @@ else:
        # Despacho de paneles
         if vista_actual in ['Director', 'Directivo']:
             renderizar_panel_directivo(gc, area_usuario)
+            
         elif vista_actual == 'Coordinador':
             renderizar_panel_coordinador(gc, area_usuario)
+            
         elif vista_actual == 'Tutor':
             renderizar_panel_tutor(gc, correo_google, nombre_mostrar)
+            
         elif vista_actual == 'Docente':
             renderizar_panel_docente(gc, correo_google, nombre_mostrar)
+            
         elif vista_actual == 'Asistencia':
             renderizar_panel_asistencia(gc, correo_google, nombre_mostrar)
+            
         elif vista_actual == 'Calificaciones':
             renderizar_panel_calificaciones(gc, correo_google, nombre_mostrar)
             
@@ -728,6 +730,13 @@ else:
                             st.session_state.chat_ayuda.append({"role": "assistant", "content": "⚠️ El asistente no se encuentra disponible temporalmente."})
                     
                     st.rerun()
+
+        st.sidebar.markdown("---")
+        with st.sidebar.expander("⚙️ Opciones de Sistema"):
+            st.caption("Usa esta opción solo si notas un desfase en los registros recientes.")
+            if st.button("🔄 Sincronizar Datos", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
                     
     except Exception as e:
         st.error("🚨 Ocurrió un error al cargar los permisos del panel.")

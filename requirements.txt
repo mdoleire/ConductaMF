@@ -7,4 +7,5 @@ requests
 google-generativeai
 sqlalchemy
 psycopg2-binary
+streamlit-option-menu
 

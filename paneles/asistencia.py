@@ -212,9 +212,11 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     dias_semana_clase = sum([v_lun, v_mar, v_mie, v_jue, v_vie])
     horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
 
-    # =================================================================
-    # DETECCIÓN DE PERIODO Y LÍMITES
-    # =================================================================
+    # ========================================================
+    # 🛡️ LÓGICA DE DETECCIÓN AUTOMÁTICA DE PERIODO
+    # ========================================================
+    st.markdown("---")
+    
     nivel_key = "Secundaria" if "secundaria" in nivel_elegido.lower() else "Preparatoria"
     periodos_nivel = PERIODOS_LECTIVOS.get(nivel_key, [])
     
@@ -222,23 +224,19 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     idx_periodo = 0
     fecha_evaluacion = hoy_cdmx.date()
 
-    for i, p in enumerate(periodos_nivel):
-        inicio = datetime.strptime(p["inicio"], "%Y-%m-%d").date()
-        fin = datetime.strptime(p["fin"], "%Y-%m-%d").date()
-        if inicio <= fecha_evaluacion <= fin:
-            periodo_actual_nombre = p["nombre"]
-            idx_periodo = i
-            break
-    else:
-        if periodos_nivel:
-            primero = datetime.strptime(periodos_nivel[0]["inicio"], "%Y-%m-%d").date()
-            if fecha_evaluacion < primero:
-                periodo_actual_nombre = periodos_nivel[0]["nombre"]
-                idx_periodo = 0
-            else:
-                periodo_actual_nombre = periodos_nivel[-1]["nombre"]
-                idx_periodo = len(periodos_nivel) - 1
-
+    # 🛡️ FIX: Lógica anti-huecos (Fines de semana y días festivos)
+    if periodos_nivel:
+        for i, p in enumerate(periodos_nivel):
+            fin_periodo = datetime.strptime(p["fin"], "%Y-%m-%d").date()
+            if fecha_evaluacion <= fin_periodo:
+                periodo_actual_nombre = p["nombre"]
+                idx_periodo = i
+                break
+        else:
+            # Si ya superamos el último día del ciclo escolar entero, nos quedamos en el último periodo
+            periodo_actual_nombre = periodos_nivel[-1]["nombre"]
+            idx_periodo = len(periodos_nivel) - 1
+            
     if "secundaria" in nivel_elegido.lower():
         opciones_asistencia = ["✅ Presente", "🔴 Falta"]
         opciones_hist = ["✅ Presente", "🔴 Falta", "⚪ Sin Clase", ""]
