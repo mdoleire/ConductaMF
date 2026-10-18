@@ -236,7 +236,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             # Si ya superamos el último día del ciclo escolar entero, nos quedamos en el último periodo
             periodo_actual_nombre = periodos_nivel[-1]["nombre"]
             idx_periodo = len(periodos_nivel) - 1
-            
+
     if "secundaria" in nivel_elegido.lower():
         opciones_asistencia = ["✅ Presente", "🔴 Falta"]
         opciones_hist = ["✅ Presente", "🔴 Falta", "⚪ Sin Clase", ""]
@@ -287,12 +287,38 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 peso_fechas[col_f] = 1
 
     # Cálculo exacto de inasistencias acumuladas
-    faltas_dict, retardos_dict, faltas_efectivas_dict, derecho_examen_dict = {}, {}, {}, {}
+    # 3. Inicialización y cálculo de faltas por alumno (RESETEO POR PERIODO)
+    faltas_dict = {}
+    retardos_dict = {}
+    faltas_efectivas_dict = {}
+    derecho_examen_dict = {}
+    
+    # Obtenemos las fechas exactas de inicio y fin del periodo que estamos evaluando
+    inicio_p_actual = datetime.strptime(periodos_nivel[idx_periodo]["inicio"], "%Y-%m-%d").date()
+    fin_p_actual = datetime.strptime(periodos_nivel[idx_periodo]["fin"], "%Y-%m-%d").date()
+
     for al in alumnos:
         if al in df_historial['Alumno'].values:
             fila_al = df_historial[df_historial['Alumno'] == al].iloc[0]
-            f_real = sum(peso_fechas.get(c, 1) for c in columnas_fechas if str(fila_al[c]) == '🔴 Falta')
-            r_real = sum(1 for c in columnas_fechas if str(fila_al[c]) == '🟡 Retardo')
+            
+            f_real = 0
+            r_real = 0
+            
+            # Solo contamos las faltas que hayan ocurrido DENTRO de las fechas de este periodo
+            for col_fecha in columnas_fechas:
+                try:
+                    fecha_limpia = col_fecha.split(" (")[0]
+                    fecha_col_dt = datetime.strptime(fecha_limpia, "%d-%m-%Y").date()
+                    
+                    if inicio_p_actual <= fecha_col_dt <= fin_p_actual:
+                        estatus_celda = str(fila_al[col_fecha])
+                        if estatus_celda == '🔴 Falta':
+                            f_real += 1
+                        elif estatus_celda == '🟡 Retardo':
+                            r_real += 1
+                except Exception:
+                    pass # Si hay columnas raras, las ignora
+            
             f_efec = f_real + (r_real // 3)
             
             faltas_dict[al] = f_real
