@@ -19,6 +19,7 @@ import hmac
 import hashlib
 import base64
 import json
+import logging
 
 from config import (
     FILE_ALUMNOS, 
@@ -305,29 +306,42 @@ if "access_token" not in st.session_state:
 parametros_url = st.query_params.to_dict()
 
 # --- 🛡️ MOTOR CRIPTOGRÁFICO: AHORA GUARDA TAMBIÉN EL TOKEN DE CLASSROOM ---
+def _cifrar_xor_hmac(datos_bytes, clave_secreta):
+    flujo_llave = b""
+    contador = 0
+    while len(flujo_llave) < len(datos_bytes):
+        flujo_llave += hashlib.sha256(f"{clave_secreta}:{contador}".encode('utf-8')).digest()
+        contador += 1
+    return bytes(a ^ b for a, b in zip(datos_bytes, flujo_llave[:len(datos_bytes)]))
+
 def empaquetar_token_opaco(email, nombre, token_classroom=""):
-    """Cifra el correo, nombre y el token de Classroom en un hash seguro para la URL"""
+    """Comprime, cifra y firma la sesión con expiración de 12 horas"""
     payload = json.dumps({
         "e": str(email).lower().strip(), 
         "n": str(nombre).strip(),
-        "t": str(token_classroom or "").strip()
+        "t": str(token_classroom or "").strip(),
+        "exp": int(time.time()) + 43200  # 🛡️ Expira en 12 horas
     }).encode('utf-8')
     comprimido = zlib.compress(payload)
-    firma = hmac.new(CLIENT_SECRET.encode('utf-8'), comprimido, hashlib.sha256).digest()[:8]
-    return base64.urlsafe_b64encode(firma + comprimido).decode('utf-8')
+    cifrado = _cifrar_xor_hmac(comprimido, CLIENT_SECRET)
+    firma = hmac.new(CLIENT_SECRET.encode('utf-8'), cifrado, hashlib.sha256).digest()[:12]
+    return base64.urlsafe_b64encode(firma + cifrado).decode('utf-8')
 
 def desempaquetar_token_opaco(token_str):
-    """Descifra el paquete y recupera la sesión completa junto con Classroom"""
+    """Verifica firma, descifra y comprueba que la sesión no haya expirado"""
     try:
         raw_bytes = base64.urlsafe_b64decode(token_str.encode('utf-8'))
-        firma_recibida = raw_bytes[:8]
-        comprimido = raw_bytes[8:]
-        firma_calculada = hmac.new(CLIENT_SECRET.encode('utf-8'), comprimido, hashlib.sha256).digest()[:8]
+        firma_recibida = raw_bytes[:12]
+        cifrado = raw_bytes[12:]
+        firma_calculada = hmac.new(CLIENT_SECRET.encode('utf-8'), cifrado, hashlib.sha256).digest()[:12]
         
         if not hmac.compare_digest(firma_recibida, firma_calculada):
             return None, None, None
             
+        comprimido = _cifrar_xor_hmac(cifrado, CLIENT_SECRET)
         datos = json.loads(zlib.decompress(comprimido).decode('utf-8'))
+        if int(time.time()) > datos.get("exp", 0):
+            return None, None, None
         return datos.get("e"), datos.get("n"), datos.get("t")
     except Exception:
         return None, None, None
@@ -407,12 +421,12 @@ if not st.session_state.get("auth_email"):
     def firmar_estado(texto):
         return hmac.new(CLIENT_SECRET.encode('utf-8'), str(texto).encode('utf-8'), hashlib.sha256).hexdigest()
 
-        # Generamos el state firmado con la marca de tiempo actual
-        ahora_ts = str(int(time.time()))
-        state_token = f"{ahora_ts}:{firmar_estado(ahora_ts)}"
+    # Generamos el state firmado con la marca de tiempo actual
+    ahora_ts = str(int(time.time()))
+    state_token = f"{ahora_ts}:{firmar_estado(ahora_ts)}"
 
-        if "oauth_state" not in st.session_state:
-            st.session_state["oauth_state"] = state_token
+    if "oauth_state" not in st.session_state:
+        st.session_state["oauth_state"] = state_token
 
     params = {
         "client_id": CLIENT_ID,
@@ -720,7 +734,7 @@ else:
                             """
                             
                             modelo = genai.GenerativeModel(
-                                model_name='gemini-3.6-flash',
+                                model_name='gemini-1.5-flash',
                                 system_instruction=instrucciones
                             )
                             
@@ -740,4 +754,4 @@ else:
                     
     except Exception as e:
         st.error("🚨 Ocurrió un error al cargar los permisos del panel.")
-        st.caption(f"Detalle técnico: {e}")
+        logging.error(e)

@@ -425,6 +425,9 @@ def renderizar_panel_calificaciones(gc, usuario, nombre_prof):
                             # 🛡️ FILTRO ANTI-LABORATORIO
                             es_materia_lab = "lab" in materia_sel.lower()
                             es_tarea_lab = "lab" in rubro_final.lower() or "lab" in nom_t.lower()
+                            # 🎯 ESCRIBE AQUÍ EL NOMBRE EXACTO (o parte del nombre) de la actividad que SÍ quieres sincronizar:
+                            ACTIVIDADES_EXCEPTUADAS = ["Laboratorio"] 
+                            es_excepcion = any(exc.lower() in nom_t.lower() for exc in ACTIVIDADES_EXCEPTUADAS)
                             if not es_materia_lab and es_tarea_lab:
                                 continue 
                                 

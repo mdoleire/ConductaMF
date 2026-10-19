@@ -5,6 +5,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import time
+import logging
+
 
 from config import (
     FILE_ASIGNACIONES, 
@@ -204,7 +206,10 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                             time.sleep(1)
                             st.rerun()
                         except Exception as e_h:
+                            conn.rollback()
                             st.error(f"Error al guardar horario: {e_h}")
+                        finally:
+                            conn.close()
     if detener_app:
         return
 
@@ -448,15 +453,23 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             with st.spinner(f"Guardando asistencia del {col_fecha_final}..."):
                 mapeo_asist = dict(zip(df_editado['Alumno'], df_editado['Asistencia']))
                 conn = obtener_conexion_sql()
-                cursor = conn.cursor()
+                try:
+                    cursor = conn.cursor()
+                    
+                    cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_fecha_final))
+                    
+                    # 🛡️ PK SEGURA: Nombramos explícitamente las columnas para no colisionar con asistencia_id
+                    lote_insert = [(nombre_pestana, al, col_fecha_final, mapeo_asist.get(al, "✅ Presente")) for al in alumnos]
+                    cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_insert)
+                    conn.commit()
                 
-                cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_fecha_final))
-                
-                # 🛡️ PK SEGURA: Nombramos explícitamente las columnas para no colisionar con asistencia_id
-                lote_insert = [(nombre_pestana, al, col_fecha_final, mapeo_asist.get(al, "✅ Presente")) for al in alumnos]
-                cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_insert)
-                conn.commit()
-                
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"Error al guardar asistencia: {e}")
+                    logging.error(e)
+                finally:
+                    conn.close()
+
                 leer_datos.clear()
                 st.success("✅ Asistencia guardada correctamente.")
                 time.sleep(1)
@@ -514,25 +527,23 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 
                 if st.button("➕ Añadir a la lista (Prellenar presentes)", type="primary", use_container_width=True, key=f"btn_add_date_quick_{fecha_gestionar}"):
                     conn = obtener_conexion_sql()
-                    cursor = conn.cursor()
-                    
-                    for col_n in columnas_a_crear:
-                        cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_n))
-                        # 🛡️ PK SEGURA: Columnas explícitas
-                        lote_nuevo = [(nombre_pestana, al, col_n, "✅ Presente") for al in alumnos]
-                        cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_nuevo)
+                    try:
+                        cursor = conn.cursor()
                         
-                    conn.commit()
+                        for col_n in columnas_a_crear:
+                            cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_n))
+                            # 🛡️ PK SEGURA: Columnas explícitas
+                            lote_nuevo = [(nombre_pestana, al, col_n, "✅ Presente") for al in alumnos]
+                            cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_nuevo)
+                            
+                        conn.commit()
+                    finally:
+                        conn.close() # 🔒 Cierra la conexión de forma segura
+                        
                     leer_datos.clear()
                     st.success(f"✅ Se añadieron: {', '.join(columnas_a_crear)} a la tabla.")
                     time.sleep(1)
                     st.rerun()
-                    if "Primer" in tipo_bloque_gest:
-                        col_fecha_agregar = f"{fecha_gestionar} (S1)"
-                    elif "Segundo" in tipo_bloque_gest:
-                        col_fecha_agregar = f"{fecha_gestionar} (S2)"
-                    else:
-                        col_fecha_agregar = fecha_gestionar
                 
                 # --- ACCIÓN 2: JUSTIFICAR O DESCARTAR DÍA ---
                 st.markdown("---")
@@ -541,26 +552,32 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 
                 col_g1, col_g2 = st.columns(2)
                 with col_g1:
-                    if st.button("⚪ Marcar Sin Clase", use_container_width=True, key="btn_just_sin_clase"):
-                        motivo_final = f"⚪ Sin Clase ({motivo.strip()})" if motivo.strip() else "⚪ Sin Clase"
-                        conn = obtener_conexion_sql()
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, fecha_gestionar))
-                        lote_sin_clase = [(nombre_pestana, al, fecha_gestionar, motivo_final) for al in alumnos]
-                        cursor.executemany("INSERT INTO [asistencia_registros] VALUES (?, ?, ?, ?)", lote_sin_clase)
-                        conn.commit()
-                        leer_datos.clear()
-                        st.success(f"✅ Fecha {fecha_gestionar} registrada como sin clase.")
-                        time.sleep(1)
-                        st.rerun()
+                 if st.button("⚪ Marcar Sin Clase", use_container_width=True, key="btn_just_sin_clase"):
+                     motivo_final = f"⚪ Sin Clase ({motivo.strip()})" if motivo.strip() else "⚪ Sin Clase"
+                     conn = obtener_conexion_sql()
+                     try:
+                         cursor = conn.cursor()
+                         cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, fecha_gestionar))
+                         lote_sin_clase = [(nombre_pestana, al, fecha_gestionar, motivo_final) for al in alumnos]
+                         cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_sin_clase)
+                         conn.commit()
+                     finally:
+                         conn.close()
+                     leer_datos.clear()
+                     st.success(f"✅ Fecha {fecha_gestionar} registrada como sin clase.")
+                     time.sleep(1)
+                     st.rerun()
                 with col_g2:
                     if st.button("🗑️ Descartar día", use_container_width=True, key="btn_descartar_fecha"):
                         conn = obtener_conexion_sql()
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, fecha_gestionar))
-                        lote_descarte = [(nombre_pestana, al, fecha_gestionar, "⚪ Descartado") for al in alumnos]
-                        cursor.executemany("INSERT INTO [asistencia_registros] VALUES (?, ?, ?, ?)", lote_descarte)
-                        conn.commit()
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, fecha_gestionar))
+                            lote_descarte = [(nombre_pestana, al, fecha_gestionar, "⚪ Descartado") for al in alumnos]
+                            cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_descarte)
+                            conn.commit()
+                        finally:
+                            conn.close()
                         leer_datos.clear()
                         st.success(f"✅ Fecha {fecha_gestionar} descartada del calendario.")
                         time.sleep(1)
@@ -607,6 +624,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             if st.button("💾 Guardar Cambios Históricos", type="primary", use_container_width=True):
                 with st.spinner("Actualizando en Supabase..."):
                     conn = obtener_conexion_sql()
+                try:
                     cursor = conn.cursor()
                     cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ?", (nombre_pestana,))
                     
@@ -621,11 +639,13 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                     # 🛡️ PK SEGURA: Columnas explícitas
                     cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_hist)
                     conn.commit()
-                    
-                    leer_datos.clear()
-                    st.success("✅ Cambios históricos guardados correctamente.")
-                    time.sleep(1)
-                    st.rerun()
+                finally:
+                    conn.close() # 🔒 Cierra la conexión garantizado, pase lo que pase
+                
+                leer_datos.clear()
+                st.success("✅ Cambios históricos guardados correctamente.")
+                time.sleep(1)
+                st.rerun()
                     
         with c_h2:
             # 🛡️ LIMPIEZA DE EMOJIS PARA EXCEL EN ASISTENCIA

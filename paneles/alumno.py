@@ -142,7 +142,7 @@ def renderizar_panel_alumno(gc, correo_alumno):
                 a."Nombre_Actividad", 
                 a."Rubro", 
                 a."Puntos_Max",
-                COALESCE(p."Porcentaje", 0) as "Porcentaje"
+                COALESCE(CAST(NULLIF(TRIM(CAST(p."Porcentaje" AS TEXT)), '') AS FLOAT), 0) as "Porcentaje"
             FROM "calif_notas" n
             JOIN "calif_actividades" a ON n."ID_Actividad" = a."ID_Actividad"
             LEFT JOIN "calif_ponderaciones" p ON (n."Clase" = p."Clase" AND a."Periodo" = p."Periodo" AND a."Rubro" = p."Rubro")
@@ -158,19 +158,18 @@ def renderizar_panel_alumno(gc, correo_alumno):
             promedios_materias = []
             tarjetas_html = []
             
-            # 2. 🧮 CALCULAR EL PROMEDIO DE CADA MATERIA (Proporcional)
+            # 2. 🧮 CALCULAR EL PROMEDIO DE CADA MATERIA (Proporcional y tolerante a texto)
             for clase_nombre, df_materia in df_mis_califs.groupby("Clase"):
-                materia_limpia = clase_nombre.split(" - ")[0].strip()
+                materia_limpia = str(clase_nombre).split(" - ")[0].strip()
                 
                 desglose_rubros = {}
                 pesos_rubros = {}
                 
-                # Agrupamos las notas por categoría
                 for _, r in df_materia.iterrows():
                     rubro = str(r["Rubro"])
-                    pct = float(r["Porcentaje"])
-                    nota = float(r["Nota"])
-                    p_max = float(r["Puntos_Max"] or 100.0)
+                    pct = float(pd.to_numeric(r["Porcentaje"], errors="coerce") or 0.0)
+                    nota = float(pd.to_numeric(r["Nota"], errors="coerce") or 0.0)
+                    p_max = float(pd.to_numeric(r["Puntos_Max"], errors="coerce") or 100.0)
                     nota_100 = (nota / p_max) * 100.0 if p_max > 0 else 0.0
                     
                     if rubro not in desglose_rubros:

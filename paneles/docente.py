@@ -442,9 +442,6 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                 st.error(f"🚨 Error crítico al intentar guardar en Sheets: {e}")
 
     # =================================================================
-    # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES
-    # =================================================================
-    # =================================================================
     # VISTA 2: EDICIÓN Y ELIMINACIÓN DE REPORTES (100% SUPABASE SQL)
     # =================================================================
     with tab_editar:
@@ -478,36 +475,52 @@ def renderizar_panel_docente(gc, usuario, nombre_prof):
                     id_incidencia = dicc_reportes[reporte_sel]
                     fila_seleccionada = df_edit[df_edit['incidencia_id'] == id_incidencia].iloc[0]
                     
+                    import html
                     obs_actual = str(fila_seleccionada.get('Observaciones', ''))
+                    al_seguro = html.escape(str(fila_seleccionada['Alumno']))
+                    falta_segura = html.escape(str(fila_seleccionada['Falta']))
                     
-                    st.markdown(f"**Alumno:** {fila_seleccionada['Alumno']} <br> **Falta:** {fila_seleccionada['Falta']}", unsafe_allow_html=True)
+                    st.markdown(f"**Alumno:** {al_seguro} <br> **Falta:** {falta_segura}", unsafe_allow_html=True)
                     
                     nueva_obs = st.text_area("Observaciones / Detalles:", value=obs_actual, key="new_obs_sql")
                     
                     c_btn1, c_btn2 = st.columns(2)
                     
-                    # --- BOTÓN DE ACTUALIZAR ---
                     if c_btn1.button("💾 Actualizar Observación", type="primary", use_container_width=True):
+                        obs_limpia = str(nueva_obs).strip()
+                        if obs_limpia.startswith(("=", "+", "-", "@")):
+                            obs_limpia = "'" + obs_limpia
                         with st.spinner("Actualizando en Supabase..."):
                             with engine.begin() as conn:
-                                conn.execute(
-                                    text('UPDATE "conducta_registros" SET "Observaciones" = :obs WHERE "incidencia_id" = :id'),
-                                    {"obs": nueva_obs, "id": int(id_incidencia)}
-                                )
-                            leer_todos_los_registros.clear() # Limpiar caché de lectura
+                                if es_superusuario:
+                                    conn.execute(
+                                        text('UPDATE "conducta_registros" SET "Observaciones" = :obs WHERE "incidencia_id" = :id'),
+                                        {"obs": obs_limpia, "id": int(id_incidencia)}
+                                    )
+                                else:
+                                    conn.execute(
+                                        text('UPDATE "conducta_registros" SET "Observaciones" = :obs WHERE "incidencia_id" = :id AND LOWER(TRIM("Profesor")) = :prof'),
+                                        {"obs": obs_limpia, "id": int(id_incidencia), "prof": nombre_prof.lower().strip()}
+                                    )
+                            leer_todos_los_registros.clear()
                             st.success("✅ Observación actualizada correctamente.")
                             time.sleep(1)
                             st.rerun()
                             
-                    # --- BOTÓN DE BORRAR ---
                     if c_btn2.button("🗑️ Eliminar Reporte", type="secondary", use_container_width=True):
                         with st.spinner("Eliminando de Supabase..."):
                             with engine.begin() as conn:
-                                conn.execute(
-                                    text('DELETE FROM "conducta_registros" WHERE "incidencia_id" = :id'),
-                                    {"id": int(id_incidencia)}
-                                )
-                            leer_todos_los_registros.clear() # Limpiar caché de lectura
+                                if es_superusuario:
+                                    conn.execute(
+                                        text('DELETE FROM "conducta_registros" WHERE "incidencia_id" = :id'),
+                                        {"id": int(id_incidencia)}
+                                    )
+                                else:
+                                    conn.execute(
+                                        text('DELETE FROM "conducta_registros" WHERE "incidencia_id" = :id AND LOWER(TRIM("Profesor")) = :prof'),
+                                        {"id": int(id_incidencia), "prof": nombre_prof.lower().strip()}
+                                    )
+                            leer_todos_los_registros.clear()
                             st.success("✅ Reporte eliminado permanentemente.")
                             time.sleep(1)
                             st.rerun()

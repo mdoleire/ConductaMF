@@ -16,7 +16,8 @@ from database import (
     leer_todos_los_registros, 
     obtener_lista_alumnos, 
     leer_todas_las_asignaciones,
-    compilar_asistencias_grupo_tutor
+    compilar_asistencias_grupo_tutor,
+    sanitizar_para_csv
 )
 from calculadora import format_calif, calcular_calificacion_progresiva
 
@@ -150,6 +151,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             for col in df_export_mes.columns:
                 df_export_mes[col] = df_export_mes[col].replace(remplazos_excel_tutor)
 
+            df_export_mes = sanitizar_para_csv(df_export_mes)
             csv_data = df_export_mes.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 "📥 Descargar Reporte Grupal (CSV)",
@@ -274,6 +276,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             for col in df_export_alumno.columns:
                 df_export_alumno[col] = df_export_alumno[col].replace(remplazos_excel_tutor)
 
+            df_export_alumno = sanitizar_para_csv(df_export_alumno)
             st.download_button(
                 "📥 Descargar Expediente (CSV)",
                 data=df_export_alumno.to_csv(index=False).encode('utf-8-sig'),

@@ -6,7 +6,7 @@ import html
 import logging
 from datetime import datetime
 from sqlalchemy import create_engine, text
-from sqlalchemy.pool import NullPool  # 🛡️ REQUERIDO POR SUPABASE CONNECTION POOLER
+from sqlalchemy.pool import NullPool
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SeguridadMF")
@@ -24,7 +24,7 @@ def obtener_engine_sql():
     )
     
     if not url_db:
-        st.error("🚨 ERROR: No se encontró 'DATABASE_URL' en los secretos.")
+        st.error("🚨 ERROR: No se encontró la configuración de conexión en los secretos.")
         st.stop()
         
     if url_db.startswith("postgres://"):
@@ -32,7 +32,6 @@ def obtener_engine_sql():
     elif url_db.startswith("postgresql://") and not url_db.startswith("postgresql+psycopg2://"):
         url_db = url_db.replace("postgresql://", "postgresql+psycopg2://", 1)
         
-    # 🛡️ FIX DEFINITIVO SUPABASE: Usamos NullPool para que el Pooler de Supabase no aborte las consultas
     return create_engine(
         url_db, 
         poolclass=NullPool,
@@ -64,7 +63,7 @@ def resolver_nombre_tabla(nombre_archivo, nombre_pestana=None):
     
     candidato = str(nombre_archivo).strip()
     return candidato if candidato in TABLAS_PERMITIDAS else "conducta_registros"
-    
+
 # =================================================================
 # 2. PUENTE DE COMPATIBILIDAD ASISTENCIA (SQLITE ➔ SUPABASE)
 # =================================================================
@@ -119,7 +118,7 @@ class MockWorksheet:
             logger.error(f"Error en col_values: {e}")
             return []
             
-    def append_rows(self, rows):
+    def append_rows(self, rows):        
         try:
             df_actual = pd.read_sql(f'SELECT * FROM "{self.table_name}" LIMIT 1', self.engine)
             cols = [c for c in df_actual.columns if not c.endswith('_id')]
@@ -137,6 +136,9 @@ class MockWorksheet:
         except Exception as e:
             logger.error(f"Error en append_rows: {e}")
             return False
+
+    def append_row(self, row):
+        return self.append_rows([row])
 
     def get_all_values(self):
         try:
@@ -167,6 +169,9 @@ class MockWorksheet:
             return []
 
     def update_cell_seguro(self, row_idx, val, profesor_solicitante, es_admin=False):
+        if not es_admin and not str(profesor_solicitante).strip():
+            logger.warning("Intento de update_cell_seguro sin identificar profesor solicitante.")
+            return False
         try:
             vals = self.get_all_values()
             if len(vals) >= row_idx:
@@ -198,6 +203,9 @@ class MockWorksheet:
             return False
 
     def delete_rows_seguro(self, row_idx, profesor_solicitante, es_admin=False):
+        if not es_admin and not str(profesor_solicitante).strip():
+            logger.warning("Intento de delete_rows_seguro sin identificar profesor solicitante.")
+            return False
         try:
             vals = self.get_all_values()
             if len(vals) >= row_idx:
@@ -228,14 +236,16 @@ class MockWorksheet:
             logger.error(f"Violación o error en delete_rows_seguro: {e}")
             return False
 
-    # Compatibilidad hacia atrás si un archivo llama a los métodos sin _seguro
+    # 🛡️ BLOQUEO DE MÉTODOS HEREDADOS INSEGUROS (Previene escalada de privilegios)
     def update_cell(self, row_idx, col_idx, val):
-        return self.update_cell_seguro(row_idx, val, profesor_solicitante="", es_admin=True)
+        logger.warning("Llamada insegura a update_cell bloqueada por política anti-IDOR.")
+        return False
 
     def delete_rows(self, row_idx):
-        return self.delete_rows_seguro(row_idx, profesor_solicitante="", es_admin=True)
+        logger.warning("Llamada insegura a delete_rows bloqueada por política anti-IDOR.")
+        return False
 
-    # 🛡️ PROHIBICIÓN ESTRICTA DE if_exists='replace'
+    # 🛡️ PROTECCIÓN ESTRICTA CONTRA BORRADO MASIVO DE TABLAS CRÍTICAS
     def update(self, range_name=None, values=None, **kwargs):
         matriz = values if values is not None else range_name
         if not matriz or len(matriz) < 2:
@@ -246,7 +256,7 @@ class MockWorksheet:
         df_matriz = pd.DataFrame(filas, columns=headers)
         
         with self.engine.begin() as conn:
-            if "asistencia" in self.table_name.lower():
+            if "asistencia" in self.table_name.lower() and self.table_name != "asistencia_config":
                 if 'Alumno' in df_matriz.columns:
                     clase_actual = self.title
                     cols_fechas = [c for c in df_matriz.columns if c != 'Alumno']
@@ -258,6 +268,10 @@ class MockWorksheet:
                     df_melt[['Clase', 'Alumno', 'Fecha', 'Estatus']].to_sql('asistencia_registros', conn, if_exists='append', index=False)
                     return True
             else:
+                tablas_reemplazables = {"asistencia_config", "calif_ponderaciones", "calif_actividades"}
+                if self.table_name not in tablas_reemplazables:
+                    logger.error(f"Intento bloqueado de sobrescribir tabla crítica completa: {self.table_name}")
+                    return False
                 conn.execute(text(f'DELETE FROM "{self.table_name}"'))
                 df_matriz.to_sql(self.table_name, conn, if_exists='append', index=False)
                 return True
@@ -311,9 +325,6 @@ def conectar_gsheets():
 # =================================================================
 # 4. CONSULTAS DE LECTURA INSTANTÁNEA EN SUPABASE (POSTGRESQL)
 # =================================================================
-# =================================================================
-# CONSULTAS DE LECTURA (CON VISIBILIDAD DE ERRORES REALES)
-# =================================================================
 @st.cache_data(ttl=60)
 def leer_datos(_client_or_conn, nombre_tabla, nombre_pestana=None):
     engine = obtener_engine_sql()
@@ -332,16 +343,15 @@ def leer_datos(_client_or_conn, nombre_tabla, nombre_pestana=None):
         df = pd.read_sql(f'SELECT * FROM "{tabla_real}"', engine)
         df.columns = df.columns.str.strip()
         
-        # Normalizamos nombres de columnas para que coincidan siempre en mayúsculas/minúsculas
         if tabla_real == "usuarios":
-            for c in df.columns:
-                if c.lower() in ["usuario", "email", "correo"]:
-                    df.rename(columns={c: "Usuario"}, inplace=True)
+            renombres = {c: "Usuario" for c in df.columns if c.lower() in ["usuario", "email", "correo"]}
+            if renombres:
+                df = df.rename(columns=renombres)
                     
-        return df
+        return df.copy()
     except Exception as e:
-        # 🔍 Revelamos el error real en pantalla si la consulta falla
-        st.error(f"🚨 Error leyendo la tabla '{tabla_real}' en Supabase: {e}")
+        logger.error(f"Error interno leyendo '{tabla_real}' en Supabase: {e}")
+        st.error("🚨 No se pudo cargar la información en este momento. Por favor recarga la página.")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
@@ -352,7 +362,7 @@ def leer_todos_los_registros(_client_or_conn):
         df.columns = df.columns.str.strip()
         if 'Grupo' in df.columns:
             df['Grado'] = df['Grupo'].astype(str).str.extract(r'(\d+)')[0].fillna('N/A')
-        return df
+        return df.copy()
     except Exception as e:
         logger.error(f"Error seguro en leer_todos_los_registros: {e}")
         return pd.DataFrame()
@@ -364,22 +374,25 @@ def leer_todas_las_asignaciones(_client_or_conn, nombre_archivo=None):
         df = pd.read_sql('SELECT * FROM "asignaciones"', engine)
         df.columns = df.columns.str.strip()
         
-        # Mapeo universal de columnas
+        renombres = {}
         for col in df.columns:
             col_limpia = str(col).lower().replace(" ", "_").replace("’", "").replace("'", "").strip()
             if col_limpia in ["usuario_profesor", "usuario_prof", "profesor", "usuario", "correo"]:
-                df.rename(columns={col: "Usuario_Profesor"}, inplace=True)
+                renombres[col] = "Usuario_Profesor"
             elif col_limpia in ["materia", "asignatura", "clase"]:
-                df.rename(columns={col: "Materia"}, inplace=True)
+                renombres[col] = "Materia"
             elif col_limpia in ["grupo", "salon", "seccion"]:
-                df.rename(columns={col: "Grupo"}, inplace=True)
+                renombres[col] = "Grupo"
             elif col_limpia in ["nivel", "etapa"]:
-                df.rename(columns={col: "Nivel"}, inplace=True)
+                renombres[col] = "Nivel"
             elif col_limpia in ["area", "departamento"]:
-                df.rename(columns={col: "Area"}, inplace=True)
-        return df
+                renombres[col] = "Area"
+        if renombres:
+            df = df.rename(columns=renombres)
+        return df.copy()
     except Exception as e:
-        st.error(f"🚨 Error leyendo 'asignaciones' en Supabase: {e}")
+        logger.error(f"Error interno leyendo 'asignaciones' en Supabase: {e}")
+        st.error("🚨 Error al cargar las asignaciones académicas. Intenta nuevamente.")
         return pd.DataFrame()
 
 def obtener_lista_alumnos(client_or_conn, archivo, grupo):
@@ -411,17 +424,19 @@ def obtener_dataframe_alumnos(client_or_conn, archivo, grupo):
         if df.empty: return None
         df.columns = df.columns.str.strip()
         
-        # Saneamiento de columnas basura y renombres
-        df = df.drop(columns=[c for c in ["marcelasen@hotmail.com", "Columna_8"] if c in df.columns], errors='ignore')
-        if "correo 2" in df.columns: df.rename(columns={"correo 2": "correo_secundario"}, inplace=True)
-        if "Área" in df.columns: df.rename(columns={"Área": "area_academica"}, inplace=True)
+        # 🛡️ Saneamiento genérico de columnas basura sin hardcodear correos personales
+        cols_basura = [c for c in df.columns if "@" in str(c) or str(c).startswith("Columna_")]
+        df = df.drop(columns=cols_basura, errors='ignore')
+        
+        if "correo 2" in df.columns: df = df.rename(columns={"correo 2": "correo_secundario"})
+        if "Área" in df.columns: df = df.rename(columns={"Área": "area_academica"})
         
         if 'Nombre Completo' not in df.columns:
             p = df.iloc[:, 1].fillna('').astype(str)
             m = df.iloc[:, 2].fillna('').astype(str)
             n = df.iloc[:, 3].fillna('').astype(str)
             df['Nombre Completo'] = (p + " " + m + " " + n).str.replace(r'\s+', ' ', regex=True).str.strip()
-        return df
+        return df.copy()
     except Exception:
         return None
 
@@ -430,7 +445,6 @@ def obtener_dataframe_alumnos(client_or_conn, archivo, grupo):
 # =================================================================
 @st.cache_data(ttl=60)
 def compilar_asistencias_grupo_tutor(_client_or_conn, grupo_sel):
-    """Consulta instantánea en SQL de todas las asistencias de un grupo de tutoría"""
     engine = obtener_engine_sql()
     try:
         sufijo = f"% - {str(grupo_sel).strip()}"
@@ -447,7 +461,7 @@ def compilar_asistencias_grupo_tutor(_client_or_conn, grupo_sel):
         df['Observaciones'] = ''
         df['Fecha_DT'] = pd.to_datetime(df['Fecha'], format='%d-%m-%Y', errors='coerce')
         df['Fecha'] = df['Fecha_DT'].dt.strftime("%Y-%m-%d %H:%M:%S")
-        return df[df['Falta'].isin(['🔴 Falta', '🟡 Retardo'])]
+        return df[df['Falta'].isin(['🔴 Falta', '🟡 Retardo'])].copy()
     except Exception as e:
         logger.error(f"Error en compilar_asistencias_grupo_tutor: {e}")
         return pd.DataFrame()
