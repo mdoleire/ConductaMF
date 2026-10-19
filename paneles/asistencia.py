@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 import time
 import logging
 
-
 from config import (
     FILE_ASIGNACIONES, 
     FILE_ALUMNOS, 
@@ -63,13 +62,20 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     dias_espanol = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
     nombre_dia_hoy = dias_espanol.get(dia_num_hoy)
 
-    # 🎛️ MODOS DE VISTA REESTRUCTURADOS (SIN INTERRUPTORES CONFUSOS)
     modo_vista = st.radio(
         "Acción:", 
         ["📝 Pasar Lista del Día", "📊 Vista Histórica del Grupo (Modificar Asistencia)"], 
         horizontal=True
     )
     st.markdown("---")
+    
+    habilitar_historico = st.toggle("🔓 Modificar asistencia de días anteriores (Mostrar todas las materias)")
+
+    if modo_vista == "📝 Pasar Lista del Día" and not habilitar_historico:
+        if dia_num_hoy in [5, 6]:
+            st.warning(f"☕ **Hoy es {nombre_dia_hoy}. No hay clases programadas en fin de semana.**")
+            st.info("💡 Para revisar o modificar inasistencias de días anteriores, activa el interruptor de arriba.")
+            return  
 
     df_asig = leer_todas_las_asignaciones(gc, FILE_ASIGNACIONES)
     if df_asig.empty or 'Usuario_Profesor' not in df_asig.columns:
@@ -103,10 +109,30 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     except Exception:
         df_config = pd.DataFrame(columns=["Clase", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes"])
 
+    materias_filtradas = mis_asig.copy()
+
+    if modo_vista == "📝 Pasar Lista del Día" and not habilitar_historico and not es_superusuario:
+        if not df_config.empty and 'Clase' in df_config.columns and nombre_dia_hoy in df_config.columns:
+            clases_hoy = df_config[pd.to_numeric(df_config[nombre_dia_hoy], errors='coerce').fillna(0) > 0]['Clase'].tolist()
+            materias_hoy = []
+            for _, r in mis_asig.iterrows():
+                mat_base = obtener_materia_teorica(r['Materia'])
+                tag = f"{mat_base} - {r['Grupo']}"
+                
+                if tag in clases_hoy or tag not in df_config['Clase'].values:
+                    materias_hoy.append(r['Materia'])
+            
+            if materias_hoy:
+                materias_filtradas = mis_asig[mis_asig['Materia'].isin(materias_hoy)]
+            else:
+                st.success(f"☕ **Hoy {nombre_dia_hoy} no tienes ninguna clase asignada en tu horario.**")
+                st.info("💡 Activa el interruptor arriba para modificar días anteriores.")
+                return
+
     c1, c2, c3 = st.columns([3, 3, 2])
-    materia_seleccionada = c1.selectbox("Materia:", mis_asig['Materia'].unique(), key="asist_mat")
+    materia_seleccionada = c1.selectbox("Materia:", materias_filtradas['Materia'].unique(), key="asist_mat")
     materia = obtener_materia_teorica(materia_seleccionada)
-    grupo = c2.selectbox("Grupo:", mis_asig[mis_asig['Materia'] == materia_seleccionada]['Grupo'].unique(), key="asist_grup")
+    grupo = c2.selectbox("Grupo:", materias_filtradas[materias_filtradas['Materia'] == materia_seleccionada]['Grupo'].unique(), key="asist_grup")
     
     with c3:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
@@ -120,7 +146,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         df_alumnos_crudo = obtener_dataframe_alumnos(gc, FILE_ALUMNOS, grupo_limpio)
         
         if df_alumnos_crudo is not None and not df_alumnos_crudo.empty:
-            # 🛡️ SANEAMIENTO: Usamos area_academica
             col_area = 'area_academica' if 'area_academica' in df_alumnos_crudo.columns else ('Área' if 'Área' in df_alumnos_crudo.columns else None)
             if col_area:
                 texto_busqueda = f"{materia} {grupo}".upper()
@@ -168,7 +193,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         mostrar_formulario = st.session_state.modo_edicion_horario
         detener_app = False
 
-    # Formulario para editar horario de la materia
     if mostrar_formulario:
         with st.container():
             if not config_actual.empty:
@@ -213,7 +237,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if detener_app:
         return
 
-    # Total de horas a la semana (frecuencia real)
     dias_semana_clase = sum([v_lun, v_mar, v_mie, v_jue, v_vie])
     horario_clase = {0: v_lun, 1: v_mar, 2: v_mie, 3: v_jue, 4: v_vie, 5: 0, 6: 0}
 
@@ -229,7 +252,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     idx_periodo = 0
     fecha_evaluacion = hoy_cdmx.date()
 
-    # 🛡️ FIX: Lógica anti-huecos (Fines de semana y días festivos)
     if periodos_nivel:
         for i, p in enumerate(periodos_nivel):
             fin_periodo = datetime.strptime(p["fin"], "%Y-%m-%d").date()
@@ -238,7 +260,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 idx_periodo = i
                 break
         else:
-            # Si ya superamos el último día del ciclo escolar entero, nos quedamos en el último periodo
             periodo_actual_nombre = periodos_nivel[-1]["nombre"]
             idx_periodo = len(periodos_nivel) - 1
 
@@ -263,23 +284,19 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if df_historial.empty or 'Alumno' not in df_historial.columns:
         df_historial = pd.DataFrame({"Alumno": alumnos})
 
-    # ✅ FIX: Función para ordenar las fechas cronológicamente de forma estricta
     def clave_orden_fecha(col_nombre):
         try:
             f_limpia = col_nombre.split(" (")[0].strip()
             dt = datetime.strptime(f_limpia, "%d-%m-%Y")
-            # Desempate para clases dobles: S1 va primero (1), S2 va después (2)
             prioridad = 1 if "(S1)" in col_nombre else (2 if "(S2)" in col_nombre else 0)
             return (dt, prioridad)
         except Exception:
             return (datetime.min, 0)
 
-    # Extraemos y ordenamos del día más antiguo al más reciente
     columnas_fechas = [c for c in df_historial.columns if c != 'Alumno']
     columnas_fechas.sort(key=clave_orden_fecha)
     
     peso_fechas = {}
-
     for col_f in columnas_fechas:
         if "(S1)" in col_f or "(S2)" in col_f:
             peso_fechas[col_f] = 1
@@ -291,14 +308,12 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             except Exception:
                 peso_fechas[col_f] = 1
 
-    # Cálculo exacto de inasistencias acumuladas
     # 3. Inicialización y cálculo de faltas por alumno (RESETEO POR PERIODO)
     faltas_dict = {}
     retardos_dict = {}
     faltas_efectivas_dict = {}
     derecho_examen_dict = {}
     
-    # Obtenemos las fechas exactas de inicio y fin del periodo que estamos evaluando
     inicio_p_actual = datetime.strptime(periodos_nivel[idx_periodo]["inicio"], "%Y-%m-%d").date()
     fin_p_actual = datetime.strptime(periodos_nivel[idx_periodo]["fin"], "%Y-%m-%d").date()
 
@@ -309,7 +324,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
             f_real = 0
             r_real = 0
             
-            # Solo contamos las faltas que hayan ocurrido DENTRO de las fechas de este periodo
             for col_fecha in columnas_fechas:
                 try:
                     fecha_limpia = col_fecha.split(" (")[0]
@@ -322,7 +336,7 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                         elif estatus_celda == '🟡 Retardo':
                             r_real += 1
                 except Exception:
-                    pass # Si hay columnas raras, las ignora
+                    pass 
             
             f_efec = f_real + (r_real // 3)
             
@@ -364,7 +378,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
     if modo_vista == "📝 Pasar Lista del Día":
         st.info(f"💡 Frecuencia: **{dias_semana_clase} horas/semana**. Evaluando **{periodo_actual_nombre}** (Límite: **{limite_faltas} faltas** | 3 Retardos = 1 Falta).")
         
-        # Alertas de alumnos en riesgo
         alumnos_sin_derecho = [al for al, est in derecho_examen_dict.items() if est == "❌ SIN DERECHO"]
         alumnos_en_riesgo = [al for al, est in derecho_examen_dict.items() if "RIESGO" in est or "LÍMITE" in est]
         if alumnos_sin_derecho:
@@ -372,27 +385,46 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         if alumnos_en_riesgo:
             st.warning(f"⚠️ **EN RIESGO PREVENTIVO:** {', '.join(alumnos_en_riesgo)}.")
 
-        # Fechas seleccionables: Hoy + Días pendientes de pase de lista
         fechas_disponibles_pase = []
         etiquetas_pase = {}
         
+        # 1. SIEMPRE AGREGAMOS 'HOY' SI LE TOCA CLASE
         if horario_clase.get(dia_num_hoy, 0) > 0:
             f_hoy_str = hoy_cdmx.strftime("%d-%m-%Y")
             fechas_disponibles_pase.append(f_hoy_str)
             etiquetas_pase[f_hoy_str] = f"Hoy ({nombre_dia_hoy}) {f_hoy_str}"
             
-        for f_p in reversed(fechas_pendientes):
-            if f_p not in fechas_disponibles_pase:
-                fechas_disponibles_pase.append(f_p)
-                d_p_num = datetime.strptime(f_p, "%d-%m-%Y").weekday()
-                etiquetas_pase[f_p] = f"⚠️ Pendiente: {dias_espanol[d_p_num]} {f_p}"
+        # 2. ¿EL MAESTRO ENCENDIÓ EL INTERRUPTOR HISTÓRICO?
+        if habilitar_historico:
+            for i in range(1, 45):
+                fecha_eval = hoy_cdmx - timedelta(days=i)
+                dia_sem = fecha_eval.weekday()
                 
+                if dia_sem in [5, 6]: continue
+                if dias_semana_clase > 0 and horario_clase.get(dia_sem, 0) == 0: continue
+                
+                f_str = fecha_eval.strftime("%d-%m-%Y")
+                if f_str not in fechas_disponibles_pase:
+                    fechas_disponibles_pase.append(f_str)
+                    etiquetas_pase[f_str] = f"⏳ Histórico: {dias_espanol[dia_sem]} {f_str}"
+        
+        # 3. SI EL INTERRUPTOR ESTÁ APAGADO (Flujo Normal)
+        else:
+            for f_p in reversed(fechas_pendientes):
+                if f_p not in fechas_disponibles_pase:
+                    fechas_disponibles_pase.append(f_p)
+                    d_p_num = datetime.strptime(f_p, "%d-%m-%Y").weekday()
+                    etiquetas_pase[f_p] = f"⚠️ Pendiente: {dias_espanol[d_p_num]} {f_p}"
+                
+        # 4. ¿HAY FECHAS PARA MOSTRAR?
         if not fechas_disponibles_pase:
-            st.success(f"🎉 **Estás al corriente con todas tus clases registradas hasta el día de hoy.**")
-            st.caption("Si deseas revisar o modificar alguna fecha anterior, ingresa arriba a 'Vista Histórica del Grupo'.")
+            if habilitar_historico:
+                st.warning("⚠️ No se encontraron fechas de clase en el historial.")
+            else:
+                st.success(f"🎉 **Estás al corriente con todas tus clases registradas hasta el día de hoy.**")
             return
 
-        fecha_str = st.selectbox("📅 Fecha de clase:", fechas_disponibles_pase, format_func=lambda x: etiquetas_pase[x])
+        fecha_str = st.selectbox("📅 Fecha de clase a registrar/modificar:", fechas_disponibles_pase, format_func=lambda x: etiquetas_pase[x])
         dia_seleccionado = datetime.strptime(fecha_str, "%d-%m-%Y").weekday()
         horas_ese_dia = horario_clase.get(dia_seleccionado, 1)
 
@@ -455,14 +487,11 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 conn = obtener_conexion_sql()
                 try:
                     cursor = conn.cursor()
-                    
                     cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_fecha_final))
                     
-                    # 🛡️ PK SEGURA: Nombramos explícitamente las columnas para no colisionar con asistencia_id
                     lote_insert = [(nombre_pestana, al, col_fecha_final, mapeo_asist.get(al, "✅ Presente")) for al in alumnos]
                     cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_insert)
                     conn.commit()
-                
                 except Exception as e:
                     conn.rollback()
                     st.error(f"Error al guardar asistencia: {e}")
@@ -482,7 +511,6 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
         st.markdown(f"### 📈 Historial y Modificación: {grupo} ({materia})")
         st.caption("Edita cualquier celda directamente en la tabla. Los totales se recalcularán automáticamente.")
         
-        # 🟡 1. DETECCIÓN VISUAL DE DÍAS PENDIENTES Y GESTIÓN RÁPIDA
         if fechas_pendientes:
             st.warning(f"🟡 **Atención: Hay {len(fechas_pendientes)} día(s) en los que debió haber clase y no se ha pasado lista:**\n\n" + 
                        ", ".join([f"`{f}`" for f in fechas_pendientes]))
@@ -491,11 +519,9 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.markdown("##### 📅 Días pendientes en el calendario oficial")
                 fecha_gestionar = st.selectbox("Selecciona la fecha pendiente:", fechas_pendientes, key="f_gest_sel")
                 
-                # Detectamos las horas programadas para ese día específico
                 dia_sem_gest = datetime.strptime(fecha_gestionar, "%d-%m-%Y").weekday()
                 horas_dia_gest = horario_clase.get(dia_sem_gest, 1)
                 
-                # --- ACCIÓN 1: AÑADIR A LA LISTA PARA REGISTRO RÁPIDO ---
                 st.markdown("---")
                 st.markdown("##### 🚀 Opción 1: Pasar lista de ese día (Añadir a la tabla)")
                 
@@ -505,22 +531,15 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                     st.caption("ℹ️ Este día tiene programada **clase doble (2 horas)**:")
                     tipo_bloque_gest = st.radio(
                         "Estructura de la sesión:",
-                        [
-                            "👥 Ambos Módulos Separados (Crear S1 y S2 a la vez)",
-                            "🕒 Bloque Continuo (1 sola columna - Falta cuenta doble)",
-                            "1️⃣ Solo Primer Módulo (Sesión S1)",
-                            "2️⃣ Solo Segundo Módulo (Sesión S2)"
-                        ],
+                        ["👥 Ambos Módulos Separados (Crear S1 y S2 a la vez)", "🕒 Bloque Continuo (1 sola columna - Falta cuenta doble)", "1️⃣ Solo Primer Módulo (Sesión S1)", "2️⃣ Solo Segundo Módulo (Sesión S2)"],
                         key=f"tipo_blq_{fecha_gestionar}"
                     )
                     
                     if "Ambos Módulos" in tipo_bloque_gest:
                         columnas_a_crear = [f"{fecha_gestionar} (S1)", f"{fecha_gestionar} (S2)"]
                         st.info("💡 Se crearán dos columnas contiguas: **S1** y **S2** (cada falta vale 1 hora).")
-                    elif "Primer" in tipo_bloque_gest:
-                        columnas_a_crear = [f"{fecha_gestionar} (S1)"]
-                    elif "Segundo" in tipo_bloque_gest:
-                        columnas_a_crear = [f"{fecha_gestionar} (S2)"]
+                    elif "Primer" in tipo_bloque_gest: columnas_a_crear = [f"{fecha_gestionar} (S1)"]
+                    elif "Segundo" in tipo_bloque_gest: columnas_a_crear = [f"{fecha_gestionar} (S2)"]
                     else:
                         columnas_a_crear = [fecha_gestionar]
                         st.warning("⚠️ En Bloque Continuo, una falta equivaldrá a 2 faltas reglamentarias.")
@@ -529,23 +548,18 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                     conn = obtener_conexion_sql()
                     try:
                         cursor = conn.cursor()
-                        
                         for col_n in columnas_a_crear:
                             cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_n))
-                            # 🛡️ PK SEGURA: Columnas explícitas
                             lote_nuevo = [(nombre_pestana, al, col_n, "✅ Presente") for al in alumnos]
                             cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_nuevo)
-                            
                         conn.commit()
                     finally:
-                        conn.close() # 🔒 Cierra la conexión de forma segura
-                        
+                        conn.close()
                     leer_datos.clear()
                     st.success(f"✅ Se añadieron: {', '.join(columnas_a_crear)} a la tabla.")
                     time.sleep(1)
                     st.rerun()
                 
-                # --- ACCIÓN 2: JUSTIFICAR O DESCARTAR DÍA ---
                 st.markdown("---")
                 st.markdown("##### ⚪ Opción 2: Justificar día sin clase (Auditorio, Festivo, etc.)")
                 motivo = st.text_input("Motivo / Justificación:", placeholder="Ej. Bajaron al auditorio / Suspensión oficial", key="motivo_input_just")
@@ -579,68 +593,124 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                         finally:
                             conn.close()
                         leer_datos.clear()
-                        st.success(f"✅ Fecha {fecha_gestionar} descartada del calendario.")
+                        st.success(f"✅ Fecha {fecha_gestionar} descartada.")
                         time.sleep(1)
                         st.rerun()
 
-        # 2. CONSTRUCCIÓN DE LA TABLA EDITABLE HISTÓRICA
-        if df_historial.empty or len(columnas_fechas) == 0:
-            st.info("💡 Aún no hay asistencias registradas en este salón. Pasa lista en 'Pasar Lista del Día' o usa '➕ Añadir a la lista' arriba.")
+        # 2. 🛡️ SELECTOR DE PERIODO PARA LA TABLA HISTÓRICA
+        nombres_periodos_hist = ["Ver Historial Completo (Todos los periodos)"] + [p['nombre'] for p in periodos_nivel]
+        periodo_hist_sel = st.selectbox("📅 Mostrar datos del:", nombres_periodos_hist, index=idx_periodo + 1)
+        
+        columnas_fechas_filtradas = []
+        if periodo_hist_sel == "Ver Historial Completo (Todos los periodos)":
+            columnas_fechas_filtradas = columnas_fechas
+        else:
+            p_inf = next(p for p in periodos_nivel if p['nombre'] == periodo_hist_sel)
+            inicio_p = datetime.strptime(p_inf['inicio'], "%Y-%m-%d").date()
+            fin_p = datetime.strptime(p_inf['fin'], "%Y-%m-%d").date()
+            
+            for col_f in columnas_fechas:
+                try:
+                    fecha_limpia = col_f.split(" (")[0]
+                    fecha_col_dt = datetime.strptime(fecha_limpia, "%d-%m-%Y").date()
+                    if inicio_p <= fecha_col_dt <= fin_p:
+                        columnas_fechas_filtradas.append(col_f)
+                except:
+                    pass
+
+        if df_historial.empty or len(columnas_fechas_filtradas) == 0:
+            st.info(f"💡 No hay asistencias registradas en la selección actual ({periodo_hist_sel}).")
             return
 
+        # 3. RECALCULAR MÉTRICAS SOLO PARA EL PERIODO SELECCIONADO
+        faltas_hist_dict = {}
+        retardos_hist_dict = {}
+        efectivas_hist_dict = {}
+        derecho_hist_dict = {}
+
+        if periodo_hist_sel == "Ver Historial Completo (Todos los periodos)":
+            limite_hist = 999 
+        else:
+            idx_sel = nombres_periodos_hist.index(periodo_hist_sel) - 1
+            limites_fila = limites_tabla.get(dias_semana_clase, [99, 99, 99, 99, 99])
+            limite_hist = limites_fila[idx_sel] if idx_sel < len(limites_fila) else limites_fila[-1]
+
+        for al in alumnos:
+            if al in df_historial['Alumno'].values:
+                fila_al = df_historial[df_historial['Alumno'] == al].iloc[0]
+                
+                f_real = sum(1 for c in columnas_fechas_filtradas if str(fila_al[c]) == '🔴 Falta')
+                r_real = sum(1 for c in columnas_fechas_filtradas if str(fila_al[c]) == '🟡 Retardo')
+                f_efec = f_real + (r_real // 3)
+                
+                faltas_hist_dict[al] = f_real
+                retardos_hist_dict[al] = r_real
+                efectivas_hist_dict[al] = f_efec
+                
+                if f_efec > limite_hist: derecho_hist_dict[al] = "❌ SIN DERECHO"
+                elif f_efec == limite_hist: derecho_hist_dict[al] = "🚨 LÍMITE ALCANZADO"
+                elif f_efec == (limite_hist - 1) and limite_hist > 1: derecho_hist_dict[al] = "⚠️ EN RIESGO"
+                else: derecho_hist_dict[al] = "✅ SÍ"
+            else:
+                faltas_hist_dict[al], retardos_hist_dict[al], efectivas_hist_dict[al] = 0, 0, 0
+                derecho_hist_dict[al] = "✅ SÍ"
+
         df_mostrar = pd.DataFrame({"Alumno": df_historial["Alumno"]})
-        df_mostrar["Derecho Examen"] = df_mostrar["Alumno"].map(derecho_examen_dict)
-        df_mostrar["Faltas Efectivas"] = df_mostrar["Alumno"].map(faltas_efectivas_dict)
-        df_mostrar["Faltas Reales"] = df_mostrar["Alumno"].map(faltas_dict)
-        df_mostrar["Retardos"] = df_mostrar["Alumno"].map(retardos_dict)
         
-        for col in columnas_fechas:
+        if periodo_hist_sel != "Ver Historial Completo (Todos los periodos)":
+            df_mostrar["Derecho Examen"] = df_mostrar["Alumno"].map(derecho_hist_dict)
+            
+        df_mostrar["Faltas Efectivas"] = df_mostrar["Alumno"].map(efectivas_hist_dict)
+        df_mostrar["Faltas Reales"] = df_mostrar["Alumno"].map(faltas_hist_dict)
+        
+        if "secundaria" not in nivel_elegido.lower():
+            df_mostrar["Retardos"] = df_mostrar["Alumno"].map(retardos_hist_dict)
+            
+        for col in columnas_fechas_filtradas:
             df_mostrar[col] = df_historial[col]
             
         config_cols_hist = {
             "Alumno": st.column_config.TextColumn("Alumno", disabled=True),
             "Derecho Examen": st.column_config.TextColumn("Derecho", disabled=True),
             "Faltas Efectivas": st.column_config.NumberColumn("Efectivas", disabled=True),
-            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True)
+            "Faltas Reales": st.column_config.NumberColumn("Faltas", disabled=True),
+            "Retardos": st.column_config.NumberColumn("Retardos", disabled=True)
         }
-        if "secundaria" in nivel_elegido.lower():
-            config_cols_hist["Retardos"] = None
-        else:
-            config_cols_hist["Retardos"] = st.column_config.NumberColumn("Retardos", disabled=True)
-            
-        for col in columnas_fechas:
+        for col in columnas_fechas_filtradas:
             config_cols_hist[col] = st.column_config.SelectboxColumn(col, options=opciones_hist, required=False)
 
+        st.info("💡 Puedes editar la asistencia de cualquier día directamente en esta tabla. Los totales se recalcularán al guardar.")
         df_editado_hist = st.data_editor(
             df_mostrar,
             column_config=config_cols_hist,
             use_container_width=True,
             hide_index=True,
-            key=f"ed_hist_{materia}_{grupo}"
+            key=f"ed_hist_{materia}_{grupo}_{periodo_hist_sel}"
         )
         
         c_h1, c_h2 = st.columns([1, 1])
         with c_h1:
             if st.button("💾 Guardar Cambios Históricos", type="primary", use_container_width=True):
-                with st.spinner("Actualizando en Supabase..."):
+                with st.spinner("Actualizando base de datos..."):
                     conn = obtener_conexion_sql()
                 try:
                     cursor = conn.cursor()
-                    cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ?", (nombre_pestana,))
+                    
+                    for col_f in columnas_fechas_filtradas:
+                        cursor.execute("DELETE FROM [asistencia_registros] WHERE [Clase] = ? AND [Fecha] = ?", (nombre_pestana, col_f))
                     
                     lote_hist = []
                     for _, r in df_editado_hist.iterrows():
                         al_nom = r['Alumno']
-                        for col_f in columnas_fechas:
+                        for col_f in columnas_fechas_filtradas:
                             val_estatus = str(r.get(col_f, "")).strip()
                             if val_estatus != "":
                                 lote_hist.append((nombre_pestana, al_nom, col_f, val_estatus))
                                 
-                    # 🛡️ PK SEGURA: Columnas explícitas
                     cursor.executemany('INSERT INTO [asistencia_registros] ("Clase", "Alumno", "Fecha", "Estatus") VALUES (?, ?, ?, ?)', lote_hist)
                     conn.commit()
                 finally:
-                    conn.close() # 🔒 Cierra la conexión garantizado, pase lo que pase
+                    conn.close() 
                 
                 leer_datos.clear()
                 st.success("✅ Cambios históricos guardados correctamente.")
@@ -648,28 +718,20 @@ def renderizar_panel_asistencia(gc, usuario, nombre_prof):
                 st.rerun()
                     
         with c_h2:
-            # 🛡️ LIMPIEZA DE EMOJIS PARA EXCEL EN ASISTENCIA
             df_export_asist = df_mostrar.copy()
             remplazos_excel = {
-                "✅ Presente": "Presente",
-                "🔴 Falta": "Falta",
-                "🟡 Retardo": "Retardo",
-                "⚪ Sin Clase": "Sin Clase",
-                "⚪ Descartado": "Descartado",
-                "✅ SÍ": "SÍ",
-                "❌ NO": "NO",
-                "❌ SIN DERECHO": "SIN DERECHO",
-                "🚨 LÍMITE ALCANZADO": "LÍMITE ALCANZADO",
-                "⚠️ EN RIESGO (-1 falta)": "EN RIESGO (-1 falta)"
+                "✅ Presente": "Presente", "🔴 Falta": "Falta", "🟡 Retardo": "Retardo",
+                "⚪ Sin Clase": "Sin Clase", "⚪ Descartado": "Descartado",
+                "✅ SÍ": "SÍ", "❌ NO": "NO", "❌ SIN DERECHO": "SIN DERECHO",
+                "🚨 LÍMITE ALCANZADO": "LÍMITE ALCANZADO", "⚠️ EN RIESGO": "EN RIESGO"
             }
-            # Reemplaza los emojis por texto limpio en todas las columnas
             for col in df_export_asist.columns:
                 df_export_asist[col] = df_export_asist[col].replace(remplazos_excel)
                 
             st.download_button(
                 "📥 Descargar Matriz CSV",
                 df_export_asist.to_csv(index=False).encode('utf-8-sig'),
-                f"Asistencia_{materia}_{grupo}.csv",
+                f"Asistencia_{materia}_{grupo}_{periodo_hist_sel}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
