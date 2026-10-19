@@ -413,9 +413,6 @@ elif not st.session_state.get("auth_email") and "session" in parametros_url:
 # ESCENARIO A: No hay sesión activa
 if not st.session_state.get("auth_email"):
     aplicar_diseno_institucional(compacto=True)
-
-     # ⚠️ MENSAJE PARA LA VERSIÓN DE PRUEBAS (NO OFICIAL)
-    st.info("🧪 Servidor de Pruebas: Esta versión es de evaluación y no altera los registros oficiales del colegio.")
     
     # ✅ FIX: Definimos la función de firma HMAC con la clave secreta del servidor
     def firmar_estado(texto):
@@ -459,9 +456,6 @@ if not st.session_state.get("auth_email"):
 # ESCENARIO B: Sesión autenticada
 else:
     aplicar_diseno_institucional()
-
-    #Mensaje de advertencia para la versión de prueba (NO OFICIAL)!!!!!
-    st.warning("🧪 **AVISO:** Esta es una versión de prueba. Los registros y cambios que se realizan aquí no son oficiales.")
 
     # 1. Guardamos tu identidad original intocable
     correo_real = st.session_state["auth_email"].lower().strip()
@@ -599,9 +593,6 @@ else:
 
         # Barra lateral de navegación
         st.sidebar.title("⚙️ Navegación")
-
-        # ⚠️ Mensaje de advertencia para la versión de prueba!!!!!!!!!!!!
-        st.sidebar.caption("⚠️ *Versión de prueba (Cambios no oficiales)*")
 
         if st.sidebar.button("🔒 Cerrar Sesión", type="secondary"):
             st.session_state.clear()
