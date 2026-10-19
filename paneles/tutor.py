@@ -16,7 +16,8 @@ from database import (
     leer_todos_los_registros, 
     obtener_lista_alumnos, 
     leer_todas_las_asignaciones,
-    compilar_asistencias_grupo_tutor
+    compilar_asistencias_grupo_tutor,
+    sanitizar_para_csv
 )
 from calculadora import format_calif, calcular_calificacion_progresiva
 
@@ -92,7 +93,7 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             df_unificado = df_grupo_conducta.copy()
 
     if df_unificado.empty:
-        df_unificado = pd.DataFrame(columns=['Fecha', 'Alumno', 'Profesor', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados', 'Fecha_DT'])
+        df_unificado = pd.DataFrame(columns=['Fecha', 'Alumno', 'Profesor', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados', 'Fecha_DT', 'Es_Grave'])
 
     # =================================================================
     # MODO 1: RESUMEN MENSUAL GRUPAL
@@ -140,7 +141,18 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
                 height=400
             )
             
-            csv_data = df_mes[cols_mostrar].to_csv(index=False).encode('utf-8-sig')
+            df_export_mes = df_mes[cols_mostrar].copy()
+            remplazos_excel_tutor = {
+                "🔴 Falta": "Falta",
+                "🟡 Retardo": "Retardo",
+                "✅ Presente": "Presente",
+                "⚪ Sin Clase": "Sin Clase"
+            }
+            for col in df_export_mes.columns:
+                df_export_mes[col] = df_export_mes[col].replace(remplazos_excel_tutor)
+
+            df_export_mes = sanitizar_para_csv(df_export_mes)
+            csv_data = df_export_mes.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 "📥 Descargar Reporte Grupal (CSV)",
                 data=csv_data,
@@ -227,11 +239,9 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             boleta_integrada = []
             
             for materia_nombre, df_materia in df_filtrado.groupby('Materia'):
-                # A) Cálculos de Conducta (Excluimos los registros de asistencia)
                 df_cond_mat = df_materia[df_materia['Categoría'] != 'Asistencia']
                 calif_mat, desc_mat = calcular_calificacion_progresiva(df_cond_mat)
                 
-                # B) Cálculos de Asistencia (Dentro de la misma materia)
                 f_mat = len(df_materia[df_materia['Falta'] == '🔴 Falta'])
                 r_mat = len(df_materia[df_materia['Falta'] == '🟡 Retardo'])
                 
@@ -250,7 +260,6 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             st.markdown("---")
             st.markdown("### 📄 Expediente Detallado (Bitácora)")
             
-            # 🛡️ FIX DEL ERROR: Declaramos la variable de las columnas a mostrar
             cols_mostrar = ['Fecha', 'Materia', 'Categoría', 'Falta', 'Observaciones', 'Puntos_Descontados']
             
             st.dataframe(
@@ -262,18 +271,15 @@ def renderizar_panel_tutor(gc, usuario, nombre_prof):
             
             df_export_alumno = df_filtrado[cols_mostrar].copy()
             remplazos_excel_tutor = {
-                "🔴 Falta": "Falta",
-                "🟡 Retardo": "Retardo",
-                "✅ Presente": "Presente",
-                "⚪ Sin Clase": "Sin Clase"
+                "🔴 Falta": "Falta", "🟡 Retardo": "Retardo", "✅ Presente": "Presente", "⚪ Sin Clase": "Sin Clase"
             }
             for col in df_export_alumno.columns:
                 df_export_alumno[col] = df_export_alumno[col].replace(remplazos_excel_tutor)
 
-            csv_data = df_export_alumno.to_csv(index=False).encode('utf-8-sig')
+            df_export_alumno = sanitizar_para_csv(df_export_alumno)
             st.download_button(
                 "📥 Descargar Expediente (CSV)",
-                data=csv_data,
+                data=df_export_alumno.to_csv(index=False).encode('utf-8-sig'),
                 file_name=nombre_archivo,
                 mime="text/csv",
                 type="primary"
