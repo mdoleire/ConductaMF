@@ -53,6 +53,7 @@ from paneles.asistencia import renderizar_panel_asistencia
 from paneles.alumno import renderizar_panel_alumno
 from reglamento import TEXTO_ACUERDO
 from paneles.calificaciones import renderizar_panel_calificaciones
+from paneles.cambio_grupo import renderizar_panel_cambio_grupo
 from streamlit_option_menu import option_menu
 
 # ==========================================
@@ -617,6 +618,10 @@ else:
         if es_tutor:
             opciones_vista.append("👤 Ver como Tutor")
 
+        # 🔀 Coordinación y dirección pueden cambiar alumnos de grupo
+        if rol_assigned.lower() in ("director", "directivo", "coordinador"):
+            opciones_vista.append("🔀 Cambiar de Grupo")
+
     # 🌟 EL NUEVO MENÚ LATERAL TIPO AULA MÁGICA
         iconos = []
         for opc in opciones_vista:
@@ -624,6 +629,7 @@ else:
             elif "Conducta" in opc: iconos.append("shield-exclamation")
             elif "Calificaciones" in opc: iconos.append("journal-bookmark-fill")
             elif "Tutor" in opc: iconos.append("person-vcard")
+            elif "Grupo" in opc: iconos.append("arrow-left-right")
             else: iconos.append("grid")
 
         with st.sidebar:
@@ -660,6 +666,8 @@ else:
             vista_actual = 'Tutor'
         elif seleccion == "📊 Calificaciones":
             vista_actual = 'Calificaciones'
+        elif seleccion == "🔀 Cambiar de Grupo":
+            vista_actual = 'CambioGrupo'
         else:
             vista_actual = rol_assigned
 
@@ -681,6 +689,9 @@ else:
             
         elif vista_actual == 'Calificaciones':
             renderizar_panel_calificaciones(gc, correo_google, nombre_mostrar)
+
+        elif vista_actual == 'CambioGrupo':
+            renderizar_panel_cambio_grupo(correo_google, correo_real, rol_assigned, area_usuario)
             
         # ==========================================
         # ASISTENTE DE NORMATIVA (LLM AISLADO CON CACHÉ)
