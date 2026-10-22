@@ -45,24 +45,28 @@ TABLAS_PERMITIDAS = {
 }
 
 def resolver_nombre_tabla(nombre_archivo, nombre_pestana=None):
+    # 🛡️ Primero se decide por ARCHIVO y solo después por pestaña, dentro de ese archivo.
+    # Antes una clase cuyo nombre contuviera "actividad", "nota" o "config" se enviaba
+    # a una tabla de calificaciones/configuración, y un nombre desconocido caía en
+    # conducta_registros en silencio.
     f_str = str(nombre_archivo).lower()
-    p_str = str(nombre_pestana).lower() if nombre_pestana else ""
-    
-    if "config" in p_str: return "asistencia_config"
-    if "ponderaci" in p_str: return "calif_ponderaciones"
-    if "actividad" in p_str: return "calif_actividades"
-    if "calificaci" in p_str or "nota" in p_str: return "calif_notas"
-    
-    if "asistencia" in f_str: return "asistencia_registros"
-    if "conducta" in f_str or "incidencia" in f_str: return "conducta_registros"
+    p_str = str(nombre_pestana).strip().lower() if nombre_pestana else ""
+
+    if "asistencia" in f_str:
+        return "asistencia_config" if p_str in ("configuracion", "configuración") else "asistencia_registros"
+    if "calificaci" in f_str:
+        if "ponderaci" in p_str: return "calif_ponderaciones"
+        if "actividad" in p_str: return "calif_actividades"
+        return "calif_notas"
+    if "conducta" in f_str or "incidencia" in f_str or "registro" in f_str: return "conducta_registros"
     if "seguridad" in f_str or "usuario" in f_str: return "usuarios"
     if "asignaci" in f_str or "profesor" in f_str: return "asignaciones"
     if "alumno" in f_str: return "alumnos"
-    if "calificaci" in f_str: return "calif_notas"
-    if "registro" in f_str: return "conducta_registros"
-    
+
     candidato = str(nombre_archivo).strip()
-    return candidato if candidato in TABLAS_PERMITIDAS else "conducta_registros"
+    if candidato in TABLAS_PERMITIDAS:
+        return candidato
+    raise ValueError(f"Tabla no reconocida: {nombre_archivo!r} / {nombre_pestana!r}")
 
 # =================================================================
 # 2. PUENTE DE COMPATIBILIDAD ASISTENCIA (SQLITE ➔ SUPABASE)
@@ -90,6 +94,10 @@ class PostgreSqlConnectionWrapper:
 
     def commit(self):
         return self.raw_conn.commit()
+
+    def rollback(self):
+        # 🛡️ asistencia.py llama conn.rollback() en sus except; antes no existía y tronaba
+        return self.raw_conn.rollback()
 
     def close(self):
         return self.raw_conn.close()
@@ -134,8 +142,9 @@ class MockWorksheet:
             df_nuevos.to_sql(self.table_name, self.engine, if_exists='append', index=False)
             return True
         except Exception as e:
+            # 🛡️ Antes regresaba False y quien llamaba mostraba "guardado" de todos modos
             logger.error(f"Error en append_rows: {e}")
-            return False
+            raise
 
     def append_row(self, row):
         return self.append_rows([row])
@@ -336,7 +345,11 @@ def leer_datos(_client_or_conn, nombre_tabla, nombre_pestana=None):
             df_long = pd.read_sql(query, engine, params={"clase": clase_buscada})
             
             if df_long.empty: return pd.DataFrame()
-            df_pivot = df_long.pivot(index='Alumno', columns='Fecha', values='Estatus').reset_index()
+            # 🛡️ pivot() truena si un alumno tiene dos registros en la misma fecha, y el error
+            # dejaba la clase sin historial (todos con 0 faltas). pivot_table tolera duplicados.
+            if df_long.duplicated(subset=['Alumno', 'Fecha']).any():
+                logger.warning(f"Asistencia duplicada en la clase '{nombre_pestana}'")
+            df_pivot = df_long.pivot_table(index='Alumno', columns='Fecha', values='Estatus', aggfunc='last').reset_index()
             df_pivot.columns.name = None
             return df_pivot.fillna("")
 
@@ -536,8 +549,10 @@ def obtener_resumen_asistencia_alumno(_client_or_conn, nombre_alumno, grupo_alum
                 
             limite = limite_faltas_dict.get(dias_semana_clase, 7)
             
-            faltas_reales = len(df_clase[df_clase['Estatus'].astype(str).str.contains("Falta")])
-            retardos = len(df_clase[df_clase['Estatus'].astype(str).str.contains("Retardo")])
+            estatus_clase = df_clase['Estatus'].astype(str)
+            hubo_clase = ~estatus_clase.str.startswith("⚪")  # 🛡️ "Sin Clase (motivo)" nunca cuenta
+            faltas_reales = int((estatus_clase.str.contains("Falta") & hubo_clase).sum())
+            retardos = int((estatus_clase.str.contains("Retardo") & hubo_clase).sum())
             faltas_efectivas = faltas_reales + (retardos // 3)
             derecho = "✅ SÍ" if faltas_efectivas <= limite else "❌ NO"
             
@@ -559,9 +574,11 @@ def obtener_resumen_asistencia_alumno(_client_or_conn, nombre_alumno, grupo_alum
 def sanitizar_para_csv(df_input):
     df_sanitizado = df_input.copy()
     for col in df_sanitizado.columns:
-        if df_sanitizado[col].dtype == 'object':
-            df_sanitizado[col] = df_sanitizado[col].astype(str).apply(
-                lambda val: ("'" + val) if val.strip().startswith(('=', '+', '-', '@', '\t', '\r')) else val
+        serie = df_sanitizado[col]
+        # 🛡️ Con pandas 3 el texto ya no es 'object'; además se respetan los vacíos y los números
+        if pd.api.types.is_object_dtype(serie) or pd.api.types.is_string_dtype(serie):
+            df_sanitizado[col] = serie.map(
+                lambda val: ("'" + val) if isinstance(val, str) and val.strip().startswith(('=', '+', '-', '@', '\t', '\r')) else val
             )
     return df_sanitizado
 
@@ -569,3 +586,33 @@ def format_calif(val):
     if val >= 9.0: return f"🟢 {val:.1f}"
     if val >= 7.0: return f"🟡 {val:.1f}"
     return f"🔴 {val:.1f}"
+
+# =================================================================
+# MATERIA TEÓRICA (laboratorio y teoría comparten asistencia y conducta)
+# Misma tabla que usan paneles/asistencia.py y paneles/docente.py.
+# =================================================================
+_FUSION_MATERIAS = {
+    "lab física": "Física",
+    "laboratorio de química": "Química",
+    "lab química": "Química",
+    "laboratorio de biología": "Biología 1",
+    "lab biología": "Biología 1",
+    "laboratorio de física iii": "Física III",
+    "lab física iii": "Física III",
+    "laboratorio de química iii": "Química III",
+    "lab química iii": "Química III",
+    "laboratorio de biología iv": "Biología IV",
+    "lab biología iv": "Biología IV",
+    "laboratorio de lab física iv a i": "Física IV A I",
+    "lab física iv a i": "Física IV A I",
+    "laboratorio de lab física iv a ii": "Física IV A II",
+    "lab física iv a ii": "Física IV A II",
+    "laboratorio de lab química iv a i": "Química IV A I",
+    "lab química iv a i": "Química IV A I",
+    "laboratorio de lab química iv a ii": "Química IV A II",
+    "lab química iv a ii": "Química IV A II",
+}
+
+def obtener_materia_teorica(nombre_materia):
+    limpio = str(nombre_materia).lower().strip().replace("  ", " ")
+    return _FUSION_MATERIAS.get(limpio, str(nombre_materia).strip())
