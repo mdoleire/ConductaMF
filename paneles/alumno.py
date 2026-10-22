@@ -147,10 +147,12 @@ def renderizar_panel_alumno(gc, correo_alumno):
             JOIN "calif_actividades" a ON n."ID_Actividad" = a."ID_Actividad"
             LEFT JOIN "calif_ponderaciones" p ON (n."Clase" = p."Clase" AND a."Periodo" = p."Periodo" AND a."Rubro" = p."Rubro")
             WHERE LOWER(TRIM(n."Alumno")) = :alm AND a."Periodo" = :per
+              -- 🛡️ Solo clases del grupo del alumno (antes un homónimo de otro grupo veía estas notas)
+              AND TRIM(SPLIT_PART(REGEXP_REPLACE(n."Clase", '^.* - ', ''), '(', 1)) = :grp
         ''')
         
         with st.spinner("Calculando promedios..."):
-            df_mis_califs = pd.read_sql(query_califs, engine, params={"alm": nombre_alumno.lower().strip(), "per": periodo_consulta})
+            df_mis_califs = pd.read_sql(query_califs, engine, params={"alm": nombre_alumno.lower().strip(), "per": periodo_consulta, "grp": str(grupo_alumno).strip()})
         
         if df_mis_califs.empty:
             st.info(f"💡 Aún no hay calificaciones registradas para el **{periodo_consulta}**.")
